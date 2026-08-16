@@ -386,7 +386,7 @@ Describe 'Get-HwpInspection 실제 한컴 통합 시험' -Tags Native {
 }
 
 Describe '프로젝트 소유 가상 문서 생성' -Tags Native {
-    It '보안 모듈 없이도 HWP와 HWT 가상 문서를 메모리 방식으로 만든다' {
+    It '승인 없이 실행하면 로컬 native 시험 문서 생성을 차단한다' {
         $output = Join-Path $TestDrive 'generated-fixtures'
         $generator = Join-Path $PSScriptRoot 'fixtures/New-TestFixtures.ps1'
 
@@ -394,11 +394,11 @@ Describe '프로젝트 소유 가상 문서 생성' -Tags Native {
         $exitCode = $LASTEXITCODE
         $result = $jsonText | ConvertFrom-Json
 
-        $exitCode | Should Be 0
-        $result.Status | Should Match '^PASS'
-        Test-Path -LiteralPath (Join-Path $output 'native-fixture.hwp') | Should Be $true
-        Test-Path -LiteralPath (Join-Path $output 'native-template.hwt') | Should Be $true
-        (Get-HwpFileKind -LiteralPath (Join-Path $output 'native-fixture.hwp')).ExtensionMatches | Should Be $true
-        (Get-HwpFileKind -LiteralPath (Join-Path $output 'native-template.hwt')).ExtensionMatches | Should Be $true
+        $exitCode | Should Be 2
+        $result.Status | Should Be 'BLOCKED'
+        ($result.Errors -join ' ') | Should Match 'AllowInteractiveNative|명시 승인'
+        Test-Path -LiteralPath (Join-Path $output 'native-fixture.hwp') | Should Be $false
+        Test-Path -LiteralPath (Join-Path $output 'native-template.hwt') | Should Be $false
+        Test-Path -LiteralPath (Join-Path $output 'native-fixture.hwpx') | Should Be $false
     }
 }
