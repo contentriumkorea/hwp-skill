@@ -33,4 +33,15 @@ Describe 'HWP 공용 CLI 실행 모드' {
         $json.status | Should Be 'FAILED'
         ($json.errors -join ' ') | Should Match 'AllowInteractiveWindow'
     }
+
+    It 'interactive preflight는 창 허용 스위치 없이는 실패한다' {
+        $raw = & $pwsh -NoProfile -File $cli preflight -ExecutionMode interactive
+        $exitCode = $LASTEXITCODE
+        $json = ($raw -join "`n") | ConvertFrom-Json
+
+        $exitCode | Should Be 1
+        $json.status | Should Be 'FAILED'
+        $json.command | Should Be 'preflight'
+        ($json.errors -join ' ') | Should Match 'AllowInteractiveWindow'
+    }
 }

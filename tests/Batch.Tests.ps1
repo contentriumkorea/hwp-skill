@@ -98,7 +98,7 @@ Describe '통합 CLI JSON 계약' {
         $json.command | Should Be 'validate-plan'
     }
 
-    It 'preflight는 실행 컨텍스트 없이도 silent 기본값으로 BLOCKED JSON과 종료 코드 2를 반환한다' {
+    It 'preflight는 실행 컨텍스트 없이도 silent 기본값으로 PASS JSON과 종료 코드 0을 반환한다' {
         $cli = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/Invoke-HwpSkill.ps1'
         $pwsh = Join-Path $PSHOME 'pwsh.exe'
 
@@ -106,10 +106,11 @@ Describe '통합 CLI JSON 계약' {
         $exitCode = $LASTEXITCODE
         $json = ($raw -join "`n") | ConvertFrom-Json
 
-        $exitCode | Should Be 2
-        $json.status | Should Be 'BLOCKED'
+        $exitCode | Should Be 0
+        $json.status | Should Be 'PASS'
         $json.command | Should Be 'preflight'
-        ($json.errors -join ' ') | Should Match 'interactive'
+        $json.data.executionMode | Should Be 'silent'
+        @($json.errors).Count | Should Be 0
     }
 
     It '시험 fixture 생성기는 승인 스위치 없이 BLOCKED와 종료 코드 2를 반환한다' {
