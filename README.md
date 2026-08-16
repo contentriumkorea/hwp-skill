@@ -241,16 +241,29 @@ $cli = ".\skill\hwp-native\scripts\Invoke-HwpNative.ps1"
 
 네이티브 통합 시험은 실제 한컴오피스를 시작하고 프로젝트가 만든 시험 문서만
 사용합니다. 열어 둔 업무 문서가 있다면 그대로 보존하지만, 시험에는 시간이 걸릴 수
-있습니다.
+있습니다. 실수로 한컴을 시작하지 않도록 보호 스위치가 있으므로 명시적으로 켭니다.
 
 ```powershell
-.\tests\run-tests.ps1 -Suite Integration
+$env:HWP_NATIVE_RUN_INTEGRATION = '1'
+try {
+  .\tests\run-tests.ps1 -Suite Integration
+}
+finally {
+  Remove-Item Env:HWP_NATIVE_RUN_INTEGRATION -ErrorAction SilentlyContinue
+}
 ```
 
-전체 시험:
+보호 스위치를 켜지 않으면 네이티브 항목은 `Skipped`로 표시됩니다. 전체 시험에서
+네이티브 항목까지 실행하려면 다음과 같이 합니다.
 
 ```powershell
-.\tests\run-tests.ps1 -Suite All
+$env:HWP_NATIVE_RUN_INTEGRATION = '1'
+try {
+  .\tests\run-tests.ps1 -Suite All
+}
+finally {
+  Remove-Item Env:HWP_NATIVE_RUN_INTEGRATION -ErrorAction SilentlyContinue
+}
 ```
 
 시험 자료는 저장소가 직접 만든 가상 HWP/HWT와 이미지입니다. 사용자의 경북교육청
