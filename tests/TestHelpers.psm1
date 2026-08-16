@@ -163,6 +163,117 @@ function New-InsertImageOperation {
     $operation
 }
 
+function New-CharStyleOperation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Anchor,
+        [ValidateRange(1, 4096)][double]$HeightPt = 10,
+        [bool]$Bold = $false,
+        [bool]$Italic = $false
+    )
+
+    $operation = New-Operation -Type 'apply-char-style' -Anchor $Anchor -Before '' -After ''
+    $operation.target | Add-Member NoteProperty heightPt $HeightPt
+    $operation.target | Add-Member NoteProperty bold $Bold
+    $operation.target | Add-Member NoteProperty italic $Italic
+    $operation.verify.kind = 'operation-applied'
+    $operation.verify.expected = $true
+    $operation
+}
+
+function New-ParaStyleOperation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Anchor,
+        [ValidateSet('left','center','right','justify')]
+        [string]$Align = 'left'
+    )
+
+    $operation = New-Operation -Type 'apply-para-style' -Anchor $Anchor -Before '' -After ''
+    $operation.target | Add-Member NoteProperty align $Align
+    $operation.verify.kind = 'operation-applied'
+    $operation.verify.expected = $true
+    $operation
+}
+
+function New-PageBreakOperation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Anchor,
+        [ValidateSet('before','after')]
+        [string]$Placement = 'after'
+    )
+
+    $operation = New-Operation -Type 'insert-page-break' -Anchor $Anchor -Before '' -After ''
+    $operation.target | Add-Member NoteProperty placement $Placement
+    $operation.verify.kind = 'operation-applied'
+    $operation.verify.expected = $true
+    $operation
+}
+
+function New-SectionOperation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Anchor,
+        [ValidateSet('portrait','landscape')]
+        [string]$Orientation = 'portrait',
+        [ValidateRange(0, 100)][double]$LeftMarginMm = 15,
+        [ValidateRange(0, 100)][double]$RightMarginMm = 15,
+        [ValidateRange(0, 100)][double]$TopMarginMm = 10,
+        [ValidateRange(0, 100)][double]$BottomMarginMm = 10
+    )
+
+    $operation = New-Operation -Type 'set-section' -Anchor $Anchor -Before '' -After '' -Risk 'advanced'
+    $operation.target | Add-Member NoteProperty paperSize 'A4'
+    $operation.target | Add-Member NoteProperty orientation $Orientation
+    $operation.target | Add-Member NoteProperty leftMarginMm $LeftMarginMm
+    $operation.target | Add-Member NoteProperty rightMarginMm $RightMarginMm
+    $operation.target | Add-Member NoteProperty topMarginMm $TopMarginMm
+    $operation.target | Add-Member NoteProperty bottomMarginMm $BottomMarginMm
+    $operation.verify.kind = 'operation-applied'
+    $operation.verify.expected = $true
+    $operation
+}
+
+function New-HeaderFooterOperation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Anchor,
+        [ValidateSet('header','footer')]
+        [string]$Kind,
+        [Parameter(Mandatory)][string]$Text,
+        [ValidateSet('both','even','odd')]
+        [string]$Pages = 'both'
+    )
+
+    $operation = New-Operation -Type 'set-header-footer' -Anchor $Anchor -Before '' -After ''
+    $operation.target | Add-Member NoteProperty kind $Kind
+    $operation.target | Add-Member NoteProperty pages $Pages
+    $operation.target | Add-Member NoteProperty text $Text
+    $operation.verify.kind = 'control-count'
+    $operation.verify.expected = 1
+    $operation.verify | Add-Member NoteProperty ctrlId $(if ($Kind -eq 'header') { 'head' } else { 'foot' })
+    $operation
+}
+
+function New-PageNumberOperation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Anchor,
+        [ValidateSet('top-left','top-center','top-right','bottom-left','bottom-center','bottom-right')]
+        [string]$Position = 'bottom-center',
+        [ValidateRange(1, 9999)][int]$StartNumber = 1
+    )
+
+    $operation = New-Operation -Type 'set-page-number' -Anchor $Anchor -Before '' -After ''
+    $operation.target | Add-Member NoteProperty position $Position
+    $operation.target | Add-Member NoteProperty startNumber $StartNumber
+    $operation.verify.kind = 'control-count'
+    $operation.verify.expected = 1
+    $operation.verify | Add-Member NoteProperty ctrlId 'pgnp'
+    $operation
+}
+
 Export-ModuleMember -Function @(
     'New-Operation',
     'New-ValidPlan',
@@ -171,5 +282,11 @@ Export-ModuleMember -Function @(
     'New-InsertTableOperation',
     'New-TableCellOperation',
     'New-AddTableRowOperation',
-    'New-InsertImageOperation'
+    'New-InsertImageOperation',
+    'New-CharStyleOperation',
+    'New-ParaStyleOperation',
+    'New-PageBreakOperation',
+    'New-SectionOperation',
+    'New-HeaderFooterOperation',
+    'New-PageNumberOperation'
 )

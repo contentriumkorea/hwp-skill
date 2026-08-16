@@ -69,6 +69,16 @@ Describe 'Invoke-HwpEditOperation 정책' {
         $result.Status | Should Be 'BLOCKED'
         ($result.Errors -join ' ') | Should Match '승인'
     }
+
+    It 'set-section은 명시적 고급 승인 없이 실행하지 않는다' {
+        $session = New-FakeTextSession -Text '구역 설정 위치'
+        $operation = New-SectionOperation -Anchor '구역 설정 위치' -Orientation landscape
+
+        $result = Invoke-HwpEditOperation -Session $session -Operation $operation -ApprovedAdvanced:$false
+
+        $result.Status | Should Be 'BLOCKED'
+        ($result.Errors -join ' ') | Should Match '승인'
+    }
 }
 
 Describe 'Invoke-HwpApply 사전 차단' {
@@ -216,5 +226,95 @@ Describe 'HWP 표 구조 편집 실제 한컴 통합 시험' -Tags Native,Struct
         @($after.Controls | Where-Object CtrlId -eq 'tbl').Count | Should Be 2
         $after.Text | Should Match '첫 셀'
         $after.Text | Should Match '추가 행'
+    }
+}
+
+Describe 'HWP 서식과 문서 구조 편집 실제 한컴 통합 시험' -Tags Native,Structure {
+    It '글자·문단 서식과 쪽 나누기를 적용하고 재열어서 확인한다' -Skip:(-not $runNative) {
+        $output = Join-Path $TestDrive 'format-and-break.hwp'
+        $before = Get-HwpInspection -LiteralPath $fixtureHwp
+        $operations = @(
+            (New-CharStyleOperation -Anchor 'HWP 네이티브 통합 시험' -HeightPt 14 -Bold $true),
+            (New-ParaStyleOperation -Anchor 'HWP 네이티브 통합 시험' -Align center),
+            (New-PageBreakOperation -Anchor '쪽 나누기 위치' -Placement after)
+        )
+
+        $session = New-HwpSession
+        try {
+            (Open-HwpDocumentFromMemory -Session $session -LiteralPath $fixtureHwp).Status | Should Be 'PASS'
+            $results = @(
+                foreach ($operation in $operations) {
+                    Invoke-HwpEditOperation -Session $session -Operation $operation -ApprovedAdvanced:$true
+                }
+            )
+            @($results | Where-Object Status -ne 'PASS').Count | Should Be 0
+            (Save-HwpMemoryDocument -Session $session -SourcePath $fixtureHwp -OutputPath $output).Status | Should Be 'PASS'
+        }
+        finally {
+            Close-HwpSession -Session $session
+        }
+
+        $reopened = New-HwpSession
+        try {
+            (Open-HwpDocumentFromMemory -Session $reopened -LiteralPath $output).Status | Should Be 'PASS'
+            $snapshot = Get-HwpTextStyleSnapshot -Session $reopened -Operation (New-Operation -Anchor 'HWP 네이티브 통합 시험')
+            $snapshot.Status | Should Be 'PASS'
+            $snapshot.Data.HeightPt | Should Be 14
+            $snapshot.Data.Bold | Should Be $true
+            $snapshot.Data.Align | Should Be 'center'
+        }
+        finally {
+            Close-HwpSession -Session $reopened
+        }
+
+        $after = Get-HwpInspection -LiteralPath $output
+        $after.PageCount | Should Be ($before.PageCount + 1)
+    }
+
+    It '승인된 구역 설정과 머리말·꼬리말·쪽 번호를 적용한다' -Skip:(-not $runNative) {
+        $output = Join-Path $TestDrive 'section-and-header.hwp'
+        $operations = @(
+            (New-SectionOperation -Anchor 'HWP 네이티브 통합 시험' -Orientation landscape -LeftMarginMm 16 -RightMarginMm 16),
+            (New-HeaderFooterOperation -Anchor 'HWP 네이티브 통합 시험' -Kind header -Text '가상 머리말'),
+            (New-HeaderFooterOperation -Anchor 'HWP 네이티브 통합 시험' -Kind footer -Text '가상 꼬리말'),
+            (New-PageNumberOperation -Anchor 'HWP 네이티브 통합 시험' -Position bottom-center -StartNumber 1)
+        )
+
+        $session = New-HwpSession
+        try {
+            (Open-HwpDocumentFromMemory -Session $session -LiteralPath $fixtureHwp).Status | Should Be 'PASS'
+            $results = @(
+                foreach ($operation in $operations) {
+                    Invoke-HwpEditOperation -Session $session -Operation $operation -ApprovedAdvanced:$true
+                }
+            )
+            @($results | Where-Object Status -ne 'PASS').Count | Should Be 0
+            (Save-HwpMemoryDocument -Session $session -SourcePath $fixtureHwp -OutputPath $output).Status | Should Be 'PASS'
+        }
+        finally {
+            Close-HwpSession -Session $session
+        }
+
+        $reopened = New-HwpSession
+        try {
+            (Open-HwpDocumentFromMemory -Session $reopened -LiteralPath $output).Status | Should Be 'PASS'
+            $section = Get-HwpSectionSnapshot -Session $reopened -Operation (New-Operation -Anchor 'HWP 네이티브 통합 시험')
+            $section.Status | Should Be 'PASS'
+            $section.Data.Orientation | Should Be 'landscape'
+            [Math]::Round($section.Data.LeftMarginMm, 1) | Should Be 16
+
+            $headerFooter = Get-HwpHeaderFooterTextSnapshot -Session $reopened
+            $headerFooter.Status | Should Be 'PASS'
+            @($headerFooter.Data.Items | Where-Object { $_.Kind -eq 'header' -and $_.Text -eq '가상 머리말' }).Count | Should Be 1
+            @($headerFooter.Data.Items | Where-Object { $_.Kind -eq 'footer' -and $_.Text -eq '가상 꼬리말' }).Count | Should Be 1
+        }
+        finally {
+            Close-HwpSession -Session $reopened
+        }
+
+        $after = Get-HwpInspection -LiteralPath $output
+        @($after.Controls | Where-Object CtrlId -eq 'head').Count | Should Be 1
+        @($after.Controls | Where-Object CtrlId -eq 'foot').Count | Should Be 1
+        @($after.Controls | Where-Object CtrlId -eq 'pgnp').Count | Should Be 1
     }
 }

@@ -936,6 +936,677 @@ function Invoke-HwpReplaceImage {
     }) -Warnings @($security.Warnings)
 }
 
+function Test-HwpActionAvailable {
+    param(
+        [Parameter(Mandatory)][object]$Session,
+        [Parameter(Mandatory)][string]$ActionId
+    )
+
+    try {
+        [bool]$Session.Hwp.IsActionEnable($ActionId)
+    }
+    catch {
+        $false
+    }
+}
+
+function ConvertFrom-HwpUnitToMillimeter {
+    param([double]$Value)
+
+    $Value * 25.4 / 7200
+}
+
+function Get-HwpTextStyleSnapshot {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Session,
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Operation
+    )
+
+    $selection = Select-HwpResolvedTarget -Session $Session -Operation $Operation
+    if ($selection.Status -ne 'PASS') {
+        return $selection
+    }
+
+    try {
+        $charShape = $Session.Hwp.HParameterSet.HCharShape
+        $paraShape = $Session.Hwp.HParameterSet.HParaShape
+        $null = $Session.Hwp.HAction.GetDefault('CharShape', $charShape.HSet)
+        $null = $Session.Hwp.HAction.GetDefault('ParagraphShape', $paraShape.HSet)
+        $alignCode = [int]$paraShape.AlignType
+        $align = switch ($alignCode) {
+            0 { 'justify' }
+            1 { 'left' }
+            2 { 'right' }
+            3 { 'center' }
+            default { "other:$alignCode" }
+        }
+
+        New-HwpResult -Status PASS -Command inspect-text-style -Data ([pscustomobject]@{
+            OperationId = Get-HwpOperationId -Operation $Operation
+            Anchor = Get-HwpOperationAnchor -Operation $Operation
+            HeightHwpUnit = [int]$charShape.Height
+            HeightPt = [Math]::Round(([double]$charShape.Height / 100), 2)
+            Bold = [int]$charShape.Bold -ne 0
+            Italic = [int]$charShape.Italic -ne 0
+            AlignCode = $alignCode
+            Align = $align
+        })
+    }
+    catch {
+        New-HwpResult -Status FAILED -Command inspect-text-style -Errors @(
+            "글자·문단 서식을 읽지 못했습니다: $($_.Exception.Message)"
+        )
+    }
+}
+
+function Invoke-HwpCharStyle {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Session,
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Operation
+    )
+
+    $selection = Select-HwpResolvedTarget -Session $Session -Operation $Operation
+    if ($selection.Status -ne 'PASS') {
+        return $selection
+    }
+    if (-not (Test-HwpActionAvailable -Session $Session -ActionId 'CharShape')) {
+        return New-HwpResult -Status BLOCKED -Command apply-char-style -Errors @(
+            '현재 한컴오피스 위치 또는 버전에서 CharShape 작업을 사용할 수 없습니다.'
+        )
+    }
+
+    try {
+        $shape = $Session.Hwp.HParameterSet.HCharShape
+        $null = $Session.Hwp.HAction.GetDefault('CharShape', $shape.HSet)
+        $changed = $false
+        if (Test-HwpEditProperty -InputObject $Operation.target -Name 'heightPt') {
+            $heightPoint = [double]$Operation.target.heightPt
+            if ($heightPoint -lt 1 -or $heightPoint -gt 4096) {
+                throw "글자 크기가 허용 범위를 벗어났습니다: $heightPoint pt"
+            }
+            $shape.Height = [int]$Session.Hwp.PointToHwpUnit($heightPoint)
+            $changed = $true
+        }
+        if (Test-HwpEditProperty -InputObject $Operation.target -Name 'bold') {
+            $shape.Bold = [uint16]([bool]$Operation.target.bold)
+            $changed = $true
+        }
+        if (Test-HwpEditProperty -InputObject $Operation.target -Name 'italic') {
+            $shape.Italic = [uint16]([bool]$Operation.target.italic)
+            $changed = $true
+        }
+        if (-not $changed) {
+            return New-HwpResult -Status BLOCKED -Command apply-char-style -Errors @(
+                '변경할 글자 서식 값이 없습니다.'
+            )
+        }
+        if (-not $Session.Hwp.HAction.Execute('CharShape', $shape.HSet)) {
+            throw 'CharShape 작업이 거짓을 반환했습니다.'
+        }
+    }
+    catch {
+        return New-HwpResult -Status FAILED -Command apply-char-style -Errors @(
+            "글자 서식 변경 중 오류가 발생했습니다: $($_.Exception.Message)"
+        )
+    }
+
+    $snapshot = Get-HwpTextStyleSnapshot -Session $Session -Operation $Operation
+    if ($snapshot.Status -ne 'PASS') {
+        return $snapshot
+    }
+    if ((Test-HwpEditProperty -InputObject $Operation.target -Name 'heightPt') -and
+        [Math]::Abs([double]$snapshot.Data.HeightPt - [double]$Operation.target.heightPt) -gt 0.01) {
+        return New-HwpResult -Status FAILED -Command apply-char-style -Data $snapshot.Data -Errors @(
+            '글자 크기 사후검증에 실패했습니다.'
+        )
+    }
+    if ((Test-HwpEditProperty -InputObject $Operation.target -Name 'bold') -and
+        [bool]$snapshot.Data.Bold -ne [bool]$Operation.target.bold) {
+        return New-HwpResult -Status FAILED -Command apply-char-style -Data $snapshot.Data -Errors @(
+            '굵게 서식 사후검증에 실패했습니다.'
+        )
+    }
+    if ((Test-HwpEditProperty -InputObject $Operation.target -Name 'italic') -and
+        [bool]$snapshot.Data.Italic -ne [bool]$Operation.target.italic) {
+        return New-HwpResult -Status FAILED -Command apply-char-style -Data $snapshot.Data -Errors @(
+            '기울임 서식 사후검증에 실패했습니다.'
+        )
+    }
+
+    New-HwpResult -Status PASS -Command apply-char-style -Data ([pscustomobject]@{
+        OperationId = Get-HwpOperationId -Operation $Operation
+        Type = 'apply-char-style'
+        Applied = $true
+        Snapshot = $snapshot.Data
+    })
+}
+
+function Invoke-HwpParaStyle {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Session,
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Operation
+    )
+
+    if (-not (Test-HwpEditProperty -InputObject $Operation.target -Name 'align')) {
+        return New-HwpResult -Status BLOCKED -Command apply-para-style -Errors @('문단 정렬 값이 없습니다.')
+    }
+    $align = [string]$Operation.target.align
+    $actionId = switch ($align) {
+        'left' { 'ParagraphShapeAlignLeft' }
+        'center' { 'ParagraphShapeAlignCenter' }
+        'right' { 'ParagraphShapeAlignRight' }
+        'justify' { 'ParagraphShapeAlignJustify' }
+        default { '' }
+    }
+    if ([string]::IsNullOrWhiteSpace($actionId)) {
+        return New-HwpResult -Status BLOCKED -Command apply-para-style -Errors @(
+            "지원하지 않는 문단 정렬입니다: $align"
+        )
+    }
+
+    $selection = Select-HwpResolvedTarget -Session $Session -Operation $Operation
+    if ($selection.Status -ne 'PASS') {
+        return $selection
+    }
+    if (-not (Test-HwpActionAvailable -Session $Session -ActionId $actionId)) {
+        return New-HwpResult -Status BLOCKED -Command apply-para-style -Errors @(
+            "현재 한컴오피스 위치 또는 버전에서 $actionId 작업을 사용할 수 없습니다."
+        )
+    }
+    try {
+        if (-not $Session.Hwp.HAction.Run($actionId)) {
+            throw "$actionId 작업이 거짓을 반환했습니다."
+        }
+    }
+    catch {
+        return New-HwpResult -Status FAILED -Command apply-para-style -Errors @(
+            "문단 서식 변경 중 오류가 발생했습니다: $($_.Exception.Message)"
+        )
+    }
+
+    $snapshot = Get-HwpTextStyleSnapshot -Session $Session -Operation $Operation
+    if ($snapshot.Status -ne 'PASS') {
+        return $snapshot
+    }
+    if ([string]$snapshot.Data.Align -ne $align) {
+        return New-HwpResult -Status FAILED -Command apply-para-style -Data $snapshot.Data -Errors @(
+            '문단 정렬 사후검증에 실패했습니다.'
+        )
+    }
+
+    New-HwpResult -Status PASS -Command apply-para-style -Data ([pscustomobject]@{
+        OperationId = Get-HwpOperationId -Operation $Operation
+        Type = 'apply-para-style'
+        Applied = $true
+        Snapshot = $snapshot.Data
+    })
+}
+
+function Invoke-HwpPageBreak {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Session,
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Operation
+    )
+
+    $selection = Select-HwpResolvedTarget -Session $Session -Operation $Operation
+    if ($selection.Status -ne 'PASS') {
+        return $selection
+    }
+    $placement = if (Test-HwpEditProperty -InputObject $Operation.target -Name 'placement') {
+        [string]$Operation.target.placement
+    }
+    else {
+        'after'
+    }
+    if ($placement -notin 'before','after') {
+        return New-HwpResult -Status BLOCKED -Command insert-page-break -Errors @(
+            "쪽 나누기 위치는 before 또는 after여야 합니다: $placement"
+        )
+    }
+
+    try {
+        $position = if ($placement -eq 'before') { $selection.Data.StartPosition } else { $selection.Data.EndPosition }
+        if (-not $Session.Hwp.SetPosBySet($position)) {
+            throw '쪽 나누기 기준 위치로 이동하지 못했습니다.'
+        }
+        if (-not (Test-HwpActionAvailable -Session $Session -ActionId 'BreakPage')) {
+            return New-HwpResult -Status BLOCKED -Command insert-page-break -Errors @(
+                '현재 한컴오피스 위치 또는 버전에서 BreakPage 작업을 사용할 수 없습니다.'
+            )
+        }
+        $beforeCount = [int]$Session.Hwp.PageCount
+        if (-not $Session.Hwp.HAction.Run('BreakPage')) {
+            throw 'BreakPage 작업이 거짓을 반환했습니다.'
+        }
+        $afterCount = [int]$Session.Hwp.PageCount
+    }
+    catch {
+        return New-HwpResult -Status FAILED -Command insert-page-break -Errors @(
+            "쪽 나누기 삽입 중 오류가 발생했습니다: $($_.Exception.Message)"
+        )
+    }
+    if ($afterCount -ne $beforeCount + 1) {
+        return New-HwpResult -Status FAILED -Command insert-page-break -Errors @(
+            "쪽 수가 정확히 1 증가하지 않았습니다: $beforeCount -> $afterCount"
+        )
+    }
+
+    New-HwpResult -Status PASS -Command insert-page-break -Data ([pscustomobject]@{
+        OperationId = Get-HwpOperationId -Operation $Operation
+        Type = 'insert-page-break'
+        Applied = $true
+        Placement = $placement
+        PageCountBefore = $beforeCount
+        PageCountAfter = $afterCount
+    })
+}
+
+function Get-HwpSectionSnapshot {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Session,
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Operation
+    )
+
+    $selection = Select-HwpResolvedTarget -Session $Session -Operation $Operation
+    if ($selection.Status -ne 'PASS') {
+        return $selection
+    }
+    try {
+        if (-not $Session.Hwp.SetPosBySet($selection.Data.StartPosition)) {
+            throw '구역 기준 위치로 이동하지 못했습니다.'
+        }
+        $section = $Session.Hwp.HParameterSet.HSecDef
+        $null = $Session.Hwp.HAction.GetDefault('PageSetup', $section.HSet)
+        $page = $section.PageDef
+        $orientation = if ([int]$page.Landscape -eq 1 -or [int]$page.PaperWidth -gt [int]$page.PaperHeight) {
+            'landscape'
+        }
+        else {
+            'portrait'
+        }
+        New-HwpResult -Status PASS -Command inspect-section -Data ([pscustomobject]@{
+            OperationId = Get-HwpOperationId -Operation $Operation
+            Anchor = Get-HwpOperationAnchor -Operation $Operation
+            Orientation = $orientation
+            Landscape = [int]$page.Landscape
+            PaperWidthMm = ConvertFrom-HwpUnitToMillimeter -Value ([double]$page.PaperWidth)
+            PaperHeightMm = ConvertFrom-HwpUnitToMillimeter -Value ([double]$page.PaperHeight)
+            LeftMarginMm = ConvertFrom-HwpUnitToMillimeter -Value ([double]$page.LeftMargin)
+            RightMarginMm = ConvertFrom-HwpUnitToMillimeter -Value ([double]$page.RightMargin)
+            TopMarginMm = ConvertFrom-HwpUnitToMillimeter -Value ([double]$page.TopMargin)
+            BottomMarginMm = ConvertFrom-HwpUnitToMillimeter -Value ([double]$page.BottomMargin)
+        })
+    }
+    catch {
+        New-HwpResult -Status FAILED -Command inspect-section -Errors @(
+            "구역 설정을 읽지 못했습니다: $($_.Exception.Message)"
+        )
+    }
+}
+
+function Invoke-HwpSetSection {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Session,
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Operation,
+        [bool]$ApprovedAdvanced = $false
+    )
+
+    if (-not $ApprovedAdvanced) {
+        return New-HwpResult -Status BLOCKED -Command set-section -Errors @(
+            '구역 설정에는 approvedAdvanced=true의 명시적 승인이 필요합니다.'
+        )
+    }
+    $selection = Select-HwpResolvedTarget -Session $Session -Operation $Operation
+    if ($selection.Status -ne 'PASS') {
+        return $selection
+    }
+    if (-not (Test-HwpEditProperty -InputObject $Operation.target -Name 'orientation')) {
+        return New-HwpResult -Status BLOCKED -Command set-section -Errors @('용지 방향 값이 없습니다.')
+    }
+    $orientation = [string]$Operation.target.orientation
+    if ($orientation -notin 'portrait','landscape') {
+        return New-HwpResult -Status BLOCKED -Command set-section -Errors @(
+            "지원하지 않는 용지 방향입니다: $orientation"
+        )
+    }
+    if ((Test-HwpEditProperty -InputObject $Operation.target -Name 'paperSize') -and
+        [string]$Operation.target.paperSize -ne 'A4') {
+        return New-HwpResult -Status BLOCKED -Command set-section -Errors @('현재 용지 크기는 A4만 지원합니다.')
+    }
+
+    try {
+        if (-not $Session.Hwp.SetPosBySet($selection.Data.StartPosition)) {
+            throw '구역 기준 위치로 이동하지 못했습니다.'
+        }
+        if (-not (Test-HwpActionAvailable -Session $Session -ActionId 'PageSetup')) {
+            return New-HwpResult -Status BLOCKED -Command set-section -Errors @(
+                '현재 한컴오피스 위치 또는 버전에서 PageSetup 작업을 사용할 수 없습니다.'
+            )
+        }
+        $section = $Session.Hwp.HParameterSet.HSecDef
+        $null = $Session.Hwp.HAction.GetDefault('PageSetup', $section.HSet)
+        $page = $section.PageDef
+        $landscape = $orientation -eq 'landscape'
+        $page.Landscape = [uint16]$landscape
+        $page.PaperWidth = [int]$Session.Hwp.MiliToHwpUnit($(if ($landscape) { 297 } else { 210 }))
+        $page.PaperHeight = [int]$Session.Hwp.MiliToHwpUnit($(if ($landscape) { 210 } else { 297 }))
+        foreach ($mapping in @(
+            @('leftMarginMm','LeftMargin'),
+            @('rightMarginMm','RightMargin'),
+            @('topMarginMm','TopMargin'),
+            @('bottomMarginMm','BottomMargin')
+        )) {
+            if (Test-HwpEditProperty -InputObject $Operation.target -Name $mapping[0]) {
+                $millimeter = [double]$Operation.target.($mapping[0])
+                if ($millimeter -lt 0 -or $millimeter -gt 100) {
+                    throw "여백이 허용 범위를 벗어났습니다: $($mapping[0])=$millimeter"
+                }
+                $page.($mapping[1]) = [int]$Session.Hwp.MiliToHwpUnit($millimeter)
+            }
+        }
+        $null = $section.HSet.SetItem('ApplyTo', 2)
+        if (-not $Session.Hwp.HAction.Execute('PageSetup', $section.HSet)) {
+            throw 'PageSetup 작업이 거짓을 반환했습니다.'
+        }
+    }
+    catch {
+        return New-HwpResult -Status FAILED -Command set-section -Errors @(
+            "구역 설정 중 오류가 발생했습니다: $($_.Exception.Message)"
+        )
+    }
+
+    $snapshot = Get-HwpSectionSnapshot -Session $Session -Operation $Operation
+    if ($snapshot.Status -ne 'PASS') {
+        return $snapshot
+    }
+    if ([string]$snapshot.Data.Orientation -ne $orientation) {
+        return New-HwpResult -Status FAILED -Command set-section -Data $snapshot.Data -Errors @(
+            '용지 방향 사후검증에 실패했습니다.'
+        )
+    }
+    foreach ($mapping in @(
+        @('leftMarginMm','LeftMarginMm'),
+        @('rightMarginMm','RightMarginMm'),
+        @('topMarginMm','TopMarginMm'),
+        @('bottomMarginMm','BottomMarginMm')
+    )) {
+        if ((Test-HwpEditProperty -InputObject $Operation.target -Name $mapping[0]) -and
+            [Math]::Abs([double]$snapshot.Data.($mapping[1]) - [double]$Operation.target.($mapping[0])) -gt 0.1) {
+            return New-HwpResult -Status FAILED -Command set-section -Data $snapshot.Data -Errors @(
+                "여백 사후검증에 실패했습니다: $($mapping[0])"
+            )
+        }
+    }
+
+    New-HwpResult -Status PASS -Command set-section -Data ([pscustomobject]@{
+        OperationId = Get-HwpOperationId -Operation $Operation
+        Type = 'set-section'
+        Applied = $true
+        Snapshot = $snapshot.Data
+    })
+}
+
+function Get-HwpHeaderFooterTextSnapshot {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][ValidateNotNull()][object]$Session)
+
+    $items = [Collections.Generic.List[object]]::new()
+    $warnings = [Collections.Generic.List[string]]::new()
+    try {
+        foreach ($definition in @(
+            [pscustomobject]@{ Kind = 'header'; CtrlId = 'head'; DialogResult = 26 },
+            [pscustomobject]@{ Kind = 'footer'; CtrlId = 'foot'; DialogResult = 14 }
+        )) {
+            $controlCount = @(Get-HwpControlsById -Session $Session -CtrlId $definition.CtrlId).Count
+            if ($controlCount -eq 0) {
+                continue
+            }
+            if ($controlCount -gt 1) {
+                $warnings.Add("$($definition.Kind) 컨트롤이 $controlCount 개이므로 첫 번째 항목만 추출했습니다.")
+            }
+
+            $null = $Session.Hwp.HAction.Run('MoveDocBegin')
+            $oldMessageBoxMode = $Session.Hwp.SetMessageBoxMode(0x00010000)
+            try {
+                $goto = $Session.Hwp.HParameterSet.HGotoE
+                $null = $Session.Hwp.HAction.GetDefault('Goto', $goto.HSet)
+                $null = $goto.HSet.SetItem('DialogResult', [int]$definition.DialogResult)
+                $goto.SetSelectionIndex = 5
+                if (-not $Session.Hwp.HAction.Execute('Goto', $goto.HSet)) {
+                    throw "$($definition.Kind) 조판 부호로 이동하지 못했습니다."
+                }
+            }
+            finally {
+                $null = $Session.Hwp.SetMessageBoxMode($oldMessageBoxMode)
+            }
+            if (-not $Session.Hwp.HAction.Run('HeaderFooterModify')) {
+                throw "$($definition.Kind) 편집 상태로 들어가지 못했습니다."
+            }
+            try {
+                if (-not $Session.Hwp.HAction.Run('SelectAll')) {
+                    throw "$($definition.Kind) 본문을 선택하지 못했습니다."
+                }
+                $text = [string]$Session.Hwp.GetTextFile('UNICODE', 'saveblock')
+            }
+            finally {
+                $null = $Session.Hwp.HAction.Run('CloseEx')
+            }
+            $items.Add([pscustomobject]@{
+                Kind = $definition.Kind
+                CtrlId = $definition.CtrlId
+                Text = $text
+                ControlCount = $controlCount
+            })
+        }
+        $null = $Session.Hwp.HAction.Run('MoveDocBegin')
+    }
+    catch {
+        return New-HwpResult -Status FAILED -Command inspect-header-footer -Data ([pscustomobject]@{
+            Items = @($items)
+        }) -Errors @("머리말·꼬리말을 읽지 못했습니다: $($_.Exception.Message)")
+    }
+
+    $status = if ($warnings.Count -gt 0) { 'PASS_WITH_WARNINGS' } else { 'PASS' }
+    New-HwpResult -Status $status -Command inspect-header-footer -Data ([pscustomobject]@{
+        Items = @($items)
+    }) -Warnings @($warnings)
+}
+
+function Invoke-HwpHeaderFooter {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Session,
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Operation
+    )
+
+    foreach ($required in 'kind','text') {
+        if (-not (Test-HwpEditProperty -InputObject $Operation.target -Name $required)) {
+            return New-HwpResult -Status BLOCKED -Command set-header-footer -Errors @(
+                "머리말·꼬리말 대상에 필수 값이 없습니다: $required"
+            )
+        }
+    }
+    $kind = [string]$Operation.target.kind
+    $pages = if (Test-HwpEditProperty -InputObject $Operation.target -Name 'pages') {
+        [string]$Operation.target.pages
+    }
+    else {
+        'both'
+    }
+    if ($kind -notin 'header','footer' -or $pages -notin 'both','even','odd') {
+        return New-HwpResult -Status BLOCKED -Command set-header-footer -Errors @(
+            "머리말·꼬리말 kind 또는 pages 값이 올바르지 않습니다: $kind / $pages"
+        )
+    }
+
+    $selection = Select-HwpResolvedTarget -Session $Session -Operation $Operation
+    if ($selection.Status -ne 'PASS') {
+        return $selection
+    }
+    $ctrlId = if ($kind -eq 'header') { 'head' } else { 'foot' }
+    $existing = @(Get-HwpControlsById -Session $Session -CtrlId $ctrlId)
+    if ($existing.Count -gt 0) {
+        return New-HwpResult -Status BLOCKED -Command set-header-footer -Errors @(
+            "기존 $kind 컨트롤이 있어 자동으로 중복 생성하지 않습니다. 기존 컨트롤 수정은 명시적 인덱스 지원 후 사용할 수 있습니다."
+        )
+    }
+    if (-not (Test-HwpActionAvailable -Session $Session -ActionId 'HeaderFooter')) {
+        return New-HwpResult -Status BLOCKED -Command set-header-footer -Errors @(
+            '현재 한컴오피스 위치 또는 버전에서 HeaderFooter 작업을 사용할 수 없습니다.'
+        )
+    }
+
+    $entered = $false
+    try {
+        if (-not $Session.Hwp.SetPosBySet($selection.Data.StartPosition)) {
+            throw '머리말·꼬리말 기준 위치로 이동하지 못했습니다.'
+        }
+        $set = $Session.Hwp.HParameterSet.HHeaderFooter
+        $null = $Session.Hwp.HAction.GetDefault('HeaderFooter', $set.HSet)
+        $null = $set.HSet.SetItem('HeaderFooterCtrlType', $(if ($kind -eq 'header') { 0 } else { 1 }))
+        $null = $set.HSet.SetItem('HeaderFooterStyle', 0)
+        $set.type = switch ($pages) { 'both' { 0 } 'even' { 1 } 'odd' { 2 } }
+        if (-not $Session.Hwp.HAction.Execute('HeaderFooter', $set.HSet)) {
+            throw 'HeaderFooter 작업이 거짓을 반환했습니다.'
+        }
+        $entered = $true
+        if (-not (Invoke-HwpInsertRawText -Session $Session -Text ([string]$Operation.target.text))) {
+            throw '머리말·꼬리말 본문을 입력하지 못했습니다.'
+        }
+        if (-not $Session.Hwp.HAction.Run('CloseEx')) {
+            throw '머리말·꼬리말 편집 상태를 닫지 못했습니다.'
+        }
+        $entered = $false
+    }
+    catch {
+        if ($entered) {
+            $null = $Session.Hwp.HAction.Run('CloseEx')
+        }
+        return New-HwpResult -Status FAILED -Command set-header-footer -Errors @(
+            "머리말·꼬리말 설정 중 오류가 발생했습니다: $($_.Exception.Message)"
+        )
+    }
+
+    $snapshot = Get-HwpHeaderFooterTextSnapshot -Session $Session
+    if ($snapshot.Status -notin 'PASS','PASS_WITH_WARNINGS') {
+        return $snapshot
+    }
+    $matches = @($snapshot.Data.Items | Where-Object {
+        $_.Kind -eq $kind -and [string]::Equals([string]$_.Text, [string]$Operation.target.text, [StringComparison]::Ordinal)
+    })
+    if ($matches.Count -ne 1) {
+        return New-HwpResult -Status FAILED -Command set-header-footer -Data $snapshot.Data -Errors @(
+            "$kind 본문 사후검증에 실패했습니다."
+        )
+    }
+
+    New-HwpResult -Status $snapshot.Status -Command set-header-footer -Data ([pscustomobject]@{
+        OperationId = Get-HwpOperationId -Operation $Operation
+        Type = 'set-header-footer'
+        Applied = $true
+        Kind = $kind
+        Pages = $pages
+        Text = [string]$Operation.target.text
+    }) -Warnings @($snapshot.Warnings)
+}
+
+function Invoke-HwpSetPageNumber {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Session,
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Operation
+    )
+
+    $position = if (Test-HwpEditProperty -InputObject $Operation.target -Name 'position') {
+        [string]$Operation.target.position
+    }
+    else {
+        'bottom-center'
+    }
+    $drawPosition = switch ($position) {
+        'top-left' { 1 }
+        'top-center' { 2 }
+        'top-right' { 3 }
+        'bottom-left' { 4 }
+        'bottom-center' { 5 }
+        'bottom-right' { 6 }
+        default { 0 }
+    }
+    if ($drawPosition -eq 0) {
+        return New-HwpResult -Status BLOCKED -Command set-page-number -Errors @(
+            "지원하지 않는 쪽 번호 위치입니다: $position"
+        )
+    }
+    $startNumber = if (Test-HwpEditProperty -InputObject $Operation.target -Name 'startNumber') {
+        [int]$Operation.target.startNumber
+    }
+    else {
+        1
+    }
+    if ($startNumber -lt 1 -or $startNumber -gt 9999) {
+        return New-HwpResult -Status BLOCKED -Command set-page-number -Errors @(
+            "쪽 번호 시작 값이 허용 범위를 벗어났습니다: $startNumber"
+        )
+    }
+
+    $selection = Select-HwpResolvedTarget -Session $Session -Operation $Operation
+    if ($selection.Status -ne 'PASS') {
+        return $selection
+    }
+    $beforeCount = @(Get-HwpControlsById -Session $Session -CtrlId 'pgnp').Count
+    if ($beforeCount -gt 0) {
+        return New-HwpResult -Status BLOCKED -Command set-page-number -Errors @(
+            '기존 쪽 번호 컨트롤이 있어 자동으로 중복 생성하지 않습니다.'
+        )
+    }
+    if (-not (Test-HwpActionAvailable -Session $Session -ActionId 'PageNumPos')) {
+        return New-HwpResult -Status BLOCKED -Command set-page-number -Errors @(
+            '현재 한컴오피스 위치 또는 버전에서 PageNumPos 작업을 사용할 수 없습니다.'
+        )
+    }
+
+    try {
+        if (-not $Session.Hwp.SetPosBySet($selection.Data.StartPosition)) {
+            throw '쪽 번호 기준 위치로 이동하지 못했습니다.'
+        }
+        $set = $Session.Hwp.HParameterSet.HPageNumPos
+        $null = $Session.Hwp.HAction.GetDefault('PageNumPos', $set.HSet)
+        $set.NumberFormat = 0
+        $set.DrawPos = $drawPosition
+        $set.NewNumber = $startNumber
+        if (-not $Session.Hwp.HAction.Execute('PageNumPos', $set.HSet)) {
+            throw 'PageNumPos 작업이 거짓을 반환했습니다.'
+        }
+        $afterCount = @(Get-HwpControlsById -Session $Session -CtrlId 'pgnp').Count
+    }
+    catch {
+        return New-HwpResult -Status FAILED -Command set-page-number -Errors @(
+            "쪽 번호 설정 중 오류가 발생했습니다: $($_.Exception.Message)"
+        )
+    }
+    if ($afterCount -ne $beforeCount + 1) {
+        return New-HwpResult -Status FAILED -Command set-page-number -Errors @(
+            "쪽 번호 컨트롤 수가 정확히 1 증가하지 않았습니다: $beforeCount -> $afterCount"
+        )
+    }
+
+    New-HwpResult -Status PASS -Command set-page-number -Data ([pscustomobject]@{
+        OperationId = Get-HwpOperationId -Operation $Operation
+        Type = 'set-page-number'
+        Applied = $true
+        Position = $position
+        StartNumber = $startNumber
+        ControlCountBefore = $beforeCount
+        ControlCountAfter = $afterCount
+    })
+}
+
 function Invoke-HwpEditOperation {
     [CmdletBinding()]
     param(
@@ -960,6 +1631,12 @@ function Invoke-HwpEditOperation {
         'add-table-row' { Invoke-HwpAddTableRow -Session $Session -Operation $Operation -ApprovedAdvanced:$ApprovedAdvanced; break }
         'insert-image' { Invoke-HwpInsertImage -Session $Session -Operation $Operation; break }
         'replace-image' { Invoke-HwpReplaceImage -Session $Session -Operation $Operation; break }
+        'apply-char-style' { Invoke-HwpCharStyle -Session $Session -Operation $Operation; break }
+        'apply-para-style' { Invoke-HwpParaStyle -Session $Session -Operation $Operation; break }
+        'insert-page-break' { Invoke-HwpPageBreak -Session $Session -Operation $Operation; break }
+        'set-section' { Invoke-HwpSetSection -Session $Session -Operation $Operation -ApprovedAdvanced:$ApprovedAdvanced; break }
+        'set-header-footer' { Invoke-HwpHeaderFooter -Session $Session -Operation $Operation; break }
+        'set-page-number' { Invoke-HwpSetPageNumber -Session $Session -Operation $Operation; break }
         default {
             New-HwpResult -Status BLOCKED -Command edit-operation -Data $allowed.Data -Errors @(
                 "현재 구현에서 아직 실행할 수 없는 작업입니다: $($Operation.type)"
@@ -1459,6 +2136,15 @@ Export-ModuleMember -Function @(
     'Invoke-HwpAddTableRow',
     'Invoke-HwpInsertImage',
     'Invoke-HwpReplaceImage',
+    'Get-HwpTextStyleSnapshot',
+    'Invoke-HwpCharStyle',
+    'Invoke-HwpParaStyle',
+    'Invoke-HwpPageBreak',
+    'Get-HwpSectionSnapshot',
+    'Invoke-HwpSetSection',
+    'Get-HwpHeaderFooterTextSnapshot',
+    'Invoke-HwpHeaderFooter',
+    'Invoke-HwpSetPageNumber',
     'Invoke-HwpEditOperation',
     'Save-HwpMemoryDocument',
     'Test-HwpOperationPostcondition',
