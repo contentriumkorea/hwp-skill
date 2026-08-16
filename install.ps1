@@ -25,8 +25,8 @@ function New-HwpNativeInstallResult {
         BackupPath = $BackupPath
         RollbackStatus = $RollbackStatus
         FailedInstallPath = $FailedInstallPath
-        Warnings = @($Warnings)
-        Errors = @($Errors)
+        Warnings = @($Warnings | Where-Object { $null -ne $_ })
+        Errors = @($Errors | Where-Object { $null -ne $_ })
     }
 }
 

@@ -8,6 +8,7 @@ Describe 'hwp-native 설치 도구' {
         $result = & $installer -DestinationRoot $destinationRoot
 
         $result.Status | Should Be 'PASS'
+        @($result.Warnings).Count | Should Be 0
         Test-Path (Join-Path $destinationRoot 'hwp-native/SKILL.md') | Should Be $true
         @(Get-ChildItem -LiteralPath $destinationRoot -Directory).Count | Should Be 1
     }
