@@ -1607,6 +1607,653 @@ function Invoke-HwpSetPageNumber {
     })
 }
 
+function Invoke-HwpAddBookmark {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Session,
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Operation
+    )
+
+    if (-not (Test-HwpEditProperty -InputObject $Operation.target -Name 'name')) {
+        return New-HwpResult -Status BLOCKED -Command add-bookmark -Errors @('책갈피 이름이 없습니다.')
+    }
+    $name = [string]$Operation.target.name
+    if ($name.Length -lt 1 -or $name.Length -gt 120 -or $name -match '[;\r\n]') {
+        return New-HwpResult -Status BLOCKED -Command add-bookmark -Errors @(
+            '책갈피 이름은 세미콜론과 줄바꿈 없이 1~120자여야 합니다.'
+        )
+    }
+    $selection = Select-HwpResolvedTarget -Session $Session -Operation $Operation
+    if ($selection.Status -ne 'PASS') {
+        return $selection
+    }
+    if (-not (Test-HwpActionAvailable -Session $Session -ActionId 'Bookmark')) {
+        return New-HwpResult -Status BLOCKED -Command add-bookmark -Errors @(
+            '현재 한컴오피스 위치 또는 버전에서 Bookmark 작업을 사용할 수 없습니다.'
+        )
+    }
+
+    $beforeCount = @(Get-HwpControlsById -Session $Session -CtrlId '%bmk').Count
+    try {
+        $bookmark = $Session.Hwp.HParameterSet.HBookMark
+        $null = $Session.Hwp.HAction.GetDefault('Bookmark', $bookmark.HSet)
+        $bookmark.Name = $name
+        $bookmark.Type = 1
+        $bookmark.Command = 0
+        if (-not $Session.Hwp.HAction.Execute('Bookmark', $bookmark.HSet)) {
+            throw 'Bookmark 작업이 거짓을 반환했습니다.'
+        }
+        $afterCount = @(Get-HwpControlsById -Session $Session -CtrlId '%bmk').Count
+    }
+    catch {
+        return New-HwpResult -Status FAILED -Command add-bookmark -Errors @(
+            "책갈피 추가 중 오류가 발생했습니다: $($_.Exception.Message)"
+        )
+    }
+    if ($afterCount -ne $beforeCount + 1) {
+        return New-HwpResult -Status FAILED -Command add-bookmark -Errors @(
+            "책갈피 컨트롤 수가 정확히 1 증가하지 않았습니다: $beforeCount -> $afterCount"
+        )
+    }
+
+    New-HwpResult -Status PASS -Command add-bookmark -Data ([pscustomobject]@{
+        OperationId = Get-HwpOperationId -Operation $Operation
+        Type = 'add-bookmark'
+        Applied = $true
+        Name = $name
+        Anchor = Get-HwpOperationAnchor -Operation $Operation
+        ControlCountBefore = $beforeCount
+        ControlCountAfter = $afterCount
+    })
+}
+
+function Resolve-HwpSafeHyperlink {
+    param([Parameter(Mandatory)][string]$Url)
+
+    if ($Url.Length -gt 2048 -or $Url -match '[;\r\n]') {
+        throw 'URL은 세미콜론과 줄바꿈 없이 2,048자 이하여야 합니다.'
+    }
+    $parsed = $null
+    if (-not [Uri]::TryCreate($Url, [UriKind]::Absolute, [ref]$parsed)) {
+        throw '절대 URL 형식이 아닙니다.'
+    }
+    if ($parsed.Scheme -notin 'http','https') {
+        throw '하이퍼링크는 http 또는 https URL만 허용합니다.'
+    }
+    if (-not [string]::IsNullOrWhiteSpace($parsed.UserInfo)) {
+        throw '사용자명이나 비밀번호가 포함된 URL은 허용하지 않습니다.'
+    }
+    $parsed.AbsoluteUri
+}
+
+function Invoke-HwpAddHyperlink {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Session,
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Operation
+    )
+
+    if (-not (Test-HwpEditProperty -InputObject $Operation.target -Name 'url')) {
+        return New-HwpResult -Status BLOCKED -Command add-hyperlink -Errors @('하이퍼링크 URL이 없습니다.')
+    }
+    try {
+        $url = Resolve-HwpSafeHyperlink -Url ([string]$Operation.target.url)
+    }
+    catch {
+        return New-HwpResult -Status BLOCKED -Command add-hyperlink -Errors @($_.Exception.Message)
+    }
+    $selection = Select-HwpResolvedTarget -Session $Session -Operation $Operation
+    if ($selection.Status -ne 'PASS') {
+        return $selection
+    }
+    if (-not (Test-HwpActionAvailable -Session $Session -ActionId 'InsertHyperlink')) {
+        return New-HwpResult -Status BLOCKED -Command add-hyperlink -Errors @(
+            '현재 한컴오피스 위치 또는 버전에서 InsertHyperlink 작업을 사용할 수 없습니다.'
+        )
+    }
+
+    $beforeCount = @(Get-HwpControlsById -Session $Session -CtrlId '%hlk').Count
+    try {
+        # Hyperlink 액션은 대화상자를 열 수 있으므로 DirectInsert를 지원하는 InsertHyperlink만 사용한다.
+        $hyperlink = $Session.Hwp.HParameterSet.HHyperLink
+        $null = $Session.Hwp.HAction.GetDefault('InsertHyperlink', $hyperlink.HSet)
+        $hyperlink.Text = [string]$selection.Data.SelectedText
+        $hyperlink.Command = "$url;1;0;0;"
+        $hyperlink.NoLInk = 0
+        $hyperlink.ShapeObject = 0
+        $hyperlink.DirectInsert = 1
+        $oldMessageBoxMode = $Session.Hwp.SetMessageBoxMode(0x00010000)
+        try {
+            $executed = $Session.Hwp.HAction.Execute('InsertHyperlink', $hyperlink.HSet)
+        }
+        finally {
+            $null = $Session.Hwp.SetMessageBoxMode($oldMessageBoxMode)
+        }
+        if (-not $executed) {
+            throw 'InsertHyperlink 작업이 거짓을 반환했습니다.'
+        }
+        $afterCount = @(Get-HwpControlsById -Session $Session -CtrlId '%hlk').Count
+    }
+    catch {
+        return New-HwpResult -Status FAILED -Command add-hyperlink -Errors @(
+            "하이퍼링크 추가 중 오류가 발생했습니다: $($_.Exception.Message)"
+        )
+    }
+    if ($afterCount -ne $beforeCount + 1) {
+        return New-HwpResult -Status FAILED -Command add-hyperlink -Errors @(
+            "하이퍼링크 컨트롤 수가 정확히 1 증가하지 않았습니다: $beforeCount -> $afterCount"
+        )
+    }
+    $currentText = [string]$Session.Hwp.GetTextFile('UNICODE', '')
+    if (-not $currentText.Contains([string]$selection.Data.SelectedText, [StringComparison]::Ordinal)) {
+        return New-HwpResult -Status FAILED -Command add-hyperlink -Errors @(
+            '하이퍼링크를 추가한 뒤 표시 문구를 찾지 못했습니다.'
+        )
+    }
+
+    New-HwpResult -Status PASS -Command add-hyperlink -Data ([pscustomobject]@{
+        OperationId = Get-HwpOperationId -Operation $Operation
+        Type = 'add-hyperlink'
+        Applied = $true
+        Url = $url
+        Text = [string]$selection.Data.SelectedText
+        ControlCountBefore = $beforeCount
+        ControlCountAfter = $afterCount
+    })
+}
+
+function Invoke-HwpAddCaption {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Session,
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Operation
+    )
+
+    foreach ($required in 'controlId','controlIndex','text') {
+        if (-not (Test-HwpEditProperty -InputObject $Operation.target -Name $required)) {
+            return New-HwpResult -Status BLOCKED -Command add-caption -Errors @(
+                "캡션 대상에 필수 값이 없습니다: $required"
+            )
+        }
+    }
+    $ctrlId = [string]$Operation.target.controlId
+    $controlIndex = [int]$Operation.target.controlIndex
+    $text = [string]$Operation.target.text
+    if ($ctrlId -notin 'tbl','gso' -or $controlIndex -lt 1 -or [string]::IsNullOrWhiteSpace($text)) {
+        return New-HwpResult -Status BLOCKED -Command add-caption -Errors @(
+            '캡션은 유효한 표/그림 컨트롤 인덱스와 비어 있지 않은 본문이 필요합니다.'
+        )
+    }
+    try {
+        $controls = @(Get-HwpControlsById -Session $Session -CtrlId $ctrlId)
+    }
+    catch {
+        return New-HwpResult -Status FAILED -Command add-caption -Errors @($_.Exception.Message)
+    }
+    if ($controlIndex -gt $controls.Count) {
+        return New-HwpResult -Status BLOCKED -Command add-caption -Errors @(
+            "캡션 대상 컨트롤 인덱스가 범위를 벗어났습니다: $controlIndex / $($controls.Count)"
+        )
+    }
+
+    $beforeAutoNumberCount = @(Get-HwpControlsById -Session $Session -CtrlId 'atno').Count
+    $entered = $false
+    try {
+        $control = $controls[$controlIndex - 1]
+        if (-not $Session.Hwp.SetPosBySet($control.GetAnchorPos(0))) {
+            throw '캡션 대상 컨트롤 위치로 이동하지 못했습니다.'
+        }
+        $found = [string]$Session.Hwp.FindCtrl()
+        if ($found -ne $ctrlId) {
+            throw "캡션 대상 컨트롤을 선택하지 못했습니다: $ctrlId / $found"
+        }
+        if (-not (Test-HwpActionAvailable -Session $Session -ActionId 'ShapeObjAttachCaption')) {
+            return New-HwpResult -Status BLOCKED -Command add-caption -Errors @(
+                '현재 컨트롤에서 ShapeObjAttachCaption 작업을 사용할 수 없습니다.'
+            )
+        }
+        if (-not $Session.Hwp.HAction.Run('ShapeObjAttachCaption')) {
+            throw 'ShapeObjAttachCaption 작업이 거짓을 반환했습니다.'
+        }
+        $entered = $true
+        if (-not (Invoke-HwpInsertRawText -Session $Session -Text $text)) {
+            throw '캡션 본문을 입력하지 못했습니다.'
+        }
+        if (-not $Session.Hwp.HAction.Run('CloseEx')) {
+            throw '캡션 편집 상태를 닫지 못했습니다.'
+        }
+        $entered = $false
+        $afterAutoNumberCount = @(Get-HwpControlsById -Session $Session -CtrlId 'atno').Count
+        $currentText = [string]$Session.Hwp.GetTextFile('UNICODE', '')
+    }
+    catch {
+        if ($entered) { $null = $Session.Hwp.HAction.Run('CloseEx') }
+        return New-HwpResult -Status FAILED -Command add-caption -Errors @(
+            "캡션 추가 중 오류가 발생했습니다: $($_.Exception.Message)"
+        )
+    }
+    if ($afterAutoNumberCount -ne $beforeAutoNumberCount + 1 -or
+        -not $currentText.Contains($text, [StringComparison]::Ordinal)) {
+        return New-HwpResult -Status FAILED -Command add-caption -Errors @('캡션 사후검증에 실패했습니다.')
+    }
+
+    New-HwpResult -Status PASS -Command add-caption -Data ([pscustomobject]@{
+        OperationId = Get-HwpOperationId -Operation $Operation
+        Type = 'add-caption'
+        Applied = $true
+        ControlId = $ctrlId
+        ControlIndex = $controlIndex
+        Text = $text
+        AutoNumberCountBefore = $beforeAutoNumberCount
+        AutoNumberCountAfter = $afterAutoNumberCount
+    })
+}
+
+function Invoke-HwpAddNote {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Session,
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Operation
+    )
+
+    $type = [string]$Operation.type
+    $definition = switch ($type) {
+        'add-footnote' { [pscustomobject]@{ ActionId = 'InsertFootnote'; CtrlId = 'fn'; Label = '각주' } }
+        'add-endnote' { [pscustomobject]@{ ActionId = 'InsertEndnote'; CtrlId = 'en'; Label = '미주' } }
+        default { $null }
+    }
+    if ($null -eq $definition) {
+        return New-HwpResult -Status BLOCKED -Command add-note -Errors @("지원하지 않는 주석 작업입니다: $type")
+    }
+    if (-not (Test-HwpEditProperty -InputObject $Operation.target -Name 'text')) {
+        return New-HwpResult -Status BLOCKED -Command add-note -Errors @("$($definition.Label) 본문이 없습니다.")
+    }
+    $text = [string]$Operation.target.text
+    if ([string]::IsNullOrWhiteSpace($text)) {
+        return New-HwpResult -Status BLOCKED -Command add-note -Errors @("$($definition.Label) 본문이 비어 있습니다.")
+    }
+    $placement = if (Test-HwpEditProperty -InputObject $Operation.target -Name 'placement') {
+        [string]$Operation.target.placement
+    }
+    else {
+        'after'
+    }
+    if ($placement -notin 'before','after') {
+        return New-HwpResult -Status BLOCKED -Command add-note -Errors @(
+            "$($definition.Label) 위치는 before 또는 after여야 합니다."
+        )
+    }
+
+    $selection = Select-HwpResolvedTarget -Session $Session -Operation $Operation
+    if ($selection.Status -ne 'PASS') {
+        return $selection
+    }
+    $beforeCount = @(Get-HwpControlsById -Session $Session -CtrlId $definition.CtrlId).Count
+    $entered = $false
+    try {
+        $position = if ($placement -eq 'before') { $selection.Data.StartPosition } else { $selection.Data.EndPosition }
+        if (-not $Session.Hwp.SetPosBySet($position)) {
+            throw "$($definition.Label) 기준 위치로 이동하지 못했습니다."
+        }
+        if (-not (Test-HwpActionAvailable -Session $Session -ActionId $definition.ActionId)) {
+            return New-HwpResult -Status BLOCKED -Command add-note -Errors @(
+                "현재 위치에서 $($definition.ActionId) 작업을 사용할 수 없습니다."
+            )
+        }
+        if (-not $Session.Hwp.HAction.Run($definition.ActionId)) {
+            throw "$($definition.ActionId) 작업이 거짓을 반환했습니다."
+        }
+        $entered = $true
+        if (-not (Invoke-HwpInsertRawText -Session $Session -Text $text)) {
+            throw "$($definition.Label) 본문을 입력하지 못했습니다."
+        }
+        if (-not $Session.Hwp.HAction.Run('CloseEx')) {
+            throw "$($definition.Label) 편집 상태를 닫지 못했습니다."
+        }
+        $entered = $false
+        $afterCount = @(Get-HwpControlsById -Session $Session -CtrlId $definition.CtrlId).Count
+        $currentText = [string]$Session.Hwp.GetTextFile('UNICODE', '')
+    }
+    catch {
+        if ($entered) { $null = $Session.Hwp.HAction.Run('CloseEx') }
+        return New-HwpResult -Status FAILED -Command add-note -Errors @(
+            "$($definition.Label) 추가 중 오류가 발생했습니다: $($_.Exception.Message)"
+        )
+    }
+    if ($afterCount -ne $beforeCount + 1 -or -not $currentText.Contains($text, [StringComparison]::Ordinal)) {
+        return New-HwpResult -Status FAILED -Command add-note -Errors @("$($definition.Label) 사후검증에 실패했습니다.")
+    }
+
+    New-HwpResult -Status PASS -Command add-note -Data ([pscustomobject]@{
+        OperationId = Get-HwpOperationId -Operation $Operation
+        Type = $type
+        Applied = $true
+        Text = $text
+        Placement = $placement
+        ControlId = $definition.CtrlId
+        ControlCountBefore = $beforeCount
+        ControlCountAfter = $afterCount
+    })
+}
+
+function Get-HwpCurrentPrintedPageNumber {
+    param([Parameter(Mandatory)][object]$Session)
+
+    [int]$sectionCount = 0
+    [int]$sectionNumber = 0
+    [int]$printedPageNumber = 0
+    [int]$columnNumber = 0
+    [int]$lineNumber = 0
+    [int]$position = 0
+    [int16]$overwrite = 0
+    [string]$controlName = ''
+    $ok = $Session.Hwp.KeyIndicator(
+        [ref]$sectionCount,
+        [ref]$sectionNumber,
+        [ref]$printedPageNumber,
+        [ref]$columnNumber,
+        [ref]$lineNumber,
+        [ref]$position,
+        [ref]$overwrite,
+        [ref]$controlName
+    )
+    if (-not $ok -or $printedPageNumber -lt 1) {
+        throw '현재 인쇄 쪽 번호를 읽지 못했습니다.'
+    }
+    $printedPageNumber
+}
+
+function Invoke-HwpBuildToc {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Session,
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Operation
+    )
+
+    if (-not (Test-HwpEditProperty -InputObject $Operation.target -Name 'headingAnchors')) {
+        return New-HwpResult -Status BLOCKED -Command build-toc -Errors @('차례 제목 기준 문구 목록이 없습니다.')
+    }
+    $headingAnchors = @($Operation.target.headingAnchors)
+    if ($headingAnchors.Count -lt 1 -or $headingAnchors.Count -gt 200) {
+        return New-HwpResult -Status BLOCKED -Command build-toc -Errors @('차례 항목 수는 1~200개여야 합니다.')
+    }
+    $title = if (Test-HwpEditProperty -InputObject $Operation.target -Name 'title') {
+        [string]$Operation.target.title
+    }
+    else {
+        '차례'
+    }
+    if ([string]::IsNullOrWhiteSpace($title) -or $title.Length -gt 120) {
+        return New-HwpResult -Status BLOCKED -Command build-toc -Errors @('차례 제목은 1~120자여야 합니다.')
+    }
+
+    $targetResolution = Resolve-HwpTextTarget -Session $Session -Operation $Operation
+    if ($targetResolution.Status -ne 'PASS') {
+        return $targetResolution
+    }
+    $entries = [Collections.Generic.List[object]]::new()
+    $maximumHeadingIndex = -1
+    try {
+        $index = 0
+        foreach ($headingAnchorValue in $headingAnchors) {
+            $headingAnchor = [string]$headingAnchorValue
+            if ([string]::IsNullOrWhiteSpace($headingAnchor)) {
+                throw '차례 제목 기준 문구가 비어 있습니다.'
+            }
+            $headingOperation = [pscustomobject]@{
+                id = "$(Get-HwpOperationId -Operation $Operation)-heading-$index"
+                expectedMatches = 1
+                target = [pscustomobject]@{
+                    anchor = $headingAnchor
+                    beforeContext = ''
+                    afterContext = ''
+                }
+            }
+            $headingResolution = Resolve-HwpTextTarget -Session $Session -Operation $headingOperation
+            if ($headingResolution.Status -ne 'PASS') {
+                throw "차례 항목을 유일하게 찾지 못했습니다: $headingAnchor"
+            }
+            $headingSelection = Select-HwpResolvedTarget -Session $Session -Operation $headingOperation -Resolution $headingResolution
+            if ($headingSelection.Status -ne 'PASS') {
+                throw "차례 항목을 선택하지 못했습니다: $headingAnchor"
+            }
+            $pageNumber = Get-HwpCurrentPrintedPageNumber -Session $Session
+            $entries.Add([pscustomobject]@{
+                Text = $headingAnchor
+                PageNumber = $pageNumber
+                StartIndex = [int]$headingResolution.Data.StartIndex
+            })
+            $maximumHeadingIndex = [Math]::Max($maximumHeadingIndex, [int]$headingResolution.Data.StartIndex)
+            $index++
+        }
+    }
+    catch {
+        return New-HwpResult -Status BLOCKED -Command build-toc -Data ([pscustomobject]@{
+            Entries = @($entries)
+        }) -Errors @("차례 항목 분석에 실패했습니다: $($_.Exception.Message)")
+    }
+    if ([int]$targetResolution.Data.StartIndex -le $maximumHeadingIndex) {
+        return New-HwpResult -Status BLOCKED -Command build-toc -Data ([pscustomobject]@{
+            Entries = @($entries)
+        }) -Errors @('쪽 번호가 바뀌지 않도록 차례 삽입 위치는 모든 차례 항목 뒤에 있어야 합니다.')
+    }
+
+    $selection = Select-HwpResolvedTarget -Session $Session -Operation $Operation -Resolution $targetResolution
+    if ($selection.Status -ne 'PASS') {
+        return $selection
+    }
+    $placement = if (Test-HwpEditProperty -InputObject $Operation.target -Name 'placement') {
+        [string]$Operation.target.placement
+    }
+    else {
+        'after'
+    }
+    if ($placement -notin 'before','after') {
+        return New-HwpResult -Status BLOCKED -Command build-toc -Errors @('차례 위치는 before 또는 after여야 합니다.')
+    }
+    $pageBreakBefore = (Test-HwpEditProperty -InputObject $Operation.target -Name 'pageBreakBefore') -and
+        [bool]$Operation.target.pageBreakBefore
+    $lines = [Collections.Generic.List[string]]::new()
+    $lines.Add($title)
+    foreach ($entry in $entries) {
+        $lines.Add("$($entry.Text)`t$($entry.PageNumber)")
+    }
+    $tocText = ($lines -join "`r`n") + "`r`n"
+
+    try {
+        $positionSet = if ($placement -eq 'before') { $selection.Data.StartPosition } else { $selection.Data.EndPosition }
+        if (-not $Session.Hwp.SetPosBySet($positionSet)) {
+            throw '차례 삽입 위치로 이동하지 못했습니다.'
+        }
+        $pageCountBefore = [int]$Session.Hwp.PageCount
+        if ($pageBreakBefore) {
+            if (-not (Test-HwpActionAvailable -Session $Session -ActionId 'BreakPage')) {
+                return New-HwpResult -Status BLOCKED -Command build-toc -Errors @(
+                    '차례 앞쪽 나누기에 필요한 BreakPage 작업을 사용할 수 없습니다.'
+                )
+            }
+            if (-not $Session.Hwp.HAction.Run('BreakPage')) {
+                throw '차례 앞쪽 나누기에 실패했습니다.'
+            }
+        }
+        if (-not (Invoke-HwpInsertRawText -Session $Session -Text $tocText)) {
+            throw '차례 본문을 입력하지 못했습니다.'
+        }
+        $pageCountAfter = [int]$Session.Hwp.PageCount
+        $currentText = [string]$Session.Hwp.GetTextFile('UNICODE', '')
+    }
+    catch {
+        return New-HwpResult -Status FAILED -Command build-toc -Errors @(
+            "차례 생성 중 오류가 발생했습니다: $($_.Exception.Message)"
+        )
+    }
+    if (-not $currentText.Contains($tocText.TrimEnd("`r","`n"), [StringComparison]::Ordinal)) {
+        return New-HwpResult -Status FAILED -Command build-toc -Errors @('차례 본문 사후검증에 실패했습니다.')
+    }
+    if ($pageBreakBefore -and $pageCountAfter -lt $pageCountBefore + 1) {
+        return New-HwpResult -Status FAILED -Command build-toc -Errors @('차례 앞쪽 나누기 사후검증에 실패했습니다.')
+    }
+
+    New-HwpResult -Status PASS -Command build-toc -Data ([pscustomobject]@{
+        OperationId = Get-HwpOperationId -Operation $Operation
+        Type = 'build-toc'
+        Applied = $true
+        Method = 'manual-safe'
+        NativeMakeContentsUsed = $false
+        Title = $title
+        Entries = @($entries)
+        Placement = $placement
+        PageBreakBefore = $pageBreakBefore
+        PageCountBefore = $pageCountBefore
+        PageCountAfter = $pageCountAfter
+        Text = $tocText
+    }) -Warnings @(
+        '한컴 2024 일부 빌드에서 MakeContents 자동화가 서버 오류를 일으켜 실제 쪽 번호를 읽은 수동 차례를 생성했습니다.'
+    )
+}
+
+function Invoke-HwpMergeDocuments {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Session,
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Operation,
+        [bool]$ApprovedAdvanced = $false,
+        [ValidateRange(1, 2147483647)][long]$MaximumFileBytes = 134217728,
+        [ValidateRange(1, 2147483647)][long]$MaximumTotalBytes = 536870912
+    )
+
+    if (-not $ApprovedAdvanced) {
+        return New-HwpResult -Status BLOCKED -Command merge-documents -Errors @(
+            '문서 병합에는 approvedAdvanced=true의 명시적 승인이 필요합니다.'
+        )
+    }
+    if (-not (Test-HwpEditProperty -InputObject $Operation.target -Name 'paths')) {
+        return New-HwpResult -Status BLOCKED -Command merge-documents -Errors @('병합할 문서 경로 목록이 없습니다.')
+    }
+    $paths = @($Operation.target.paths)
+    if ($paths.Count -lt 1 -or $paths.Count -gt 50) {
+        return New-HwpResult -Status BLOCKED -Command merge-documents -Errors @('병합 문서 수는 1~50개여야 합니다.')
+    }
+    $pageBreakBetween = -not (Test-HwpEditProperty -InputObject $Operation.target -Name 'pageBreakBetween') -or
+        [bool]$Operation.target.pageBreakBetween
+    $files = [Collections.Generic.List[object]]::new()
+    [long]$totalBytes = 0
+    try {
+        foreach ($pathValue in $paths) {
+            $kind = Get-HwpFileKind -LiteralPath ([string]$pathValue)
+            if (-not $kind.ExtensionMatches -or $kind.DetectedKind -ne 'HWP-BINARY') {
+                throw "병합 입력은 실제 형식이 HWP 바이너리인 HWP 또는 HWT여야 합니다: $($kind.Path)"
+            }
+            $fileInfo = Get-Item -LiteralPath $kind.Path -ErrorAction Stop
+            if ($fileInfo.Length -gt $MaximumFileBytes) {
+                throw "병합 입력이 파일별 안전 한도를 초과했습니다: $($kind.Path)"
+            }
+            $totalBytes += $fileInfo.Length
+            if ($totalBytes -gt $MaximumTotalBytes) {
+                throw '병합 입력 전체 크기가 안전 한도를 초과했습니다.'
+            }
+            $files.Add([pscustomobject]@{
+                Path = $kind.Path
+                Extension = $kind.Extension
+                ByteLength = [long]$fileInfo.Length
+                Sha256Before = Get-HwpSha256 -LiteralPath $kind.Path
+            })
+        }
+    }
+    catch {
+        return New-HwpResult -Status BLOCKED -Command merge-documents -Data ([pscustomobject]@{
+            Files = @($files)
+            TotalBytes = $totalBytes
+        }) -Errors @($_.Exception.Message)
+    }
+
+    $results = [Collections.Generic.List[object]]::new()
+    try {
+        $textBefore = [string]$Session.Hwp.GetTextFile('UNICODE', '')
+        $pageCountBefore = [int]$Session.Hwp.PageCount
+        if (-not $Session.Hwp.HAction.Run('MoveDocEnd')) {
+            throw '병합 위치인 문서 끝으로 이동하지 못했습니다.'
+        }
+        foreach ($file in $files) {
+            if ($pageBreakBetween) {
+                if (-not (Test-HwpActionAvailable -Session $Session -ActionId 'BreakPage')) {
+                    throw '병합 문서 사이의 BreakPage 작업을 사용할 수 없습니다.'
+                }
+                if (-not $Session.Hwp.HAction.Run('BreakPage')) {
+                    throw '병합 문서 앞쪽 나누기에 실패했습니다.'
+                }
+            }
+            $bytes = [IO.File]::ReadAllBytes($file.Path)
+            $base64 = [Convert]::ToBase64String($bytes)
+            $loaded = [int]$Session.Hwp.SetTextFile($base64, 'HWP', 'insertfile')
+            if ($loaded -le 0) {
+                throw "한컴오피스가 메모리 병합 입력을 삽입하지 못했습니다: $($file.Path)"
+            }
+            $shaAfter = Get-HwpSha256 -LiteralPath $file.Path
+            if ($shaAfter -ne $file.Sha256Before) {
+                throw "병합 입력 원본의 SHA-256이 변경되었습니다: $($file.Path)"
+            }
+            $results.Add([pscustomobject]@{
+                Path = $file.Path
+                Sha256 = $file.Sha256Before
+                ByteLength = $file.ByteLength
+                Loaded = $loaded
+                SourcePreserved = $true
+                HancomDiskAccess = $false
+            })
+        }
+        $textAfter = [string]$Session.Hwp.GetTextFile('UNICODE', '')
+        $pageCountAfter = [int]$Session.Hwp.PageCount
+    }
+    catch {
+        return New-HwpResult -Status FAILED -Command merge-documents -Data ([pscustomobject]@{
+            Files = @($results)
+            TotalBytes = $totalBytes
+        }) -Errors @("문서 병합 중 오류가 발생했습니다: $($_.Exception.Message)")
+    }
+    if ($textAfter.Length -le $textBefore.Length -or $pageCountAfter -lt $pageCountBefore) {
+        return New-HwpResult -Status FAILED -Command merge-documents -Errors @('문서 병합 사후검증에 실패했습니다.')
+    }
+
+    New-HwpResult -Status PASS -Command merge-documents -Data ([pscustomobject]@{
+        OperationId = Get-HwpOperationId -Operation $Operation
+        Type = 'merge-documents'
+        Applied = $true
+        Files = @($results)
+        FileCount = $results.Count
+        TotalBytes = $totalBytes
+        PageBreakBetween = $pageBreakBetween
+        PageCountBefore = $pageCountBefore
+        PageCountAfter = $pageCountAfter
+        TextLengthBefore = $textBefore.Length
+        TextLengthAfter = $textAfter.Length
+        SourcePreserved = $true
+        HancomDiskAccess = $false
+    })
+}
+
+function Invoke-HwpReferenceObject {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Session,
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Operation
+    )
+
+    switch ([string]$Operation.type) {
+        'add-bookmark' { Invoke-HwpAddBookmark -Session $Session -Operation $Operation; break }
+        'add-hyperlink' { Invoke-HwpAddHyperlink -Session $Session -Operation $Operation; break }
+        'add-caption' { Invoke-HwpAddCaption -Session $Session -Operation $Operation; break }
+        'add-footnote' { Invoke-HwpAddNote -Session $Session -Operation $Operation; break }
+        'add-endnote' { Invoke-HwpAddNote -Session $Session -Operation $Operation; break }
+        'build-toc' { Invoke-HwpBuildToc -Session $Session -Operation $Operation; break }
+        default {
+            New-HwpResult -Status BLOCKED -Command reference-object -Errors @(
+                "지원하지 않는 참조 개체 작업입니다: $($Operation.type)"
+            )
+        }
+    }
+}
+
 function Invoke-HwpEditOperation {
     [CmdletBinding()]
     param(
@@ -1637,6 +2284,13 @@ function Invoke-HwpEditOperation {
         'set-section' { Invoke-HwpSetSection -Session $Session -Operation $Operation -ApprovedAdvanced:$ApprovedAdvanced; break }
         'set-header-footer' { Invoke-HwpHeaderFooter -Session $Session -Operation $Operation; break }
         'set-page-number' { Invoke-HwpSetPageNumber -Session $Session -Operation $Operation; break }
+        'add-bookmark' { Invoke-HwpReferenceObject -Session $Session -Operation $Operation; break }
+        'add-hyperlink' { Invoke-HwpReferenceObject -Session $Session -Operation $Operation; break }
+        'add-caption' { Invoke-HwpReferenceObject -Session $Session -Operation $Operation; break }
+        'add-footnote' { Invoke-HwpReferenceObject -Session $Session -Operation $Operation; break }
+        'add-endnote' { Invoke-HwpReferenceObject -Session $Session -Operation $Operation; break }
+        'build-toc' { Invoke-HwpReferenceObject -Session $Session -Operation $Operation; break }
+        'merge-documents' { Invoke-HwpMergeDocuments -Session $Session -Operation $Operation -ApprovedAdvanced:$ApprovedAdvanced; break }
         default {
             New-HwpResult -Status BLOCKED -Command edit-operation -Data $allowed.Data -Errors @(
                 "현재 구현에서 아직 실행할 수 없는 작업입니다: $($Operation.type)"
@@ -2145,6 +2799,13 @@ Export-ModuleMember -Function @(
     'Get-HwpHeaderFooterTextSnapshot',
     'Invoke-HwpHeaderFooter',
     'Invoke-HwpSetPageNumber',
+    'Invoke-HwpAddBookmark',
+    'Invoke-HwpAddHyperlink',
+    'Invoke-HwpAddCaption',
+    'Invoke-HwpAddNote',
+    'Invoke-HwpBuildToc',
+    'Invoke-HwpReferenceObject',
+    'Invoke-HwpMergeDocuments',
     'Invoke-HwpEditOperation',
     'Save-HwpMemoryDocument',
     'Test-HwpOperationPostcondition',

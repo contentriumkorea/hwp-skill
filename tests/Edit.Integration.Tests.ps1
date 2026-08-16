@@ -79,6 +79,16 @@ Describe 'Invoke-HwpEditOperation 정책' {
         $result.Status | Should Be 'BLOCKED'
         ($result.Errors -join ' ') | Should Match '승인'
     }
+
+    It 'merge-documents는 명시적 고급 승인 없이 실행하지 않는다' {
+        $session = New-FakeTextSession -Text '병합 대상'
+        $operation = New-MergeOperation -Paths @('C:\fixture.hwp')
+
+        $result = Invoke-HwpEditOperation -Session $session -Operation $operation -ApprovedAdvanced:$false
+
+        $result.Status | Should Be 'BLOCKED'
+        ($result.Errors -join ' ') | Should Match '승인'
+    }
 }
 
 Describe 'Invoke-HwpApply 사전 차단' {
@@ -316,5 +326,77 @@ Describe 'HWP 서식과 문서 구조 편집 실제 한컴 통합 시험' -Tags 
         @($after.Controls | Where-Object CtrlId -eq 'head').Count | Should Be 1
         @($after.Controls | Where-Object CtrlId -eq 'foot').Count | Should Be 1
         @($after.Controls | Where-Object CtrlId -eq 'pgnp').Count | Should Be 1
+    }
+}
+
+Describe 'HWP 참조 개체 편집 실제 한컴 통합 시험' -Tags Native,Reference {
+    It '캡션·각주·미주·하이퍼링크·책갈피를 넣고 재열어서 확인한다' -Skip:(-not $runNative) {
+        $sourceHash = Get-HwpSha256 -LiteralPath $fixtureHwp
+        $output = Join-Path $TestDrive 'reference-objects.hwp'
+        $operations = @(
+            (New-CaptionOperation -ControlId tbl -ControlIndex 1 -Text '시험 표 캡션'),
+            (New-NoteOperation -Type add-footnote -Anchor '쪽 나누기 위치' -Text '각주 시험 내용'),
+            (New-NoteOperation -Type add-endnote -Anchor '이미지 삽입 위치' -Text '미주 시험 내용'),
+            (New-HyperlinkOperation -Anchor '기존 문구' -Url 'https://example.com/hwp-test'),
+            (New-BookmarkOperation -Anchor 'HWP 네이티브 통합 시험' -Name '통합시험_제목')
+        )
+
+        $session = New-HwpSession
+        try {
+            (Open-HwpDocumentFromMemory -Session $session -LiteralPath $fixtureHwp).Status | Should Be 'PASS'
+            $results = @(
+                foreach ($operation in $operations) {
+                    Invoke-HwpEditOperation -Session $session -Operation $operation -ApprovedAdvanced:$true
+                }
+            )
+            @($results | Where-Object Status -ne 'PASS').Count | Should Be 0
+            (Save-HwpMemoryDocument -Session $session -SourcePath $fixtureHwp -OutputPath $output).Status | Should Be 'PASS'
+        }
+        finally {
+            Close-HwpSession -Session $session
+        }
+
+        $after = Get-HwpInspection -LiteralPath $output
+        $after.Status | Should Be 'PASS'
+        $after.Text | Should Match '시험 표 캡션'
+        $after.Text | Should Match '각주 시험 내용'
+        $after.Text | Should Match '미주 시험 내용'
+        @($after.Controls | Where-Object CtrlId -eq '%hlk').Count | Should Be 1
+        @($after.Controls | Where-Object CtrlId -eq '%bmk').Count | Should Be 1
+        @($after.Controls | Where-Object CtrlId -eq 'fn').Count | Should Be 1
+        @($after.Controls | Where-Object CtrlId -eq 'en').Count | Should Be 1
+        (Get-HwpSha256 -LiteralPath $fixtureHwp) | Should Be $sourceHash
+    }
+
+    It '안전한 수동 차례를 만들고 HWP를 메모리 방식으로 병합한다' -Skip:(-not $runNative) {
+        $sourceHash = Get-HwpSha256 -LiteralPath $fixtureHwp
+        $output = Join-Path $TestDrive 'toc-and-merge.hwp'
+        $operations = @(
+            (New-TocOperation -Anchor '쪽 나누기 위치' -HeadingAnchors @('HWP 네이티브 통합 시험','표 삽입 위치') -Title '차례'),
+            (New-MergeOperation -Paths @($fixtureHwp) -PageBreakBetween $true -VerifyText '기존 문구' -VerifyCount 2)
+        )
+
+        $session = New-HwpSession
+        try {
+            (Open-HwpDocumentFromMemory -Session $session -LiteralPath $fixtureHwp).Status | Should Be 'PASS'
+            $results = @(
+                foreach ($operation in $operations) {
+                    Invoke-HwpEditOperation -Session $session -Operation $operation -ApprovedAdvanced:$true
+                }
+            )
+            @($results | Where-Object Status -ne 'PASS').Count | Should Be 0
+            (Save-HwpMemoryDocument -Session $session -SourcePath $fixtureHwp -OutputPath $output).Status | Should Be 'PASS'
+        }
+        finally {
+            Close-HwpSession -Session $session
+        }
+
+        $after = Get-HwpInspection -LiteralPath $output
+        $after.Status | Should Be 'PASS'
+        $after.Text | Should Match '차례'
+        $after.Text | Should Match "HWP 네이티브 통합 시험\t1"
+        ([regex]::Matches($after.Text, [regex]::Escape('기존 문구'))).Count | Should Be 2
+        $after.PageCount | Should BeGreaterThan 1
+        (Get-HwpSha256 -LiteralPath $fixtureHwp) | Should Be $sourceHash
     }
 }

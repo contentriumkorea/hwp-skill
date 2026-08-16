@@ -274,6 +274,108 @@ function New-PageNumberOperation {
     $operation
 }
 
+function New-BookmarkOperation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Anchor,
+        [Parameter(Mandatory)][ValidatePattern('^[^;\r\n]{1,120}$')][string]$Name
+    )
+
+    $operation = New-Operation -Type 'add-bookmark' -Anchor $Anchor -Before '' -After ''
+    $operation.target | Add-Member NoteProperty name $Name
+    $operation.verify.kind = 'control-count'
+    $operation.verify.expected = 1
+    $operation.verify | Add-Member NoteProperty ctrlId '%bmk'
+    $operation
+}
+
+function New-HyperlinkOperation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Anchor,
+        [Parameter(Mandatory)][ValidatePattern('^https?://')][string]$Url
+    )
+
+    $operation = New-Operation -Type 'add-hyperlink' -Anchor $Anchor -Before '' -After ''
+    $operation.target | Add-Member NoteProperty url $Url
+    $operation.verify.kind = 'control-count'
+    $operation.verify.expected = 1
+    $operation.verify | Add-Member NoteProperty ctrlId '%hlk'
+    $operation
+}
+
+function New-CaptionOperation {
+    [CmdletBinding()]
+    param(
+        [ValidateSet('tbl','gso')][string]$ControlId = 'tbl',
+        [ValidateRange(1, 10000)][int]$ControlIndex = 1,
+        [Parameter(Mandatory)][string]$Text
+    )
+
+    $operation = New-Operation -Type 'add-caption' -Anchor 'control-caption' -Before '' -After $Text
+    $operation.target | Add-Member NoteProperty controlId $ControlId
+    $operation.target | Add-Member NoteProperty controlIndex $ControlIndex
+    $operation.target | Add-Member NoteProperty text $Text
+    $operation.verify.kind = 'text-contains'
+    $operation.verify.expected = $Text
+    $operation
+}
+
+function New-NoteOperation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateSet('add-footnote','add-endnote')][string]$Type,
+        [Parameter(Mandatory)][string]$Anchor,
+        [Parameter(Mandatory)][string]$Text,
+        [ValidateSet('before','after')][string]$Placement = 'after'
+    )
+
+    $operation = New-Operation -Type $Type -Anchor $Anchor -Before '' -After $Text
+    $operation.target | Add-Member NoteProperty text $Text
+    $operation.target | Add-Member NoteProperty placement $Placement
+    $operation.verify.kind = 'text-contains'
+    $operation.verify.expected = $Text
+    $operation
+}
+
+function New-TocOperation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Anchor,
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string[]]$HeadingAnchors,
+        [string]$Title = '차례',
+        [ValidateSet('before','after')][string]$Placement = 'after',
+        [bool]$PageBreakBefore = $true
+    )
+
+    $operation = New-Operation -Type 'build-toc' -Anchor $Anchor -Before '' -After $Title
+    $operation.target | Add-Member NoteProperty headingAnchors @($HeadingAnchors)
+    $operation.target | Add-Member NoteProperty title $Title
+    $operation.target | Add-Member NoteProperty placement $Placement
+    $operation.target | Add-Member NoteProperty pageBreakBefore $PageBreakBefore
+    $operation.verify.kind = 'text-contains'
+    $operation.verify.expected = $Title
+    $operation
+}
+
+function New-MergeOperation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string[]]$Paths,
+        [bool]$PageBreakBetween = $true,
+        [string]$VerifyText = '기존 문구',
+        [ValidateRange(1, 10000)][int]$VerifyCount = 2
+    )
+
+    $operation = New-Operation -Type 'merge-documents' -Anchor 'document-end' -Before '' -After '' -Risk 'advanced'
+    $operation.target | Add-Member NoteProperty paths @($Paths)
+    $operation.target | Add-Member NoteProperty pageBreakBetween $PageBreakBetween
+    $operation.verify.kind = 'text-count'
+    $operation.verify.expected = $VerifyCount
+    $operation.verify | Add-Member NoteProperty value $VerifyText
+    $operation
+}
+
 Export-ModuleMember -Function @(
     'New-Operation',
     'New-ValidPlan',
@@ -288,5 +390,11 @@ Export-ModuleMember -Function @(
     'New-PageBreakOperation',
     'New-SectionOperation',
     'New-HeaderFooterOperation',
-    'New-PageNumberOperation'
+    'New-PageNumberOperation',
+    'New-BookmarkOperation',
+    'New-HyperlinkOperation',
+    'New-CaptionOperation',
+    'New-NoteOperation',
+    'New-TocOperation',
+    'New-MergeOperation'
 )
