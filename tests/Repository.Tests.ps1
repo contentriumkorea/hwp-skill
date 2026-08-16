@@ -62,7 +62,9 @@ Describe 'hwp-skill 저장소 구조' {
 
         $content | Should Match 'GetTypeFromProgID'
         $content | Should Not Match 'New-Object\s+-ComObject'
+        $content | Should Not Match 'Activator\s*::\s*CreateInstance'
         $content | Should Not Match 'New-HwpSession'
+        $content | Should Not Match 'Start-Process'
         $content | Should Not Match 'Hwp\.exe'
     }
 

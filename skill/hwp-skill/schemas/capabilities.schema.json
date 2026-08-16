@@ -1,5 +1,5 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/contentriumkorea/hwp-skill/blob/main/skill/hwp-skill/schemas/capabilities.schema.json",
   "title": "HWP Backend Capabilities",
   "type": "object",
@@ -11,54 +11,284 @@
   ],
   "properties": {
     "schemaVersion": {
-      "type": "string",
       "const": "1.0"
     },
     "executionMode": {
-      "type": "string"
+      "enum": [
+        "silent",
+        "isolated-native",
+        "interactive"
+      ]
     },
     "backends": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "id",
-          "available",
-          "formats",
-          "operations",
-          "requiresGui",
-          "isolation",
-          "reason"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "available": {
-            "type": "boolean"
-          },
-          "formats": {
-            "type": "array",
-            "items": {
-              "type": "string"
+      "minItems": 4,
+      "maxItems": 4,
+      "additionalItems": false,
+      "items": [
+        {
+          "$ref": "#/definitions/hwpxDirectBackend"
+        },
+        {
+          "$ref": "#/definitions/hwpPortableBackend"
+        },
+        {
+          "$ref": "#/definitions/hancomIsolatedBackend"
+        },
+        {
+          "$ref": "#/definitions/hancomInteractiveBackend"
+        }
+      ]
+    }
+  },
+  "definitions": {
+    "hwpxDirectBackend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "available",
+        "formats",
+        "operations",
+        "requiresGui",
+        "isolation",
+        "reason"
+      ],
+      "properties": {
+        "id": {
+          "const": "hwpx-direct"
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "formats": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "additionalItems": false,
+          "items": [
+            {
+              "const": "HWPX-ZIP"
             }
-          },
-          "operations": {
-            "type": "array",
-            "items": {
-              "type": "string"
+          ]
+        },
+        "operations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "additionalItems": false,
+          "items": [
+            {
+              "const": "inspect"
             }
-          },
-          "requiresGui": {
-            "type": "boolean"
-          },
-          "isolation": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          }
+          ]
+        },
+        "requiresGui": {
+          "const": false
+        },
+        "isolation": {
+          "const": "none"
+        },
+        "reason": {
+          "const": "HWPX ZIP/XML direct inspection is built in."
+        }
+      }
+    },
+    "hwpPortableBackend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "available",
+        "formats",
+        "operations",
+        "requiresGui",
+        "isolation",
+        "reason"
+      ],
+      "properties": {
+        "id": {
+          "const": "hwp-portable"
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "formats": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "additionalItems": false,
+          "items": [
+            {
+              "const": "HWP-BINARY"
+            }
+          ]
+        },
+        "operations": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "additionalItems": false,
+          "items": [
+            {
+              "const": "inspect"
+            },
+            {
+              "const": "generate"
+            },
+            {
+              "const": "apply"
+            },
+            {
+              "const": "batch"
+            },
+            {
+              "const": "verify"
+            }
+          ]
+        },
+        "requiresGui": {
+          "const": false
+        },
+        "isolation": {
+          "const": "none"
+        },
+        "reason": {
+          "const": "Portable backend availability depends on the packaged runtime manifest."
+        }
+      }
+    },
+    "hancomIsolatedBackend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "available",
+        "formats",
+        "operations",
+        "requiresGui",
+        "isolation",
+        "reason"
+      ],
+      "properties": {
+        "id": {
+          "const": "hancom-isolated"
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "formats": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "additionalItems": false,
+          "items": [
+            {
+              "const": "HWP-BINARY"
+            }
+          ]
+        },
+        "operations": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "additionalItems": false,
+          "items": [
+            {
+              "const": "inspect"
+            },
+            {
+              "const": "generate"
+            },
+            {
+              "const": "apply"
+            },
+            {
+              "const": "batch"
+            },
+            {
+              "const": "verify"
+            },
+            {
+              "const": "export"
+            }
+          ]
+        },
+        "requiresGui": {
+          "const": true
+        },
+        "isolation": {
+          "const": "separate-session"
+        },
+        "reason": {
+          "const": "Isolated native worker support will be wired in without using local COM fallback."
+        }
+      }
+    },
+    "hancomInteractiveBackend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "available",
+        "formats",
+        "operations",
+        "requiresGui",
+        "isolation",
+        "reason"
+      ],
+      "properties": {
+        "id": {
+          "const": "hancom-interactive"
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "formats": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "additionalItems": false,
+          "items": [
+            {
+              "const": "HWP-BINARY"
+            }
+          ]
+        },
+        "operations": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "additionalItems": false,
+          "items": [
+            {
+              "const": "inspect"
+            },
+            {
+              "const": "generate"
+            },
+            {
+              "const": "apply"
+            },
+            {
+              "const": "batch"
+            },
+            {
+              "const": "verify"
+            },
+            {
+              "const": "export"
+            }
+          ]
+        },
+        "requiresGui": {
+          "const": true
+        },
+        "isolation": {
+          "const": "current-session"
+        },
+        "reason": {
+          "const": "Interactive Hancom automation depends on local COM registration only."
         }
       }
     }
