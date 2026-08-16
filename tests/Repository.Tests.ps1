@@ -45,13 +45,25 @@ Describe 'hwp-skill 저장소 구조' {
         { Get-Content -LiteralPath $generateExample -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop } | Should Not Throw
     }
 
-    It '편집·검사·새 문서 계획 JSON 스키마가 유효한 JSON이다' {
-        foreach ($name in 'edit-plan.schema.json','inspection.schema.json','generate-plan.schema.json') {
+    It '편집·검사·기능·새 문서 계획 JSON 스키마가 유효한 JSON이다' {
+        foreach ($name in 'capabilities.schema.json','edit-plan.schema.json','inspection.schema.json','generate-plan.schema.json') {
             $schemaPath = Join-Path $PSScriptRoot "../skill/hwp-skill/schemas/$name"
             Test-Path $schemaPath | Should Be $true
             { Get-Content -LiteralPath $schemaPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop } | Should Not Throw
             (Get-Content -LiteralPath $schemaPath -Raw -Encoding UTF8) | Should Match 'https://github.com/contentriumkorea/hwp-skill/'
         }
+    }
+
+    It '기능 스냅샷 모듈은 로컬 COM이나 Hancom 실행을 직접 만들지 않는다' {
+        $modulePath = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCapabilities.psm1'
+        Test-Path $modulePath | Should Be $true
+
+        $content = Get-Content -LiteralPath $modulePath -Raw -Encoding UTF8
+
+        $content | Should Match 'GetTypeFromProgID'
+        $content | Should Not Match 'New-Object\s+-ComObject'
+        $content | Should Not Match 'New-HwpSession'
+        $content | Should Not Match 'Hwp\.exe'
     }
 
     It '공개 편집 스키마가 위험한 계획 조합을 거부한다' {
