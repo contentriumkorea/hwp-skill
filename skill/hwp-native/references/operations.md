@@ -170,7 +170,9 @@ SHA-256을 가져온다.
 ## 고급 작업
 
 아래 작업은 `risk`를 `advanced`로 쓰고, 사용자의 명시적 승인 후에만 최상위
-`approvedAdvanced`를 `true`로 바꾼다.
+`approvedAdvanced`를 `true`로 바꾼다. 이 기록만으로 실행 권한이 생기지는 않으며,
+`apply`, 양식 `generate`, 실제 `batch` 명령에도 `-ApproveAdvanced`를 별도로 전달해야
+한다.
 
 ### `delete-range`
 

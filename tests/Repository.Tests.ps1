@@ -42,6 +42,30 @@ Describe 'hwp-native 저장소 구조' {
         }
     }
 
+    It '공개 편집 스키마가 위험한 계획 조합을 거부한다' {
+        $schemaPath = Join-Path $PSScriptRoot '../skill/hwp-native/schemas/edit-plan.schema.json'
+        $valid = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../skill/hwp-native/examples/replace-text.plan.json') `
+            -Raw -Encoding UTF8 | ConvertFrom-Json
+
+        (($valid | ConvertTo-Json -Depth 30) | Test-Json -SchemaFile $schemaPath -ErrorAction SilentlyContinue) | Should Be $true
+
+        $valid.operations[0].target.anchor = ''
+        (($valid | ConvertTo-Json -Depth 30) | Test-Json -SchemaFile $schemaPath -ErrorAction SilentlyContinue) | Should Be $false
+        $valid.operations[0].target.anchor = '기존 사업명'
+
+        $valid.operations[0].expectedMatches = 2
+        (($valid | ConvertTo-Json -Depth 30) | Test-Json -SchemaFile $schemaPath -ErrorAction SilentlyContinue) | Should Be $false
+        $valid.operations[0].expectedMatches = 1
+
+        $valid.operations[0].type = 'merge-documents'
+        $valid.operations[0].risk = 'safe'
+        (($valid | ConvertTo-Json -Depth 30) | Test-Json -SchemaFile $schemaPath -ErrorAction SilentlyContinue) | Should Be $false
+
+        $valid.operations[0].risk = 'advanced'
+        $valid.approvedAdvanced = $false
+        (($valid | ConvertTo-Json -Depth 30) | Test-Json -SchemaFile $schemaPath -ErrorAction SilentlyContinue) | Should Be $false
+    }
+
     It 'SKILL.md가 간결한 한국어 안전 워크플로를 명시한다' {
         $skillPath = Join-Path $PSScriptRoot '../skill/hwp-native/SKILL.md'
         $skill = Get-Content -LiteralPath $skillPath -Raw -Encoding UTF8

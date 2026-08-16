@@ -439,7 +439,8 @@ function Invoke-HwpGenerateFromTemplate {
     param(
         [Parameter(Mandatory)][string]$TemplatePath,
         [Parameter(Mandatory)][object]$Plan,
-        [Parameter(Mandatory)][string]$OutputPath
+        [Parameter(Mandatory)][string]$OutputPath,
+        [bool]$ApproveAdvanced = $false
     )
 
     try {
@@ -461,7 +462,8 @@ function Invoke-HwpGenerateFromTemplate {
             -TemplateSha256 $templateHash -Before $before -Errors @($before.Errors)
     }
 
-    $apply = Invoke-HwpApply -LiteralPath $kind.Path -Plan $Plan -OutputPath $OutputPath
+    $apply = Invoke-HwpApply -LiteralPath $kind.Path -Plan $Plan -OutputPath $OutputPath `
+        -ApproveAdvanced:$ApproveAdvanced
     $currentHash = Get-HwpSha256 -LiteralPath $kind.Path
     if ($currentHash -ne $templateHash) {
         return New-HwpGenerateResult -Status FAILED -Mode template -TemplatePath $kind.Path `
@@ -604,11 +606,13 @@ function Invoke-HwpGenerate {
         [switch]$NewDocument,
 
         [Parameter(Mandatory)][ValidateNotNull()][object]$Plan,
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$OutputPath
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$OutputPath,
+        [switch]$ApproveAdvanced
     )
 
     if ($PSCmdlet.ParameterSetName -eq 'Template') {
-        return Invoke-HwpGenerateFromTemplate -TemplatePath $TemplatePath -Plan $Plan -OutputPath $OutputPath
+        return Invoke-HwpGenerateFromTemplate -TemplatePath $TemplatePath -Plan $Plan -OutputPath $OutputPath `
+            -ApproveAdvanced:([bool]$ApproveAdvanced)
     }
     Invoke-HwpGenerateNewDocument -Plan $Plan -OutputPath $OutputPath
 }

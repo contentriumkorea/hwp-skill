@@ -38,6 +38,7 @@ Describe 'Test-HwpEditPlan' {
 
     It '승인된 advanced 작업을 허용한다' {
         $plan = New-ValidPlan -Type 'merge-documents' -Risk 'advanced' -ApprovedAdvanced $true
+        $plan.operations[0].target | Add-Member NoteProperty paths @('C:\fixture.hwp')
 
         $result = Test-HwpEditPlan -Plan $plan
 
@@ -147,5 +148,44 @@ Describe 'Assert-HwpOperationAllowed' {
         $result = Assert-HwpOperationAllowed -Operation $operation -ApprovedAdvanced:$false
 
         $result.Status | Should Be 'BLOCKED'
+    }
+}
+
+Describe 'Assert-HwpRuntimeAdvancedApproval' {
+    It '계획 파일 자체의 승인만으로 고급 작업 실행을 허용하지 않는다' {
+        $plan = New-ValidPlan -Type 'merge-documents' -Risk 'advanced' -ApprovedAdvanced $true
+
+        $result = Assert-HwpRuntimeAdvancedApproval -Plan $plan -ApproveAdvanced:$false
+
+        $result.Status | Should Be 'BLOCKED'
+        ($result.Errors -join ' ') | Should Match 'ApproveAdvanced'
+    }
+
+    It '계획 기록과 런타임 승인이 모두 있으면 고급 작업을 허용한다' {
+        $plan = New-ValidPlan -Type 'merge-documents' -Risk 'advanced' -ApprovedAdvanced $true
+
+        $result = Assert-HwpRuntimeAdvancedApproval -Plan $plan -ApproveAdvanced:$true
+
+        $result.Status | Should Be 'PASS'
+    }
+}
+
+Describe '작업별 대상 필드 검증' {
+    It 'set-field 계획에 fieldName이 없으면 적용 전에 차단한다' {
+        $plan = New-ValidPlan -Type 'set-field'
+
+        $result = Test-HwpEditPlan -Plan $plan
+
+        $result.Status | Should Be 'BLOCKED'
+        ($result.Errors -join ' ') | Should Match 'fieldName'
+    }
+
+    It '글자 서식 변경 값이 하나도 없으면 적용 전에 차단한다' {
+        $plan = New-ValidPlan -Type 'apply-char-style'
+
+        $result = Test-HwpEditPlan -Plan $plan
+
+        $result.Status | Should Be 'BLOCKED'
+        ($result.Errors -join ' ') | Should Match 'heightPt|bold|italic'
     }
 }

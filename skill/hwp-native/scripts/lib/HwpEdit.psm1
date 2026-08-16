@@ -2567,12 +2567,17 @@ function Invoke-HwpApply {
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$LiteralPath,
         [Parameter(Mandatory)][ValidateNotNull()][object]$Plan,
         [string]$OutputPath = '',
+        [bool]$ApproveAdvanced = $false,
         [scriptblock]$SessionFactory = { New-HwpSession }
     )
 
     $validation = Test-HwpEditPlan -Plan $Plan
     if ($validation.Status -ne 'PASS') {
         return New-HwpApplyResult -Status BLOCKED -Errors @($validation.Errors) -Warnings @($validation.Warnings)
+    }
+    $runtimeApproval = Assert-HwpRuntimeAdvancedApproval -Plan $Plan -ApproveAdvanced:$ApproveAdvanced
+    if ($runtimeApproval.Status -ne 'PASS') {
+        return New-HwpApplyResult -Status BLOCKED -Errors @($runtimeApproval.Errors) -Warnings @($runtimeApproval.Warnings)
     }
 
     try {
@@ -2667,7 +2672,7 @@ function Invoke-HwpApply {
         if (-not $stopped) {
             foreach ($operation in @($Plan.operations)) {
                 $result = Invoke-HwpEditOperation -Session $session -Operation $operation `
-                    -ApprovedAdvanced:([bool]$Plan.approvedAdvanced)
+                    -ApprovedAdvanced:([bool]$ApproveAdvanced)
                 $operationResults.Add($result)
                 if ($result.Status -eq 'PASS') {
                     $appliedOperations.Add($operation)

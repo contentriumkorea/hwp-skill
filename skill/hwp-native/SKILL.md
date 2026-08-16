@@ -14,8 +14,9 @@ description: Windows에 설치된 한컴오피스를 통해 로컬 HWP, HWT, HWP
 1. 원본 파일을 덮어쓰지 않는다.
 2. HWT는 항상 별도의 HWP 결과로 만든다.
 3. 수정 전에 사전 점검, 읽기 전용 검사, 결정적 JSON 계획 검증을 수행한다.
-4. `advanced` 작업은 사용자가 해당 변경을 명시적으로 승인한 뒤에만
-   `approvedAdvanced=true`로 실행한다.
+4. `advanced` 작업은 사용자가 해당 변경을 명시적으로 승인한 뒤 계획에
+   `approvedAdvanced=true`를 기록하고 실행 명령에도 별도 `-ApproveAdvanced`를
+   전달해야 한다.
 5. 수정 결과를 다시 열어 본문과 구조를 검사하기 전에는 완료라고 말하지 않는다.
 6. PDF와 전체 페이지 이미지까지 확인하지 못했다면 시각 검증 완료라고 말하지 않는다.
 7. 암호, DRM, 배포용 문서 제한, 전자서명을 우회하거나 매크로를 실행하지 않는다.
@@ -95,7 +96,9 @@ description: Windows에 설치된 한컴오피스를 통해 로컬 HWP, HWT, HWP
 
 `delete-range`, `add-table-row`, `set-section`, `merge-documents`는 `advanced`다.
 사용자에게 대상, 바뀌는 구조, 별도 결과 경로를 설명하고 명시적 승인을 받아야 한다.
-승인 전에는 `approvedAdvanced=false`를 유지하며 적용 명령을 호출하지 않는다.
+승인 전에는 `approvedAdvanced=false`를 유지하며 적용 명령을 호출하지 않는다. 계획
+파일의 `approvedAdvanced=true`만으로는 실행할 수 없고, 승인받은 현재 대화에서만
+`-ApproveAdvanced`를 별도로 전달한다.
 
 ### 5. 별도 파일에 적용
 
@@ -108,7 +111,8 @@ description: Windows에 설치된 한컴오피스를 통해 로컬 HWP, HWT, HWP
 
 `OutputPath`를 생략하면 원본 옆에 날짜가 포함된 수정본 경로를 만든다. 원본 경로와
 같은 출력은 거부해야 한다. 실행 결과에서 원본 작업 전후 SHA-256, 임시 파일 승격,
-작업별 적용 횟수, 재열기 결과를 확인한다.
+작업별 적용 횟수, 재열기 결과를 확인한다. 고급 작업을 승인받은 경우에만 이 명령에
+`-ApproveAdvanced`를 추가한다.
 
 ### 6. 비교 및 시각 검증
 
@@ -156,7 +160,8 @@ HWT/HWP 양식의 필드나 본문을 채울 때는 편집 계획을 검증한 �
   -PlanPath "C:\업무\plan.json"
 ```
 
-승인 후에만 같은 명령에 `-Apply`를 추가한다. 드라이브 루트, 사용자 프로필 전체,
+고급 작업이 없는 계획은 `-ApproveAdvanced`를 생략한다. 승인 후에만 일괄 명령에
+`-Apply`를 추가하고, 고급 작업 계획이면 `-ApproveAdvanced`도 함께 추가한다. 드라이브 루트, 사용자 프로필 전체,
 저장소 전체를 탐색하지 않는다. 출력 폴더는 입력 폴더 안에 둔다. HWPX 항목은 현재
 검사만 하며 수정 항목으로 처리하지 않는다.
 

@@ -210,13 +210,27 @@ function Invoke-HwpBatch {
         [Parameter(Mandatory)][ValidateNotNull()][object]$Plan,
         [string]$OutputDirectory = '',
         [switch]$Apply,
+        [switch]$ApproveAdvanced,
         [Parameter(ParameterSetName = 'Directory')][switch]$Recurse,
         [ValidateRange(1, 10000)][int]$MaximumFiles = 100,
         [scriptblock]$Inspector = { param($path) Get-HwpInspection -LiteralPath $path },
-        [scriptblock]$ApplyInvoker = { param($path,$itemPlan,$output) Invoke-HwpApply -LiteralPath $path -Plan $itemPlan -OutputPath $output }
+        [scriptblock]$ApplyInvoker = {
+            param($path,$itemPlan,$output,$approveAdvanced)
+            Invoke-HwpApply -LiteralPath $path -Plan $itemPlan -OutputPath $output -ApproveAdvanced:$approveAdvanced
+        }
     )
 
     $dryRun = -not [bool]$Apply
+    $baseValidation = Test-HwpEditPlan -Plan $Plan
+    if ($baseValidation.Status -ne 'PASS') {
+        return New-HwpBatchResult -Status BLOCKED -DryRun:$dryRun -Errors @($baseValidation.Errors)
+    }
+    if ($Apply) {
+        $runtimeApproval = Assert-HwpRuntimeAdvancedApproval -Plan $Plan -ApproveAdvanced:([bool]$ApproveAdvanced)
+        if ($runtimeApproval.Status -ne 'PASS') {
+            return New-HwpBatchResult -Status BLOCKED -DryRun:$dryRun -Errors @($runtimeApproval.Errors)
+        }
+    }
     $resolved = if ($PSCmdlet.ParameterSetName -eq 'Directory') {
         Resolve-HwpBatchInputs -InputPaths $null -InputDirectory $InputDirectory -Recurse:([bool]$Recurse) -MaximumFiles $MaximumFiles
     }
@@ -307,7 +321,7 @@ function Invoke-HwpBatch {
         $baseOutput = [IO.Path]::Combine($itemOutputDirectory, ([IO.Path]::GetFileNameWithoutExtension($path) + '.hwp'))
         $outputPath = Get-HwpVersionedPath -LiteralPath $baseOutput
         try {
-            $applyResult = & $ApplyInvoker $path $itemPlan $outputPath
+            $applyResult = & $ApplyInvoker $path $itemPlan $outputPath ([bool]$ApproveAdvanced)
         }
         catch {
             $items.Add((New-HwpBatchItemResult -Status FAILED -InputPath $path -InputSha256 $sha `

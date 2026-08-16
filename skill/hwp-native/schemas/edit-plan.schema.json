@@ -5,6 +5,31 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "source", "approvedAdvanced", "operations"],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "operations": {
+            "contains": {
+              "type": "object",
+              "required": ["type"],
+              "properties": {
+                "type": {
+                  "enum": ["delete-range", "add-table-row", "set-section", "merge-documents"]
+                }
+              }
+            }
+          }
+        },
+        "required": ["operations"]
+      },
+      "then": {
+        "properties": {
+          "approvedAdvanced": { "const": true }
+        }
+      }
+    }
+  ],
   "properties": {
     "version": {
       "const": "1.0"
@@ -32,6 +57,99 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "type", "risk", "target", "expectedMatches", "onFailure", "verify"],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": { "enum": ["delete-range", "add-table-row", "set-section", "merge-documents"] }
+            },
+            "required": ["type"]
+          },
+          "then": { "properties": { "risk": { "const": "advanced" } } },
+          "else": { "properties": { "risk": { "const": "safe" } } }
+        },
+        {
+          "if": { "properties": { "risk": { "const": "safe" } }, "required": ["risk"] },
+          "then": { "properties": { "expectedMatches": { "const": 1 } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "set-field" } }, "required": ["type"] },
+          "then": { "properties": { "target": { "required": ["fieldName"] } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "set-table-cell" } }, "required": ["type"] },
+          "then": { "properties": { "target": { "required": ["tableIndex", "row", "column"] } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "add-table-row" } }, "required": ["type"] },
+          "then": { "properties": { "target": { "required": ["tableIndex", "afterRow"] } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "insert-table" } }, "required": ["type"] },
+          "then": { "properties": { "target": { "required": ["rows", "columns"] } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "insert-image" } }, "required": ["type"] },
+          "then": { "properties": { "target": { "required": ["imagePath"] } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "replace-image" } }, "required": ["type"] },
+          "then": { "properties": { "target": { "required": ["controlIndex", "imagePath"] } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "apply-char-style" } }, "required": ["type"] },
+          "then": {
+            "properties": {
+              "target": {
+                "anyOf": [
+                  { "required": ["heightPt"] },
+                  { "required": ["bold"] },
+                  { "required": ["italic"] }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "apply-para-style" } }, "required": ["type"] },
+          "then": { "properties": { "target": { "required": ["align"] } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "set-section" } }, "required": ["type"] },
+          "then": { "properties": { "target": { "required": ["orientation"] } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "set-header-footer" } }, "required": ["type"] },
+          "then": { "properties": { "target": { "required": ["kind", "text"] } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "add-bookmark" } }, "required": ["type"] },
+          "then": { "properties": { "target": { "required": ["name"] } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "add-hyperlink" } }, "required": ["type"] },
+          "then": { "properties": { "target": { "required": ["url"] } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "add-caption" } }, "required": ["type"] },
+          "then": { "properties": { "target": { "required": ["controlId", "controlIndex", "text"] } } }
+        },
+        {
+          "if": {
+            "properties": { "type": { "enum": ["add-footnote", "add-endnote"] } },
+            "required": ["type"]
+          },
+          "then": { "properties": { "target": { "required": ["text"] } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "build-toc" } }, "required": ["type"] },
+          "then": { "properties": { "target": { "required": ["headingAnchors"] } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "merge-documents" } }, "required": ["type"] },
+          "then": { "properties": { "target": { "required": ["paths"] } } }
+        }
+      ],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "type": {
@@ -49,7 +167,7 @@
           "type": "object",
           "required": ["anchor"],
           "properties": {
-            "anchor": { "type": "string" },
+            "anchor": { "type": "string", "minLength": 1 },
             "beforeContext": { "type": "string" },
             "afterContext": { "type": "string" }
           },

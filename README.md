@@ -223,6 +223,7 @@ $cli = ".\skill\hwp-native\scripts\Invoke-HwpNative.ps1"
 - 임시 파일 저장 → 재열기 검사 → 최종 결과 승격
 - 실패 결과와 완성 결과 분리
 - 고급 작업의 명시적 승인 요구
+- 고급 작업은 계획 기록과 실행 시 `-ApproveAdvanced`를 모두 요구
 - 반복 문구가 둘 이상이면 추측하지 않고 중단
 - HWPX ZIP 경로 탈출, 압축 폭탄, XML 외부 개체 차단
 - 사용자 한글 프로세스 일괄 종료 금지

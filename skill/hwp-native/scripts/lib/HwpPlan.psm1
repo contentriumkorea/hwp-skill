@@ -235,6 +235,51 @@ function Test-HwpEditPlan {
             $errors.Add("$prefix target.anchor 기준 문구가 비어 있습니다.")
         }
 
+        $requiredTargetNames = switch ($type) {
+            'set-field' { @('fieldName'); break }
+            'set-table-cell' { @('tableIndex','row','column'); break }
+            'add-table-row' { @('tableIndex','afterRow'); break }
+            'insert-table' { @('rows','columns'); break }
+            'insert-image' { @('imagePath'); break }
+            'replace-image' { @('controlIndex','imagePath'); break }
+            'apply-para-style' { @('align'); break }
+            'set-section' { @('orientation'); break }
+            'set-header-footer' { @('kind','text'); break }
+            'add-bookmark' { @('name'); break }
+            'add-hyperlink' { @('url'); break }
+            'add-caption' { @('controlId','controlIndex','text'); break }
+            'add-footnote' { @('text'); break }
+            'add-endnote' { @('text'); break }
+            'build-toc' { @('headingAnchors'); break }
+            'merge-documents' { @('paths'); break }
+            default { @(); break }
+        }
+        foreach ($requiredTargetName in $requiredTargetNames) {
+            if ($null -eq $target -or -not (Test-HwpObjectProperty -InputObject $target -Name $requiredTargetName)) {
+                $errors.Add("$prefix target에 필수 속성이 없습니다: $requiredTargetName")
+            }
+        }
+        if ($type -eq 'apply-char-style' -and $null -ne $target -and
+            -not (Test-HwpObjectProperty -InputObject $target -Name 'heightPt') -and
+            -not (Test-HwpObjectProperty -InputObject $target -Name 'bold') -and
+            -not (Test-HwpObjectProperty -InputObject $target -Name 'italic')) {
+            $errors.Add("$prefix apply-char-style에는 heightPt, bold 또는 italic 중 하나가 필요합니다.")
+        }
+        foreach ($requiredTextName in @('fieldName','imagePath','align','orientation','kind','text','name','url','controlId')) {
+            if ($requiredTextName -in $requiredTargetNames -and
+                (Test-HwpObjectProperty -InputObject $target -Name $requiredTextName) -and
+                [string]::IsNullOrWhiteSpace([string]$target.$requiredTextName)) {
+                $errors.Add("$prefix target.$requiredTextName 값이 비어 있습니다.")
+            }
+        }
+        foreach ($requiredListName in @('headingAnchors','paths')) {
+            if ($requiredListName -in $requiredTargetNames -and
+                (Test-HwpObjectProperty -InputObject $target -Name $requiredListName) -and
+                @($target.$requiredListName).Count -eq 0) {
+                $errors.Add("$prefix target.$requiredListName 목록이 비어 있습니다.")
+            }
+        }
+
         $expectedMatches = $null
         if (Test-HwpObjectProperty -InputObject $operation -Name 'expectedMatches') {
             $expectedMatches = $operation.expectedMatches
@@ -295,6 +340,40 @@ function Test-HwpEditPlan {
     New-HwpResult -Status PASS -Command validate-plan -Data $data
 }
 
+function Assert-HwpRuntimeAdvancedApproval {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Plan,
+        [bool]$ApproveAdvanced = $false
+    )
+
+    $advancedOperations = @(
+        @($Plan.operations) | Where-Object {
+            (Get-HwpOperationClassification -Type ([string]$_.type)) -eq 'advanced'
+        }
+    )
+    $data = [pscustomobject]@{
+        AdvancedOperationCount = $advancedOperations.Count
+        PlanRecordedApproval = [bool]$Plan.approvedAdvanced
+        RuntimeApproval = $ApproveAdvanced
+    }
+    if ($advancedOperations.Count -eq 0) {
+        return New-HwpResult -Status PASS -Command runtime-advanced-approval -Data $data
+    }
+    if (-not [bool]$Plan.approvedAdvanced) {
+        return New-HwpResult -Status BLOCKED -Command runtime-advanced-approval -Data $data -Errors @(
+            '고급 작업 계획에는 approvedAdvanced=true의 승인 기록이 필요합니다.'
+        )
+    }
+    if (-not $ApproveAdvanced) {
+        return New-HwpResult -Status BLOCKED -Command runtime-advanced-approval -Data $data -Errors @(
+            '고급 작업을 실제 실행하려면 계획 기록과 별도로 -ApproveAdvanced 런타임 승인이 필요합니다.'
+        )
+    }
+
+    New-HwpResult -Status PASS -Command runtime-advanced-approval -Data $data
+}
+
 function Import-HwpEditPlan {
     [CmdletBinding()]
     param(
@@ -348,5 +427,6 @@ function Import-HwpEditPlan {
 Export-ModuleMember -Function @(
     'Import-HwpEditPlan',
     'Test-HwpEditPlan',
-    'Assert-HwpOperationAllowed'
+    'Assert-HwpOperationAllowed',
+    'Assert-HwpRuntimeAdvancedApproval'
 )

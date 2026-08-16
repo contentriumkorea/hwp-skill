@@ -64,6 +64,21 @@ Describe 'Invoke-HwpBatch 안전 정책' {
         $result.Status | Should Be 'BLOCKED'
         ($result.Errors -join ' ') | Should Match '입력 폴더'
     }
+
+    It '고급 계획은 Apply 런타임 승인 없이는 검사나 적용 전에 차단한다' {
+        $input = Join-Path $TestDrive 'advanced.hwp'
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'fixtures/source/native-fixture.hwp') -Destination $input
+        $plan = New-ValidPlan -Type 'merge-documents' -Risk 'advanced' -ApprovedAdvanced $true
+        $plan.operations[0].target | Add-Member NoteProperty paths @($input)
+        $applyCount = [pscustomobject]@{ Value = 0 }
+        $applyInvoker = { param($path,$itemPlan,$output,$approved); $applyCount.Value++ }.GetNewClosure()
+
+        $result = Invoke-HwpBatch -InputPaths @($input) -Plan $plan -Apply -ApplyInvoker $applyInvoker
+
+        $result.Status | Should Be 'BLOCKED'
+        ($result.Errors -join ' ') | Should Match 'ApproveAdvanced'
+        $applyCount.Value | Should Be 0
+    }
 }
 
 Describe '통합 CLI JSON 계약' {

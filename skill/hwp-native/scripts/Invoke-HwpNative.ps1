@@ -10,6 +10,7 @@ param(
     [string]$OutputDirectory,
     [string]$TemplatePath,
     [switch]$NewDocument,
+    [switch]$ApproveAdvanced,
     [string[]]$InputPaths,
     [string]$InputDirectory,
     [switch]$Apply,
@@ -82,10 +83,12 @@ try {
             $imported = Import-HwpEditPlan -LiteralPath $PlanPath
             if ($imported.Status -ne 'PASS') { $imported; break }
             if ([string]::IsNullOrWhiteSpace($OutputPath)) {
-                Invoke-HwpApply -LiteralPath $LiteralPath -Plan $imported.Data.Plan
+                Invoke-HwpApply -LiteralPath $LiteralPath -Plan $imported.Data.Plan `
+                    -ApproveAdvanced:([bool]$ApproveAdvanced)
             }
             else {
-                Invoke-HwpApply -LiteralPath $LiteralPath -Plan $imported.Data.Plan -OutputPath $OutputPath
+                Invoke-HwpApply -LiteralPath $LiteralPath -Plan $imported.Data.Plan -OutputPath $OutputPath `
+                    -ApproveAdvanced:([bool]$ApproveAdvanced)
             }
             break
         }
@@ -100,7 +103,8 @@ try {
                 Assert-HwpCliValue -Value $TemplatePath -Name 'TemplatePath'
                 $imported = Import-HwpEditPlan -LiteralPath $PlanPath
                 if ($imported.Status -ne 'PASS') { $imported; break }
-                Invoke-HwpGenerate -TemplatePath $TemplatePath -Plan $imported.Data.Plan -OutputPath $OutputPath
+                Invoke-HwpGenerate -TemplatePath $TemplatePath -Plan $imported.Data.Plan -OutputPath $OutputPath `
+                    -ApproveAdvanced:([bool]$ApproveAdvanced)
             }
             break
         }
@@ -113,11 +117,13 @@ try {
             if ($hasDirectory -eq $hasPaths) { throw 'InputDirectory 또는 InputPaths 중 하나만 지정해야 합니다.' }
             if ($hasDirectory) {
                 Invoke-HwpBatch -InputDirectory $InputDirectory -Plan $imported.Data.Plan `
-                    -OutputDirectory $OutputDirectory -Apply:([bool]$Apply) -Recurse:([bool]$Recurse)
+                    -OutputDirectory $OutputDirectory -Apply:([bool]$Apply) `
+                    -ApproveAdvanced:([bool]$ApproveAdvanced) -Recurse:([bool]$Recurse)
             }
             else {
                 Invoke-HwpBatch -InputPaths $InputPaths -Plan $imported.Data.Plan `
-                    -OutputDirectory $OutputDirectory -Apply:([bool]$Apply)
+                    -OutputDirectory $OutputDirectory -Apply:([bool]$Apply) `
+                    -ApproveAdvanced:([bool]$ApproveAdvanced)
             }
             break
         }
