@@ -1,6 +1,9 @@
 Set-StrictMode -Version Latest
 
 Import-Module (Join-Path $PSScriptRoot 'HwpCommon.psm1') -ErrorAction Stop
+Import-Module (Join-Path $PSScriptRoot 'HwpExecution.psm1') -ErrorAction Stop -Global
+Import-Module (Join-Path $PSScriptRoot 'HwpCapabilities.psm1') -ErrorAction Stop -Global
+Import-Module (Join-Path $PSScriptRoot 'HwpBackendRouter.psm1') -ErrorAction Stop -Global
 Import-Module (Join-Path $PSScriptRoot 'HwpSession.psm1') -ErrorAction Stop
 Import-Module (Join-Path $PSScriptRoot 'HwpInspect.psm1') -ErrorAction Stop
 Import-Module (Join-Path $PSScriptRoot 'HwpPlan.psm1') -ErrorAction Stop
@@ -457,7 +460,10 @@ function Invoke-HwpGenerateFromTemplate {
         [Parameter(Mandatory)][string]$TemplatePath,
         [Parameter(Mandatory)][object]$Plan,
         [Parameter(Mandatory)][string]$OutputPath,
-        [bool]$ApproveAdvanced = $false
+        [bool]$ApproveAdvanced = $false,
+        [object]$ExecutionContext = (New-HwpExecutionContext),
+        [object]$Capabilities = (Get-HwpCapabilitySnapshot -ExecutionContext $ExecutionContext),
+        [scriptblock]$SessionFactory = { param($executionContext) New-HwpSession -ExecutionContext $executionContext }
     )
 
     try {
@@ -473,14 +479,25 @@ function Invoke-HwpGenerateFromTemplate {
                 '현재 안전한 양식 생성은 실제 형식이 HWP 바이너리인 HWP 또는 HWT만 지원합니다.'
             )
     }
-    $before = Get-HwpInspection -LiteralPath $kind.Path
+    $route = Resolve-HwpBackend -Command generate -DetectedKind $kind.DetectedKind `
+        -ExecutionContext $ExecutionContext -Capabilities $Capabilities
+    if ($route.Status -ne 'PASS') {
+        return New-HwpGenerateResult -Status $route.Status -Mode template -TemplatePath $kind.Path `
+            -TemplateSha256 $templateHash -Warnings @($route.Warnings) -Errors @($route.Errors)
+    }
+    if ($route.BackendId -ne 'hancom-interactive') {
+        return New-HwpGenerateResult -Status BLOCKED -Mode template -TemplatePath $kind.Path `
+            -TemplateSha256 $templateHash -Errors @("백엔드 구현이 현재 단계에 없습니다: $($route.BackendId)")
+    }
+    $before = Get-HwpInspection -LiteralPath $kind.Path -ExecutionContext $ExecutionContext -Capabilities $Capabilities
     if ($before.Status -notin 'PASS','PASS_WITH_WARNINGS') {
         return New-HwpGenerateResult -Status BLOCKED -Mode template -TemplatePath $kind.Path `
             -TemplateSha256 $templateHash -Before $before -Errors @($before.Errors)
     }
 
     $apply = Invoke-HwpApply -LiteralPath $kind.Path -Plan $Plan -OutputPath $OutputPath `
-        -ApproveAdvanced:$ApproveAdvanced
+        -ApproveAdvanced:$ApproveAdvanced -ExecutionContext $ExecutionContext `
+        -Capabilities $Capabilities -SessionFactory $SessionFactory
     $currentHash = Get-HwpSha256 -LiteralPath $kind.Path
     if ($currentHash -ne $templateHash) {
         return New-HwpGenerateResult -Status FAILED -Mode template -TemplatePath $kind.Path `
@@ -503,7 +520,13 @@ function Invoke-HwpGenerateNewDocument {
     param(
         [Parameter(Mandatory)][object]$Plan,
         [Parameter(Mandatory)][string]$OutputPath,
-        [scriptblock]$Inspector = { param($path) Get-HwpInspection -LiteralPath $path }
+        [object]$ExecutionContext = (New-HwpExecutionContext),
+        [object]$Capabilities = (Get-HwpCapabilitySnapshot -ExecutionContext $ExecutionContext),
+        [scriptblock]$SessionFactory = { param($executionContext) New-HwpSession -ExecutionContext $executionContext },
+        [scriptblock]$Inspector = {
+            param($path, $executionContext, $capabilities)
+            Get-HwpInspection -LiteralPath $path -ExecutionContext $executionContext -Capabilities $capabilities
+        }
     )
 
     $validation = Test-HwpNewDocumentPlan -Plan $Plan
@@ -524,6 +547,16 @@ function Invoke-HwpGenerateNewDocument {
         return New-HwpGenerateResult -Status BLOCKED -Mode new-document -OutputPath $resolvedOutput `
             -Errors @("결과 폴더가 없습니다: $directory")
     }
+    $route = Resolve-HwpBackend -Command generate -DetectedKind NONE -OutputPath $resolvedOutput `
+        -ExecutionContext $ExecutionContext -Capabilities $Capabilities
+    if ($route.Status -ne 'PASS') {
+        return New-HwpGenerateResult -Status $route.Status -Mode new-document -OutputPath $resolvedOutput `
+            -Warnings @($route.Warnings) -Errors @($route.Errors)
+    }
+    if ($route.BackendId -ne 'hancom-interactive') {
+        return New-HwpGenerateResult -Status BLOCKED -Mode new-document -OutputPath $resolvedOutput `
+            -Errors @("백엔드 구현이 현재 단계에 없습니다: $($route.BackendId)")
+    }
     $stagingPath = [IO.Path]::Combine(
         $directory,
         ('{0}.{1}.partial.hwp' -f [IO.Path]::GetFileNameWithoutExtension($resolvedOutput), [guid]::NewGuid().ToString('n'))
@@ -534,7 +567,7 @@ function Invoke-HwpGenerateNewDocument {
     $warnings = [Collections.Generic.List[string]]::new()
     $errors = [Collections.Generic.List[string]]::new()
     try {
-        $session = New-HwpSession
+        $session = & $SessionFactory $ExecutionContext
         if ($session.Hwp.IsActionEnable('FileNew')) {
             $null = $session.Hwp.HAction.Run('FileNew')
         }
@@ -575,7 +608,7 @@ function Invoke-HwpGenerateNewDocument {
     }
 
     try {
-        $after = & $Inspector $stagingPath
+        $after = & $Inspector $stagingPath $ExecutionContext $Capabilities
     }
     catch {
         $after = $null
@@ -659,14 +692,22 @@ function Invoke-HwpGenerate {
         [Parameter(Mandatory)][ValidateNotNull()][object]$Plan,
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$OutputPath,
         [switch]$ApproveAdvanced,
-        [scriptblock]$Inspector = { param($path) Get-HwpInspection -LiteralPath $path }
+        [object]$ExecutionContext = (New-HwpExecutionContext),
+        [object]$Capabilities = (Get-HwpCapabilitySnapshot -ExecutionContext $ExecutionContext),
+        [scriptblock]$SessionFactory = { param($executionContext) New-HwpSession -ExecutionContext $executionContext },
+        [scriptblock]$Inspector = {
+            param($path, $executionContext, $capabilities)
+            Get-HwpInspection -LiteralPath $path -ExecutionContext $executionContext -Capabilities $capabilities
+        }
     )
 
     if ($PSCmdlet.ParameterSetName -eq 'Template') {
         return Invoke-HwpGenerateFromTemplate -TemplatePath $TemplatePath -Plan $Plan -OutputPath $OutputPath `
-            -ApproveAdvanced:([bool]$ApproveAdvanced)
+            -ApproveAdvanced:([bool]$ApproveAdvanced) -ExecutionContext $ExecutionContext `
+            -Capabilities $Capabilities -SessionFactory $SessionFactory
     }
-    Invoke-HwpGenerateNewDocument -Plan $Plan -OutputPath $OutputPath -Inspector $Inspector
+    Invoke-HwpGenerateNewDocument -Plan $Plan -OutputPath $OutputPath -ExecutionContext $ExecutionContext `
+        -Capabilities $Capabilities -SessionFactory $SessionFactory -Inspector $Inspector
 }
 
 Export-ModuleMember -Function @(

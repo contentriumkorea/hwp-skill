@@ -1,6 +1,9 @@
 Set-StrictMode -Version Latest
 
 Import-Module (Join-Path $PSScriptRoot 'HwpCommon.psm1') -ErrorAction Stop
+Import-Module (Join-Path $PSScriptRoot 'HwpExecution.psm1') -ErrorAction Stop -Global
+Import-Module (Join-Path $PSScriptRoot 'HwpCapabilities.psm1') -ErrorAction Stop -Global
+Import-Module (Join-Path $PSScriptRoot 'HwpBackendRouter.psm1') -ErrorAction Stop -Global
 Import-Module (Join-Path $PSScriptRoot 'HwpPlan.psm1') -ErrorAction Stop
 Import-Module (Join-Path $PSScriptRoot 'HwpSession.psm1') -ErrorAction Stop
 Import-Module (Join-Path $PSScriptRoot 'HwpInspect.psm1') -ErrorAction Stop
@@ -2568,7 +2571,9 @@ function Invoke-HwpApply {
         [Parameter(Mandatory)][ValidateNotNull()][object]$Plan,
         [string]$OutputPath = '',
         [bool]$ApproveAdvanced = $false,
-        [scriptblock]$SessionFactory = { New-HwpSession }
+        [object]$ExecutionContext = (New-HwpExecutionContext),
+        [object]$Capabilities = (Get-HwpCapabilitySnapshot -ExecutionContext $ExecutionContext),
+        [scriptblock]$SessionFactory = { param($executionContext) New-HwpSession -ExecutionContext $executionContext }
     )
 
     $validation = Test-HwpEditPlan -Plan $Plan
@@ -2598,7 +2603,6 @@ function Invoke-HwpApply {
             '현재 원자적 네이티브 편집은 HWP 또는 HWT 바이너리만 지원합니다.'
         )
     }
-
     try {
         $plannedSourcePath = [IO.Path]::GetFullPath([string]$Plan.source.path)
     }
@@ -2642,6 +2646,16 @@ function Invoke-HwpApply {
         return New-HwpApplyResult -Status BLOCKED -SourcePath $sourcePath -SourceSha256 $sourceHash `
             -OutputPath $finalPath -Errors @("기존 결과 파일을 덮어쓰지 않습니다: $finalPath")
     }
+    $route = Resolve-HwpBackend -Command apply -DetectedKind $format.DetectedKind `
+        -ExecutionContext $ExecutionContext -Capabilities $Capabilities
+    if ($route.Status -ne 'PASS') {
+        return New-HwpApplyResult -Status $route.Status -SourcePath $sourcePath -SourceSha256 $sourceHash `
+            -OutputPath $finalPath -Warnings @($route.Warnings) -Errors @($route.Errors)
+    }
+    if ($route.BackendId -ne 'hancom-interactive') {
+        return New-HwpApplyResult -Status BLOCKED -SourcePath $sourcePath -SourceSha256 $sourceHash `
+            -OutputPath $finalPath -Errors @("백엔드 구현이 현재 단계에 없습니다: $($route.BackendId)")
+    }
 
     $finalName = [IO.Path]::GetFileNameWithoutExtension($finalPath)
     $temporaryPath = [IO.Path]::Combine(
@@ -2659,7 +2673,7 @@ function Invoke-HwpApply {
     $inspection = $null
 
     try {
-        $session = & $SessionFactory
+        $session = & $SessionFactory $ExecutionContext
         if ($null -eq $session) {
             throw '세션 팩터리가 한컴 세션을 반환하지 않았습니다.'
         }

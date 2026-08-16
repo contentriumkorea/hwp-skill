@@ -1,6 +1,9 @@
 Set-StrictMode -Version Latest
 
 Import-Module (Join-Path $PSScriptRoot 'HwpCommon.psm1') -ErrorAction Stop
+Import-Module (Join-Path $PSScriptRoot 'HwpExecution.psm1') -ErrorAction Stop -Global
+Import-Module (Join-Path $PSScriptRoot 'HwpCapabilities.psm1') -ErrorAction Stop -Global
+Import-Module (Join-Path $PSScriptRoot 'HwpBackendRouter.psm1') -ErrorAction Stop -Global
 Import-Module (Join-Path $PSScriptRoot 'HwpSession.psm1') -ErrorAction Stop
 Import-Module (Join-Path $PSScriptRoot 'HwpInspect.psm1') -ErrorAction Stop
 
@@ -255,11 +258,12 @@ function Export-HwpPageImagesFromSession {
 function Open-HwpVerifySession {
     param(
         [Parameter(Mandatory)][string]$LiteralPath,
-        [scriptblock]$SessionFactory = { New-HwpSession },
+        [object]$ExecutionContext = (New-HwpExecutionContext),
+        [scriptblock]$SessionFactory = { param($executionContext) New-HwpSession -ExecutionContext $executionContext },
         [AllowNull()][scriptblock]$SecurityModuleReader = $null
     )
 
-    $session = & $SessionFactory
+    $session = & $SessionFactory $ExecutionContext
     if ($null -eq $session) { throw '세션 팩터리가 한컴 세션을 반환하지 않았습니다.' }
     $open = Open-HwpDocumentFromMemory -Session $session -LiteralPath $LiteralPath
     if ($open.Status -ne 'PASS') {
@@ -280,16 +284,34 @@ function Export-HwpPdf {
     param(
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$LiteralPath,
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$OutputPath,
-        [scriptblock]$SessionFactory = { New-HwpSession },
+        [object]$ExecutionContext = (New-HwpExecutionContext),
+        [object]$Capabilities = (Get-HwpCapabilitySnapshot -ExecutionContext $ExecutionContext),
+        [scriptblock]$SessionFactory = { param($executionContext) New-HwpSession -ExecutionContext $executionContext },
         [AllowNull()][scriptblock]$SecurityModuleReader = $null
     )
 
-    $sourceHash = try { Get-HwpSha256 -LiteralPath $LiteralPath } catch {
+    $format = $null
+    $sourceHash = try {
+        $format = Get-HwpFileKind -LiteralPath $LiteralPath
+        Get-HwpSha256 -LiteralPath $format.Path
+    } catch {
         return New-HwpResult -Status BLOCKED -Command export-pdf -Errors @($_.Exception.Message)
+    }
+    if (-not $format.ExtensionMatches) {
+        return New-HwpResult -Status BLOCKED -Command export-pdf -Errors @('확장자와 실제 파일 형식이 다릅니다.')
+    }
+    $route = Resolve-HwpBackend -Command export -DetectedKind $format.DetectedKind `
+        -ExecutionContext $ExecutionContext -Capabilities $Capabilities
+    if ($route.Status -ne 'PASS') {
+        return New-HwpResult -Status $route.Status -Command export-pdf -Warnings @($route.Warnings) -Errors @($route.Errors)
+    }
+    if ($route.BackendId -ne 'hancom-interactive') {
+        return New-HwpResult -Status BLOCKED -Command export-pdf -Errors @("백엔드 구현이 현재 단계에 없습니다: $($route.BackendId)")
     }
     $opened = $null
     try {
-        $opened = Open-HwpVerifySession -LiteralPath $LiteralPath -SessionFactory $SessionFactory -SecurityModuleReader $SecurityModuleReader
+        $opened = Open-HwpVerifySession -LiteralPath $format.Path -ExecutionContext $ExecutionContext `
+            -SessionFactory $SessionFactory -SecurityModuleReader $SecurityModuleReader
         if ($null -eq $opened.Session) { return $opened.Open }
         if ($opened.Security.Status -notin 'PASS','PASS_WITH_WARNINGS') {
             return New-HwpResult -Status BLOCKED -Command export-pdf -Errors @($opened.Security.Errors)
@@ -302,7 +324,7 @@ function Export-HwpPdf {
     finally {
         if ($null -ne $opened -and $null -ne $opened.Session) { Close-HwpSession -Session $opened.Session }
     }
-    if ((Get-HwpSha256 -LiteralPath $LiteralPath) -ne $sourceHash) {
+    if ((Get-HwpSha256 -LiteralPath $format.Path) -ne $sourceHash) {
         if ($result.Status -eq 'PASS' -and (Test-Path -LiteralPath $result.Data.PdfPath)) {
             Remove-Item -LiteralPath $result.Data.PdfPath -Force -ErrorAction SilentlyContinue
         }
@@ -319,16 +341,36 @@ function Export-HwpPageImages {
     param(
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$LiteralPath,
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$ImageDirectory,
-        [scriptblock]$SessionFactory = { New-HwpSession },
+        [object]$ExecutionContext = (New-HwpExecutionContext),
+        [object]$Capabilities = (Get-HwpCapabilitySnapshot -ExecutionContext $ExecutionContext),
+        [scriptblock]$SessionFactory = { param($executionContext) New-HwpSession -ExecutionContext $executionContext },
         [AllowNull()][scriptblock]$SecurityModuleReader = $null
     )
 
-    $sourceHash = try { Get-HwpSha256 -LiteralPath $LiteralPath } catch {
+    $format = $null
+    $sourceHash = try {
+        $format = Get-HwpFileKind -LiteralPath $LiteralPath
+        Get-HwpSha256 -LiteralPath $format.Path
+    } catch {
         return New-HwpResult -Status BLOCKED -Command export-page-images -Errors @($_.Exception.Message)
+    }
+    if (-not $format.ExtensionMatches) {
+        return New-HwpResult -Status BLOCKED -Command export-page-images -Errors @('확장자와 실제 파일 형식이 다릅니다.')
+    }
+    $route = Resolve-HwpBackend -Command export -DetectedKind $format.DetectedKind `
+        -ExecutionContext $ExecutionContext -Capabilities $Capabilities
+    if ($route.Status -ne 'PASS') {
+        return New-HwpResult -Status $route.Status -Command export-page-images -Warnings @($route.Warnings) -Errors @($route.Errors)
+    }
+    if ($route.BackendId -ne 'hancom-interactive') {
+        return New-HwpResult -Status BLOCKED -Command export-page-images -Errors @(
+            "백엔드 구현이 현재 단계에 없습니다: $($route.BackendId)"
+        )
     }
     $opened = $null
     try {
-        $opened = Open-HwpVerifySession -LiteralPath $LiteralPath -SessionFactory $SessionFactory -SecurityModuleReader $SecurityModuleReader
+        $opened = Open-HwpVerifySession -LiteralPath $format.Path -ExecutionContext $ExecutionContext `
+            -SessionFactory $SessionFactory -SecurityModuleReader $SecurityModuleReader
         if ($null -eq $opened.Session) { return $opened.Open }
         if ($opened.Security.Status -notin 'PASS','PASS_WITH_WARNINGS') {
             return New-HwpResult -Status BLOCKED -Command export-page-images -Errors @($opened.Security.Errors)
@@ -341,7 +383,7 @@ function Export-HwpPageImages {
     finally {
         if ($null -ne $opened -and $null -ne $opened.Session) { Close-HwpSession -Session $opened.Session }
     }
-    if ((Get-HwpSha256 -LiteralPath $LiteralPath) -ne $sourceHash) {
+    if ((Get-HwpSha256 -LiteralPath $format.Path) -ne $sourceHash) {
         return New-HwpResult -Status FAILED -Command export-page-images -Errors @('페이지 이미지 내보내기 중 원본 SHA-256이 변경되었습니다.')
     }
     if ($result.Status -eq 'PASS' -and $opened.Security.Status -eq 'PASS_WITH_WARNINGS') {
@@ -455,18 +497,37 @@ function Invoke-HwpVerify {
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$LiteralPath,
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$OutputDirectory,
         [AllowNull()][object]$Before = $null,
-        [object[]]$ExpectedOperations = @()
+        [object[]]$ExpectedOperations = @(),
+        [object]$ExecutionContext = (New-HwpExecutionContext),
+        [object]$Capabilities = (Get-HwpCapabilitySnapshot -ExecutionContext $ExecutionContext),
+        [scriptblock]$SessionFactory = { param($executionContext) New-HwpSession -ExecutionContext $executionContext }
     )
 
+    $format = $null
     try {
         $resolvedPath = (Resolve-Path -LiteralPath $LiteralPath -ErrorAction Stop).Path
         $resolvedOutput = (Resolve-Path -LiteralPath $OutputDirectory -ErrorAction Stop).Path
         if (-not (Test-Path -LiteralPath $resolvedOutput -PathType Container)) { throw '검증 출력 경로가 폴더가 아닙니다.' }
+        $format = Get-HwpFileKind -LiteralPath $resolvedPath
     }
     catch {
         return New-HwpVerifyResult -Status BLOCKED -Errors @($_.Exception.Message)
     }
-    $after = Get-HwpInspection -LiteralPath $resolvedPath
+    if (-not $format.ExtensionMatches) {
+        return New-HwpVerifyResult -Status BLOCKED -LiteralPath $resolvedPath -Errors @('확장자와 실제 파일 형식이 다릅니다.')
+    }
+    $route = Resolve-HwpBackend -Command verify -DetectedKind $format.DetectedKind `
+        -ExecutionContext $ExecutionContext -Capabilities $Capabilities
+    if ($route.Status -ne 'PASS') {
+        return New-HwpVerifyResult -Status $route.Status -LiteralPath $resolvedPath `
+            -Warnings @($route.Warnings) -Errors @($route.Errors)
+    }
+    if ($route.BackendId -ne 'hancom-interactive') {
+        return New-HwpVerifyResult -Status BLOCKED -LiteralPath $resolvedPath -Errors @(
+            "백엔드 구현이 현재 단계에 없습니다: $($route.BackendId)"
+        )
+    }
+    $after = Get-HwpInspection -LiteralPath $resolvedPath -ExecutionContext $ExecutionContext -Capabilities $Capabilities
     if ($after.Status -notin 'PASS','PASS_WITH_WARNINGS') {
         return New-HwpVerifyResult -Status BLOCKED -LiteralPath $resolvedPath -After $after -Errors @($after.Errors)
     }
@@ -488,7 +549,7 @@ function Invoke-HwpVerify {
     $emptyPages = @()
     $visualCompleted = $false
     try {
-        $session = New-HwpSession
+        $session = & $SessionFactory $ExecutionContext
         $open = Open-HwpDocumentFromMemory -Session $session -LiteralPath $resolvedPath
         if ($open.Status -ne 'PASS') {
             foreach ($message in @($open.Errors)) { $warnings.Add("시각 검증 열기 실패: $message") }

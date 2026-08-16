@@ -1,6 +1,12 @@
 $commonModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCommon.psm1'
+$executionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpExecution.psm1'
+$capabilitiesModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCapabilities.psm1'
 $verifyModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpVerify.psm1'
+$helperModule = Join-Path $PSScriptRoot 'TestHelpers.psm1'
 Import-Module $commonModule -Force
+Import-Module $executionModule -Force
+Import-Module $capabilitiesModule -Force
+Import-Module $helperModule -Force
 if (Test-Path -LiteralPath $verifyModule) {
     Import-Module $verifyModule -Force
 }
@@ -92,11 +98,77 @@ Describe 'Compare-HwpInspection' {
 Describe '내보내기 안전 래퍼' {
     $fixtureHwp = Join-Path $PSScriptRoot 'fixtures/source/native-fixture.hwp'
 
+    It 'silent PDF 내보내기는 세션 팩터리를 호출하지 않는다' {
+        $output = Join-Path $TestDrive 'silent-export.pdf'
+        $hwpExecutionContext = [pscustomobject]@{
+            SchemaVersion = '1.0'
+            Mode = 'silent'
+            AllowInteractiveWindow = $false
+        }
+        $capabilities = [pscustomobject]@{
+            executionMode = 'silent'
+            backends = @(
+                [pscustomobject]@{ id = 'hwpx-direct'; available = $true; formats = @('HWPX-ZIP'); operations = @('inspect'); requiresGui = $false; isolation = 'none'; reason = 'test' },
+                [pscustomobject]@{ id = 'hwp-portable'; available = $false; formats = @('HWP-BINARY'); operations = @('inspect','generate','apply','batch','verify'); requiresGui = $false; isolation = 'none'; reason = 'test' },
+                [pscustomobject]@{ id = 'hancom-isolated'; available = $false; formats = @('HWP-BINARY'); operations = @('inspect','generate','apply','batch','verify','export'); requiresGui = $true; isolation = 'separate-session'; reason = 'test' },
+                [pscustomobject]@{ id = 'hancom-interactive'; available = $false; formats = @('HWP-BINARY'); operations = @('inspect','generate','apply','batch','verify','export'); requiresGui = $true; isolation = 'current-session'; reason = 'test' }
+            )
+        }
+        $calls = [pscustomobject]@{ Value = 0 }
+        $factory = ({ param($context) $calls.Value++; throw '세션 호출 금지' }.GetNewClosure())
+
+        $result = Export-HwpPdf -LiteralPath $fixtureHwp -OutputPath $output `
+            -ExecutionContext $hwpExecutionContext -Capabilities $capabilities `
+            -SessionFactory $factory -SecurityModuleReader { @('FakeModule') }
+
+        $result.Status | Should Be 'BLOCKED'
+        ($result.Errors -join ' ') | Should Match 'silent'
+        $calls.Value | Should Be 0
+    }
+
+    It 'silent 페이지 이미지 내보내기는 세션 팩터리를 호출하지 않는다' {
+        $hwpExecutionContext = [pscustomobject]@{
+            SchemaVersion = '1.0'
+            Mode = 'silent'
+            AllowInteractiveWindow = $false
+        }
+        $capabilities = [pscustomobject]@{
+            executionMode = 'silent'
+            backends = @(
+                [pscustomobject]@{ id = 'hwpx-direct'; available = $true; formats = @('HWPX-ZIP'); operations = @('inspect'); requiresGui = $false; isolation = 'none'; reason = 'test' },
+                [pscustomobject]@{ id = 'hwp-portable'; available = $false; formats = @('HWP-BINARY'); operations = @('inspect','generate','apply','batch','verify'); requiresGui = $false; isolation = 'none'; reason = 'test' },
+                [pscustomobject]@{ id = 'hancom-isolated'; available = $false; formats = @('HWP-BINARY'); operations = @('inspect','generate','apply','batch','verify','export'); requiresGui = $true; isolation = 'separate-session'; reason = 'test' },
+                [pscustomobject]@{ id = 'hancom-interactive'; available = $false; formats = @('HWP-BINARY'); operations = @('inspect','generate','apply','batch','verify','export'); requiresGui = $true; isolation = 'current-session'; reason = 'test' }
+            )
+        }
+        $calls = [pscustomobject]@{ Value = 0 }
+        $factory = ({ param($context) $calls.Value++; throw '세션 호출 금지' }.GetNewClosure())
+
+        $result = Export-HwpPageImages -LiteralPath $fixtureHwp -ImageDirectory $TestDrive `
+            -ExecutionContext $hwpExecutionContext -Capabilities $capabilities `
+            -SessionFactory $factory -SecurityModuleReader { @('FakeModule') }
+
+        $result.Status | Should Be 'BLOCKED'
+        ($result.Errors -join ' ') | Should Match 'silent'
+        $calls.Value | Should Be 0
+    }
+
     It '승인된 가상 세션에서 PDF 시그니처를 검증하고 별도 파일을 만든다' {
         $output = Join-Path $TestDrive 'export.pdf'
         $factory = { New-FakeExportSession }
+        $hwpExecutionContext = New-TestInteractiveExecutionContext
+        $capabilities = [pscustomobject]@{
+            executionMode = 'interactive'
+            backends = @(
+                [pscustomobject]@{ id = 'hwpx-direct'; available = $true; formats = @('HWPX-ZIP'); operations = @('inspect'); requiresGui = $false; isolation = 'none'; reason = 'test' },
+                [pscustomobject]@{ id = 'hwp-portable'; available = $false; formats = @('HWP-BINARY'); operations = @('inspect','generate','apply','batch','verify'); requiresGui = $false; isolation = 'none'; reason = 'test' },
+                [pscustomobject]@{ id = 'hancom-isolated'; available = $false; formats = @('HWP-BINARY'); operations = @('inspect','generate','apply','batch','verify','export'); requiresGui = $true; isolation = 'separate-session'; reason = 'test' },
+                [pscustomobject]@{ id = 'hancom-interactive'; available = $true; formats = @('HWP-BINARY'); operations = @('inspect','generate','apply','batch','verify','export'); requiresGui = $true; isolation = 'current-session'; reason = 'test' }
+            )
+        }
 
         $result = Export-HwpPdf -LiteralPath $fixtureHwp -OutputPath $output `
+            -ExecutionContext $hwpExecutionContext -Capabilities $capabilities `
             -SessionFactory $factory -SecurityModuleReader { @('FakeModule') }
 
         $result.Status | Should Be 'PASS'
@@ -106,8 +178,19 @@ Describe '내보내기 안전 래퍼' {
 
     It '승인된 가상 세션에서 쪽 수만큼 PNG를 만든다' {
         $factory = { New-FakeExportSession }
+        $hwpExecutionContext = New-TestInteractiveExecutionContext
+        $capabilities = [pscustomobject]@{
+            executionMode = 'interactive'
+            backends = @(
+                [pscustomobject]@{ id = 'hwpx-direct'; available = $true; formats = @('HWPX-ZIP'); operations = @('inspect'); requiresGui = $false; isolation = 'none'; reason = 'test' },
+                [pscustomobject]@{ id = 'hwp-portable'; available = $false; formats = @('HWP-BINARY'); operations = @('inspect','generate','apply','batch','verify'); requiresGui = $false; isolation = 'none'; reason = 'test' },
+                [pscustomobject]@{ id = 'hancom-isolated'; available = $false; formats = @('HWP-BINARY'); operations = @('inspect','generate','apply','batch','verify','export'); requiresGui = $true; isolation = 'separate-session'; reason = 'test' },
+                [pscustomobject]@{ id = 'hancom-interactive'; available = $true; formats = @('HWP-BINARY'); operations = @('inspect','generate','apply','batch','verify','export'); requiresGui = $true; isolation = 'current-session'; reason = 'test' }
+            )
+        }
 
         $result = Export-HwpPageImages -LiteralPath $fixtureHwp -ImageDirectory $TestDrive `
+            -ExecutionContext $hwpExecutionContext -Capabilities $capabilities `
             -SessionFactory $factory -SecurityModuleReader { @('FakeModule') }
 
         $result.Status | Should Be 'PASS'

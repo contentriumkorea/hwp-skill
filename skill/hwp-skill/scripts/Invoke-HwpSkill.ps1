@@ -119,11 +119,13 @@ try {
             if ($imported.Status -ne 'PASS') { $imported; break }
             if ([string]::IsNullOrWhiteSpace($OutputPath)) {
                 Invoke-HwpApply -LiteralPath $LiteralPath -Plan $imported.Data.Plan `
-                    -ApproveAdvanced:([bool]$ApproveAdvanced)
+                    -ApproveAdvanced:([bool]$ApproveAdvanced) -ExecutionContext $hwpExecutionContext `
+                    -Capabilities $capabilities
             }
             else {
                 Invoke-HwpApply -LiteralPath $LiteralPath -Plan $imported.Data.Plan -OutputPath $OutputPath `
-                    -ApproveAdvanced:([bool]$ApproveAdvanced)
+                    -ApproveAdvanced:([bool]$ApproveAdvanced) -ExecutionContext $hwpExecutionContext `
+                    -Capabilities $capabilities
             }
             break
         }
@@ -132,14 +134,16 @@ try {
             Assert-HwpCliValue -Value $OutputPath -Name 'OutputPath'
             if ($NewDocument) {
                 $plan = Read-HwpCliJson -Path $PlanPath
-                Invoke-HwpGenerate -NewDocument -Plan $plan -OutputPath $OutputPath
+                Invoke-HwpGenerate -NewDocument -Plan $plan -OutputPath $OutputPath `
+                    -ExecutionContext $hwpExecutionContext -Capabilities $capabilities
             }
             else {
                 Assert-HwpCliValue -Value $TemplatePath -Name 'TemplatePath'
                 $imported = Import-HwpEditPlan -LiteralPath $PlanPath
                 if ($imported.Status -ne 'PASS') { $imported; break }
                 Invoke-HwpGenerate -TemplatePath $TemplatePath -Plan $imported.Data.Plan -OutputPath $OutputPath `
-                    -ApproveAdvanced:([bool]$ApproveAdvanced)
+                    -ApproveAdvanced:([bool]$ApproveAdvanced) -ExecutionContext $hwpExecutionContext `
+                    -Capabilities $capabilities
             }
             break
         }
@@ -153,12 +157,14 @@ try {
             if ($hasDirectory) {
                 Invoke-HwpBatch -InputDirectory $InputDirectory -Plan $imported.Data.Plan `
                     -OutputDirectory $OutputDirectory -Apply:([bool]$Apply) `
-                    -ApproveAdvanced:([bool]$ApproveAdvanced) -Recurse:([bool]$Recurse)
+                    -ApproveAdvanced:([bool]$ApproveAdvanced) -Recurse:([bool]$Recurse) `
+                    -ExecutionContext $hwpExecutionContext -Capabilities $capabilities
             }
             else {
                 Invoke-HwpBatch -InputPaths $InputPaths -Plan $imported.Data.Plan `
                     -OutputDirectory $OutputDirectory -Apply:([bool]$Apply) `
-                    -ApproveAdvanced:([bool]$ApproveAdvanced)
+                    -ApproveAdvanced:([bool]$ApproveAdvanced) -ExecutionContext $hwpExecutionContext `
+                    -Capabilities $capabilities
             }
             break
         }
@@ -174,18 +180,21 @@ try {
             Assert-HwpCliValue -Value $LiteralPath -Name 'LiteralPath'
             Assert-HwpCliValue -Value $OutputDirectory -Name 'OutputDirectory'
             $before = if ([string]::IsNullOrWhiteSpace($BeforePath)) { $null } else { Read-HwpCliJson -Path $BeforePath }
-            Invoke-HwpVerify -LiteralPath $LiteralPath -OutputDirectory $OutputDirectory -Before $before
+            Invoke-HwpVerify -LiteralPath $LiteralPath -OutputDirectory $OutputDirectory -Before $before `
+                -ExecutionContext $hwpExecutionContext -Capabilities $capabilities
             break
         }
         'export' {
             Assert-HwpCliValue -Value $LiteralPath -Name 'LiteralPath'
             if ($ExportKind -eq 'pdf') {
                 Assert-HwpCliValue -Value $OutputPath -Name 'OutputPath'
-                Export-HwpPdf -LiteralPath $LiteralPath -OutputPath $OutputPath
+                Export-HwpPdf -LiteralPath $LiteralPath -OutputPath $OutputPath `
+                    -ExecutionContext $hwpExecutionContext -Capabilities $capabilities
             }
             else {
                 Assert-HwpCliValue -Value $OutputDirectory -Name 'OutputDirectory'
-                Export-HwpPageImages -LiteralPath $LiteralPath -ImageDirectory $OutputDirectory
+                Export-HwpPageImages -LiteralPath $LiteralPath -ImageDirectory $OutputDirectory `
+                    -ExecutionContext $hwpExecutionContext -Capabilities $capabilities
             }
             break
         }

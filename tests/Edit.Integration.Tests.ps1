@@ -1,12 +1,16 @@
 $commonModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCommon.psm1'
+$executionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpExecution.psm1'
 $sessionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpSession.psm1'
 $inspectModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpInspect.psm1'
+$capabilitiesModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCapabilities.psm1'
 $planModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpPlan.psm1'
 $editModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpEdit.psm1'
 $helperModule = Join-Path $PSScriptRoot 'TestHelpers.psm1'
 Import-Module $commonModule -Force
+Import-Module $executionModule -Force
 Import-Module $sessionModule -Force
 Import-Module $inspectModule -Force
+Import-Module $capabilitiesModule -Force
 Import-Module $planModule -Force
 Import-Module $helperModule -Force
 if (Test-Path -LiteralPath $editModule) {
@@ -115,6 +119,35 @@ Describe 'Invoke-HwpApply 사전 차단' {
 
         $result.Status | Should Be 'BLOCKED'
         ($result.Errors -join ' ') | Should Match '원본'
+    }
+
+    It 'silent 적용은 지원되지 않는 백엔드에서 세션 팩터리를 호출하지 않는다' {
+        $path = Join-Path $TestDrive 'silent-apply.hwp'
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'fixtures/source/native-fixture.hwp') -Destination $path
+        $plan = New-ValidPlan -SourcePath $path -SourceSha256 (Get-HwpSha256 -LiteralPath $path)
+        $hwpExecutionContext = [pscustomobject]@{
+            SchemaVersion = '1.0'
+            Mode = 'silent'
+            AllowInteractiveWindow = $false
+        }
+        $capabilities = [pscustomobject]@{
+            executionMode = 'silent'
+            backends = @(
+                [pscustomobject]@{ id = 'hwpx-direct'; available = $true; formats = @('HWPX-ZIP'); operations = @('inspect'); requiresGui = $false; isolation = 'none'; reason = 'test' },
+                [pscustomobject]@{ id = 'hwp-portable'; available = $false; formats = @('HWP-BINARY'); operations = @('inspect','generate','apply','batch','verify'); requiresGui = $false; isolation = 'none'; reason = 'test' },
+                [pscustomobject]@{ id = 'hancom-isolated'; available = $false; formats = @('HWP-BINARY'); operations = @('inspect','generate','apply','batch','verify','export'); requiresGui = $true; isolation = 'separate-session'; reason = 'test' },
+                [pscustomobject]@{ id = 'hancom-interactive'; available = $false; formats = @('HWP-BINARY'); operations = @('inspect','generate','apply','batch','verify','export'); requiresGui = $true; isolation = 'current-session'; reason = 'test' }
+            )
+        }
+        $calls = [pscustomobject]@{ Value = 0 }
+        $factory = ({ param($context) $calls.Value++; throw '세션 호출 금지' }.GetNewClosure())
+
+        $result = Invoke-HwpApply -LiteralPath $path -Plan $plan `
+            -ExecutionContext $hwpExecutionContext -Capabilities $capabilities -SessionFactory $factory
+
+        $result.Status | Should Be 'BLOCKED'
+        ($result.Errors -join ' ') | Should Match 'silent'
+        $calls.Value | Should Be 0
     }
 }
 

@@ -1,6 +1,8 @@
 Set-StrictMode -Version Latest
 
 Import-Module (Join-Path $PSScriptRoot 'HwpCommon.psm1') -ErrorAction Stop
+Import-Module (Join-Path $PSScriptRoot 'HwpExecution.psm1') -ErrorAction Stop -Global
+Import-Module (Join-Path $PSScriptRoot 'HwpCapabilities.psm1') -ErrorAction Stop -Global
 Import-Module (Join-Path $PSScriptRoot 'HwpInspect.psm1') -ErrorAction Stop
 Import-Module (Join-Path $PSScriptRoot 'HwpPlan.psm1') -ErrorAction Stop
 Import-Module (Join-Path $PSScriptRoot 'HwpEdit.psm1') -ErrorAction Stop
@@ -213,10 +215,16 @@ function Invoke-HwpBatch {
         [switch]$ApproveAdvanced,
         [Parameter(ParameterSetName = 'Directory')][switch]$Recurse,
         [ValidateRange(1, 10000)][int]$MaximumFiles = 100,
-        [scriptblock]$Inspector = { param($path) Get-HwpInspection -LiteralPath $path },
+        [object]$ExecutionContext = (New-HwpExecutionContext),
+        [object]$Capabilities = (Get-HwpCapabilitySnapshot -ExecutionContext $ExecutionContext),
+        [scriptblock]$Inspector = {
+            param($path, $executionContext, $capabilities)
+            Get-HwpInspection -LiteralPath $path -ExecutionContext $executionContext -Capabilities $capabilities
+        },
         [scriptblock]$ApplyInvoker = {
-            param($path,$itemPlan,$output,$approveAdvanced)
-            Invoke-HwpApply -LiteralPath $path -Plan $itemPlan -OutputPath $output -ApproveAdvanced:$approveAdvanced
+            param($path,$itemPlan,$output,$approveAdvanced,$executionContext,$capabilities)
+            Invoke-HwpApply -LiteralPath $path -Plan $itemPlan -OutputPath $output -ApproveAdvanced:$approveAdvanced `
+                -ExecutionContext $executionContext -Capabilities $capabilities
         }
     )
 
@@ -287,7 +295,7 @@ function Invoke-HwpBatch {
                 -DetectedKind $kind.DetectedKind -Errors @('확장자와 실제 파일 형식이 다릅니다.')))
             continue
         }
-        $inspection = & $Inspector $path
+        $inspection = & $Inspector $path $ExecutionContext $Capabilities
         if ($null -eq $inspection -or $inspection.Status -notin 'PASS','PASS_WITH_WARNINGS') {
             $itemErrors = if ($null -eq $inspection) { @('검사기가 결과를 반환하지 않았습니다.') } else { @($inspection.Errors) }
             $items.Add((New-HwpBatchItemResult -Status BLOCKED -InputPath $path -InputSha256 $sha `
@@ -321,7 +329,7 @@ function Invoke-HwpBatch {
         $baseOutput = [IO.Path]::Combine($itemOutputDirectory, ([IO.Path]::GetFileNameWithoutExtension($path) + '.hwp'))
         $outputPath = Get-HwpVersionedPath -LiteralPath $baseOutput
         try {
-            $applyResult = & $ApplyInvoker $path $itemPlan $outputPath ([bool]$ApproveAdvanced)
+            $applyResult = & $ApplyInvoker $path $itemPlan $outputPath ([bool]$ApproveAdvanced) $ExecutionContext $Capabilities
         }
         catch {
             $items.Add((New-HwpBatchItemResult -Status FAILED -InputPath $path -InputSha256 $sha `

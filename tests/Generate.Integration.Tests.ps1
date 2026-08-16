@@ -1,8 +1,12 @@
 $commonModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCommon.psm1'
+$executionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpExecution.psm1'
+$capabilitiesModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCapabilities.psm1'
 $inspectModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpInspect.psm1'
 $generateModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpGenerate.psm1'
 $helperModule = Join-Path $PSScriptRoot 'TestHelpers.psm1'
 Import-Module $commonModule -Force
+Import-Module $executionModule -Force
+Import-Module $capabilitiesModule -Force
 Import-Module $inspectModule -Force
 Import-Module $helperModule -Force
 if (Test-Path -LiteralPath $generateModule) {
@@ -76,5 +80,40 @@ Describe 'HWT/HWP 양식 기반 생성 실제 한컴 통합 시험' -Tags Native
         @($result.After.Controls | Where-Object CtrlId -eq 'tbl').Count | Should Be 1
         $observation.SawStaging | Should Be $true
         Test-Path -LiteralPath $result.OutputPath | Should Be $true
+    }
+}
+
+Describe 'Invoke-HwpGenerate 사전 차단' {
+    It 'silent 생성은 지원되지 않는 백엔드에서 세션 팩터리를 호출하지 않는다' {
+        $output = Join-Path $TestDrive 'silent-generate.hwp'
+        $plan = [pscustomobject]@{
+            version = '1.0'
+            content = @(
+                [pscustomobject]@{ type = 'paragraph'; text = 'silent 생성 차단' }
+            )
+        }
+        $hwpExecutionContext = [pscustomobject]@{
+            SchemaVersion = '1.0'
+            Mode = 'silent'
+            AllowInteractiveWindow = $false
+        }
+        $capabilities = [pscustomobject]@{
+            executionMode = 'silent'
+            backends = @(
+                [pscustomobject]@{ id = 'hwpx-direct'; available = $true; formats = @('HWPX-ZIP'); operations = @('inspect'); requiresGui = $false; isolation = 'none'; reason = 'test' },
+                [pscustomobject]@{ id = 'hwp-portable'; available = $false; formats = @('HWP-BINARY'); operations = @('inspect','generate','apply','batch','verify'); requiresGui = $false; isolation = 'none'; reason = 'test' },
+                [pscustomobject]@{ id = 'hancom-isolated'; available = $false; formats = @('HWP-BINARY'); operations = @('inspect','generate','apply','batch','verify','export'); requiresGui = $true; isolation = 'separate-session'; reason = 'test' },
+                [pscustomobject]@{ id = 'hancom-interactive'; available = $false; formats = @('HWP-BINARY'); operations = @('inspect','generate','apply','batch','verify','export'); requiresGui = $true; isolation = 'current-session'; reason = 'test' }
+            )
+        }
+        $calls = [pscustomobject]@{ Value = 0 }
+        $factory = ({ param($context) $calls.Value++; throw '세션 호출 금지' }.GetNewClosure())
+
+        $result = Invoke-HwpGenerate -NewDocument -Plan $plan -OutputPath $output `
+            -ExecutionContext $hwpExecutionContext -Capabilities $capabilities -SessionFactory $factory
+
+        $result.Status | Should Be 'BLOCKED'
+        ($result.Errors -join ' ') | Should Match 'silent'
+        $calls.Value | Should Be 0
     }
 }
