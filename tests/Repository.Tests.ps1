@@ -1,8 +1,9 @@
-Describe 'hwp-native 저장소 구조' {
+Describe 'hwp-skill 저장소 구조' {
     It '스킬 메타데이터와 공용 진입점을 제공한다' {
-        Test-Path "$PSScriptRoot/../skill/hwp-native/SKILL.md" | Should Be $true
-        Test-Path "$PSScriptRoot/../skill/hwp-native/agents/openai.yaml" | Should Be $true
-        Test-Path "$PSScriptRoot/../skill/hwp-native/scripts/Invoke-HwpNative.ps1" | Should Be $true
+        Test-Path "$PSScriptRoot/../skill/hwp-skill/SKILL.md" | Should Be $true
+        Test-Path "$PSScriptRoot/../skill/hwp-skill/agents/openai.yaml" | Should Be $true
+        Test-Path "$PSScriptRoot/../skill/hwp-skill/scripts/Invoke-HwpSkill.ps1" | Should Be $true
+        Test-Path "$PSScriptRoot/../skill/hwp-native" | Should Be $false
     }
 
     It '공개 배포에 필요한 한국어 문서와 라이선스를 제공한다' {
@@ -10,9 +11,9 @@ Describe 'hwp-native 저장소 구조' {
             '../README.md',
             '../LICENSE',
             '../install.ps1',
-            '../skill/hwp-native/references/operations.md',
-            '../skill/hwp-native/references/safety.md',
-            '../skill/hwp-native/references/limitations.md'
+            '../skill/hwp-skill/references/operations.md',
+            '../skill/hwp-skill/references/safety.md',
+            '../skill/hwp-skill/references/limitations.md'
         )) {
             Test-Path (Join-Path $PSScriptRoot $relativePath) | Should Be $true
         }
@@ -23,11 +24,13 @@ Describe 'hwp-native 저장소 구조' {
         $readme | Should Match '보안 모듈'
         $readme | Should Match 'HWPX'
         $readme | Should Match '원본.*덮어쓰'
+        $readme | Should Match '콘텐츠리움'
+        $readme | Should Match 'https://github.com/contentriumkorea/hwp-skill.git'
     }
 
     It '복사 가능한 편집 및 새 문서 계획 예제를 제공한다' {
-        $editExample = Join-Path $PSScriptRoot '../skill/hwp-native/examples/replace-text.plan.json'
-        $generateExample = Join-Path $PSScriptRoot '../skill/hwp-native/examples/generate-new.plan.json'
+        $editExample = Join-Path $PSScriptRoot '../skill/hwp-skill/examples/replace-text.plan.json'
+        $generateExample = Join-Path $PSScriptRoot '../skill/hwp-skill/examples/generate-new.plan.json'
         Test-Path $editExample | Should Be $true
         Test-Path $generateExample | Should Be $true
         { Get-Content -LiteralPath $editExample -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop } | Should Not Throw
@@ -36,15 +39,16 @@ Describe 'hwp-native 저장소 구조' {
 
     It '편집·검사·새 문서 계획 JSON 스키마가 유효한 JSON이다' {
         foreach ($name in 'edit-plan.schema.json','inspection.schema.json','generate-plan.schema.json') {
-            $schemaPath = Join-Path $PSScriptRoot "../skill/hwp-native/schemas/$name"
+            $schemaPath = Join-Path $PSScriptRoot "../skill/hwp-skill/schemas/$name"
             Test-Path $schemaPath | Should Be $true
             { Get-Content -LiteralPath $schemaPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop } | Should Not Throw
+            (Get-Content -LiteralPath $schemaPath -Raw -Encoding UTF8) | Should Match 'https://github.com/contentriumkorea/hwp-skill/'
         }
     }
 
     It '공개 편집 스키마가 위험한 계획 조합을 거부한다' {
-        $schemaPath = Join-Path $PSScriptRoot '../skill/hwp-native/schemas/edit-plan.schema.json'
-        $valid = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../skill/hwp-native/examples/replace-text.plan.json') `
+        $schemaPath = Join-Path $PSScriptRoot '../skill/hwp-skill/schemas/edit-plan.schema.json'
+        $valid = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../skill/hwp-skill/examples/replace-text.plan.json') `
             -Raw -Encoding UTF8 | ConvertFrom-Json
 
         (($valid | ConvertTo-Json -Depth 30) | Test-Json -SchemaFile $schemaPath -ErrorAction SilentlyContinue) | Should Be $true
@@ -67,7 +71,7 @@ Describe 'hwp-native 저장소 구조' {
     }
 
     It 'SKILL.md가 간결한 한국어 안전 워크플로를 명시한다' {
-        $skillPath = Join-Path $PSScriptRoot '../skill/hwp-native/SKILL.md'
+        $skillPath = Join-Path $PSScriptRoot '../skill/hwp-skill/SKILL.md'
         $skill = Get-Content -LiteralPath $skillPath -Raw -Encoding UTF8
         (Get-Content -LiteralPath $skillPath -Encoding UTF8).Count | Should BeLessThan 500
         $skill | Should Match '사전 점검'
@@ -76,5 +80,9 @@ Describe 'hwp-native 저장소 구조' {
         $skill | Should Match '승인'
         $skill | Should Match '다시 열'
         $skill | Should Match '원본'
+        $skill | Should Match '(?m)^name:\s+hwp-skill\r?$'
+
+        $interface = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../skill/hwp-skill/agents/openai.yaml') -Raw -Encoding UTF8
+        $interface | Should Match '\$hwp-skill'
     }
 }

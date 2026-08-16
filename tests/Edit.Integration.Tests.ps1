@@ -1,8 +1,8 @@
-$commonModule = Join-Path $PSScriptRoot '../skill/hwp-native/scripts/lib/HwpCommon.psm1'
-$sessionModule = Join-Path $PSScriptRoot '../skill/hwp-native/scripts/lib/HwpSession.psm1'
-$inspectModule = Join-Path $PSScriptRoot '../skill/hwp-native/scripts/lib/HwpInspect.psm1'
-$planModule = Join-Path $PSScriptRoot '../skill/hwp-native/scripts/lib/HwpPlan.psm1'
-$editModule = Join-Path $PSScriptRoot '../skill/hwp-native/scripts/lib/HwpEdit.psm1'
+$commonModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCommon.psm1'
+$sessionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpSession.psm1'
+$inspectModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpInspect.psm1'
+$planModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpPlan.psm1'
+$editModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpEdit.psm1'
 $helperModule = Join-Path $PSScriptRoot 'TestHelpers.psm1'
 Import-Module $commonModule -Force
 Import-Module $sessionModule -Force
@@ -244,8 +244,8 @@ Describe 'HWP 서식과 문서 구조 편집 실제 한컴 통합 시험' -Tags 
         $output = Join-Path $TestDrive 'format-and-break.hwp'
         $before = Get-HwpInspection -LiteralPath $fixtureHwp
         $operations = @(
-            (New-CharStyleOperation -Anchor 'HWP 네이티브 통합 시험' -HeightPt 14 -Bold $true),
-            (New-ParaStyleOperation -Anchor 'HWP 네이티브 통합 시험' -Align center),
+            (New-CharStyleOperation -Anchor 'HWP 스킬 통합 시험' -HeightPt 14 -Bold $true),
+            (New-ParaStyleOperation -Anchor 'HWP 스킬 통합 시험' -Align center),
             (New-PageBreakOperation -Anchor '쪽 나누기 위치' -Placement after)
         )
 
@@ -267,7 +267,7 @@ Describe 'HWP 서식과 문서 구조 편집 실제 한컴 통합 시험' -Tags 
         $reopened = New-HwpSession
         try {
             (Open-HwpDocumentFromMemory -Session $reopened -LiteralPath $output).Status | Should Be 'PASS'
-            $snapshot = Get-HwpTextStyleSnapshot -Session $reopened -Operation (New-Operation -Anchor 'HWP 네이티브 통합 시험')
+            $snapshot = Get-HwpTextStyleSnapshot -Session $reopened -Operation (New-Operation -Anchor 'HWP 스킬 통합 시험')
             $snapshot.Status | Should Be 'PASS'
             $snapshot.Data.HeightPt | Should Be 14
             $snapshot.Data.Bold | Should Be $true
@@ -284,10 +284,10 @@ Describe 'HWP 서식과 문서 구조 편집 실제 한컴 통합 시험' -Tags 
     It '승인된 구역 설정과 머리말·꼬리말·쪽 번호를 적용한다' -Skip:(-not $runNative) {
         $output = Join-Path $TestDrive 'section-and-header.hwp'
         $operations = @(
-            (New-SectionOperation -Anchor 'HWP 네이티브 통합 시험' -Orientation landscape -LeftMarginMm 16 -RightMarginMm 16),
-            (New-HeaderFooterOperation -Anchor 'HWP 네이티브 통합 시험' -Kind header -Text '가상 머리말'),
-            (New-HeaderFooterOperation -Anchor 'HWP 네이티브 통합 시험' -Kind footer -Text '가상 꼬리말'),
-            (New-PageNumberOperation -Anchor 'HWP 네이티브 통합 시험' -Position bottom-center -StartNumber 1)
+            (New-SectionOperation -Anchor 'HWP 스킬 통합 시험' -Orientation landscape -LeftMarginMm 16 -RightMarginMm 16),
+            (New-HeaderFooterOperation -Anchor 'HWP 스킬 통합 시험' -Kind header -Text '가상 머리말'),
+            (New-HeaderFooterOperation -Anchor 'HWP 스킬 통합 시험' -Kind footer -Text '가상 꼬리말'),
+            (New-PageNumberOperation -Anchor 'HWP 스킬 통합 시험' -Position bottom-center -StartNumber 1)
         )
 
         $session = New-HwpSession
@@ -308,7 +308,7 @@ Describe 'HWP 서식과 문서 구조 편집 실제 한컴 통합 시험' -Tags 
         $reopened = New-HwpSession
         try {
             (Open-HwpDocumentFromMemory -Session $reopened -LiteralPath $output).Status | Should Be 'PASS'
-            $section = Get-HwpSectionSnapshot -Session $reopened -Operation (New-Operation -Anchor 'HWP 네이티브 통합 시험')
+            $section = Get-HwpSectionSnapshot -Session $reopened -Operation (New-Operation -Anchor 'HWP 스킬 통합 시험')
             $section.Status | Should Be 'PASS'
             $section.Data.Orientation | Should Be 'landscape'
             [Math]::Round($section.Data.LeftMarginMm, 1) | Should Be 16
@@ -338,7 +338,7 @@ Describe 'HWP 참조 개체 편집 실제 한컴 통합 시험' -Tags Native,Ref
             (New-NoteOperation -Type add-footnote -Anchor '쪽 나누기 위치' -Text '각주 시험 내용'),
             (New-NoteOperation -Type add-endnote -Anchor '이미지 삽입 위치' -Text '미주 시험 내용'),
             (New-HyperlinkOperation -Anchor '기존 문구' -Url 'https://example.com/hwp-test'),
-            (New-BookmarkOperation -Anchor 'HWP 네이티브 통합 시험' -Name '통합시험_제목')
+            (New-BookmarkOperation -Anchor 'HWP 스킬 통합 시험' -Name '통합시험_제목')
         )
 
         $session = New-HwpSession
@@ -372,7 +372,7 @@ Describe 'HWP 참조 개체 편집 실제 한컴 통합 시험' -Tags Native,Ref
         $sourceHash = Get-HwpSha256 -LiteralPath $fixtureHwp
         $output = Join-Path $TestDrive 'toc-and-merge.hwp'
         $operations = @(
-            (New-TocOperation -Anchor '쪽 나누기 위치' -HeadingAnchors @('HWP 네이티브 통합 시험','표 삽입 위치') -Title '차례'),
+            (New-TocOperation -Anchor '쪽 나누기 위치' -HeadingAnchors @('HWP 스킬 통합 시험','표 삽입 위치') -Title '차례'),
             (New-MergeOperation -Paths @($fixtureHwp) -PageBreakBetween $true -VerifyText '기존 문구' -VerifyCount 2)
         )
 
@@ -394,7 +394,7 @@ Describe 'HWP 참조 개체 편집 실제 한컴 통합 시험' -Tags Native,Ref
         $after = Get-HwpInspection -LiteralPath $output
         $after.Status | Should Be 'PASS'
         $after.Text | Should Match '차례'
-        $after.Text | Should Match "HWP 네이티브 통합 시험\t1"
+        $after.Text | Should Match "HWP 스킬 통합 시험\t1"
         ([regex]::Matches($after.Text, [regex]::Escape('기존 문구'))).Count | Should Be 2
         $after.PageCount | Should BeGreaterThan 1
         (Get-HwpSha256 -LiteralPath $fixtureHwp) | Should Be $sourceHash

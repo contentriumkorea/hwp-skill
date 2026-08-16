@@ -207,7 +207,7 @@ SHA-256을 가져온다.
 `export`는 편집 계획 작업이 아니라 공용 실행 파일의 독립 명령으로 사용한다.
 
 ```powershell
-& ./scripts/Invoke-HwpNative.ps1 export -LiteralPath "C:\문서\결과.hwp" `
+& ./scripts/Invoke-HwpSkill.ps1 export -LiteralPath "C:\문서\결과.hwp" `
   -ExportKind pdf -OutputPath "C:\문서\결과.pdf"
 ```
 

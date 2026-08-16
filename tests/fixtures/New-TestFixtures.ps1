@@ -8,7 +8,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$libraryRoot = Join-Path $PSScriptRoot '../../skill/hwp-native/scripts/lib'
+$libraryRoot = Join-Path $PSScriptRoot '../../skill/hwp-skill/scripts/lib'
 Import-Module (Join-Path $libraryRoot 'HwpCommon.psm1') -Force
 Import-Module (Join-Path $libraryRoot 'HwpSession.psm1') -Force
 
@@ -94,7 +94,7 @@ function New-HwpFixtureFile {
         }
 
         $bodyPrefix = @(
-            'HWP 네이티브 통합 시험',
+            'HWP 스킬 통합 시험',
             '기존 문구를 안전하게 변경합니다.',
             '중복 문구',
             '중복 문구',

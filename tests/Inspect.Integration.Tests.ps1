@@ -1,6 +1,6 @@
-$commonModule = Join-Path $PSScriptRoot '../skill/hwp-native/scripts/lib/HwpCommon.psm1'
-$sessionModule = Join-Path $PSScriptRoot '../skill/hwp-native/scripts/lib/HwpSession.psm1'
-$inspectModule = Join-Path $PSScriptRoot '../skill/hwp-native/scripts/lib/HwpInspect.psm1'
+$commonModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCommon.psm1'
+$sessionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpSession.psm1'
+$inspectModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpInspect.psm1'
 Import-Module $commonModule -Force
 Import-Module $sessionModule -Force
 if (Test-Path -LiteralPath $inspectModule) {
@@ -128,7 +128,7 @@ function New-FakeInspectionSession {
     }
     $hwp | Add-Member ScriptMethod GetTextFile {
         param($format, $option)
-        "HWP 네이티브 통합 시험`r`n기존 문구를 안전하게 변경합니다."
+        "HWP 스킬 통합 시험`r`n기존 문구를 안전하게 변경합니다."
     }
     $hwp | Add-Member ScriptMethod GetFieldList {
         param($number, $option)
@@ -161,7 +161,7 @@ Describe 'HWP 읽기 함수의 가짜 세션 계약' {
 
         $text = Get-HwpPlainText -Session $session
 
-        $text | Should Match 'HWP 네이티브 통합 시험'
+        $text | Should Match 'HWP 스킬 통합 시험'
     }
 
     It '모든 일반 필드 이름과 값을 추출한다' {
@@ -238,7 +238,7 @@ Describe 'Get-HwpInspection' {
         $actual = Get-HwpInspection -LiteralPath $path -SessionFactory $factory -SecurityModuleReader { @('TestModule') }
 
         $actual.Status | Should Be 'PASS'
-        $actual.Text | Should Match 'HWP 네이티브 통합 시험'
+        $actual.Text | Should Match 'HWP 스킬 통합 시험'
         $actual.Fields.담당자 | Should Be '{{담당자}}'
         $actual.PageCount | Should Be 2
         ($actual.Controls | Where-Object CtrlId -eq 'tbl').Count | Should Be 1
@@ -313,7 +313,7 @@ Describe 'Get-HwpInspection 실제 한컴 통합 시험' -Tags Native {
         $actual = Get-HwpInspection -LiteralPath $fixtureHwp
 
         $actual.Status | Should Be 'PASS'
-        $actual.Text | Should Match 'HWP 네이티브 통합 시험'
+        $actual.Text | Should Match 'HWP 스킬 통합 시험'
         $actual.Fields.담당자 | Should Be '시험 담당자'
         $actual.PageCount | Should BeGreaterThan 0
         ($actual.Controls | Where-Object CtrlId -eq 'tbl').Count | Should Be 1
@@ -326,7 +326,7 @@ Describe 'Get-HwpInspection 실제 한컴 통합 시험' -Tags Native {
 
         $actual.Status | Should Be 'PASS'
         $actual.DetectedKind | Should Be 'HWP-BINARY'
-        $actual.Text | Should Match 'HWP 네이티브 통합 시험'
+        $actual.Text | Should Match 'HWP 스킬 통합 시험'
         $actual.Fields.담당자 | Should Be '시험 담당자'
         (Get-HwpSha256 -LiteralPath $fixtureHwt) | Should Be $beforeHash
     }

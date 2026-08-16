@@ -1,8 +1,8 @@
-# HWP 네이티브 스킬 설계서
+# HWP 스킬 스킬 설계서
 
 작성일: 2026-08-16
 상태: 사용자 승인 완료, 구현 계획 수립
-저장소 이름: `hwp-native-skill`
+저장소 이름: `hwp-skill`
 라이선스: MIT
 
 ## 1. 목적
@@ -130,7 +130,7 @@ HWP/HWT/HWPX 입력 파일
 
 ### 5.1 공용 실행 명령
 
-`Invoke-HwpNative.ps1`은 다음 명령을 제공한다.
+`Invoke-HwpSkill.ps1`은 다음 명령을 제공한다.
 
 - `preflight`: 환경과 파일의 사전 조건 확인
 - `inspect`: 문서 내용과 구조 추출
@@ -304,20 +304,20 @@ HWP/HWT/HWPX 입력 파일
 
 ## 10. 저장소와 배포 구조
 
-공개 저장소 이름은 `hwp-native-skill`이며 MIT 라이선스를 적용한다.
+공개 저장소 이름은 `hwp-skill`이며 MIT 라이선스를 적용한다.
 
 ```text
-hwp-native-skill/
+hwp-skill/
 ├─ README.md
 ├─ LICENSE
 ├─ install.ps1
 ├─ skill/
-│  └─ hwp-native/
+│  └─ hwp-skill/
 │     ├─ SKILL.md
 │     ├─ agents/
 │     │  └─ openai.yaml
 │     ├─ scripts/
-│     │  ├─ Invoke-HwpNative.ps1
+│     │  ├─ Invoke-HwpSkill.ps1
 │     │  └─ lib/
 │     │     ├─ HwpSession.psm1
 │     │     ├─ HwpInspect.psm1

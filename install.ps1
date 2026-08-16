@@ -99,7 +99,7 @@ function Test-HwpNativeTreeHasReparsePoint {
 function Assert-HwpNativeRequiredFiles {
     param([Parameter(Mandatory)][string]$Path)
 
-    foreach ($required in 'SKILL.md','agents\openai.yaml','scripts\Invoke-HwpNative.ps1') {
+    foreach ($required in 'SKILL.md','agents\openai.yaml','scripts\Invoke-HwpSkill.ps1') {
         if (-not (Test-Path -LiteralPath (Join-Path $Path $required) -PathType Leaf)) {
             throw "설치본에 필수 파일이 없습니다: $required"
         }
@@ -142,9 +142,9 @@ if ($null -eq $InstallValidator) {
     }
 }
 
-$sourcePath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'skill\hwp-native'))
+$sourcePath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'skill\hwp-skill'))
 if (-not (Test-Path -LiteralPath (Join-Path $sourcePath 'SKILL.md') -PathType Leaf)) {
-    return New-HwpNativeInstallResult -Status FAILED -Errors @('배포본에서 skill/hwp-native/SKILL.md를 찾지 못했습니다.')
+    return New-HwpNativeInstallResult -Status FAILED -Errors @('배포본에서 skill/hwp-skill/SKILL.md를 찾지 못했습니다.')
 }
 if (Test-HwpNativeTreeHasReparsePoint -Root $sourcePath) {
     return New-HwpNativeInstallResult -Status BLOCKED -Errors @(
@@ -188,8 +188,8 @@ if (Test-HwpNativePathHasReparsePoint -Path $rootPath) {
     )
 }
 
-$installPath = [IO.Path]::GetFullPath((Join-Path $rootPath 'hwp-native'))
-$backupRoot = [IO.Path]::GetFullPath((Join-Path $rootPath '.hwp-native-backups'))
+$installPath = [IO.Path]::GetFullPath((Join-Path $rootPath 'hwp-skill'))
+$backupRoot = [IO.Path]::GetFullPath((Join-Path $rootPath '.hwp-skill-backups'))
 if (-not (Test-HwpNativePathInsideRoot -Path $installPath -Root $rootPath)) {
     return New-HwpNativeInstallResult -Status BLOCKED -Errors @('계산된 설치 경로가 설치 대상 폴더 밖에 있습니다.')
 }
@@ -205,7 +205,7 @@ if (Test-HwpNativePathHasReparsePoint -Path $installPath) {
 $hadExisting = Test-Path -LiteralPath $installPath
 if ($hadExisting -and -not $Update) {
     return New-HwpNativeInstallResult -Status BLOCKED -InstallPath $installPath -Errors @(
-        'hwp-native가 이미 설치되어 있습니다. 기존 설치를 백업하고 갱신하려면 -Update를 지정하세요.'
+        'hwp-skill이 이미 설치되어 있습니다. 기존 설치를 백업하고 갱신하려면 -Update를 지정하세요.'
     )
 }
 if ($hadExisting -and (Test-HwpNativePathHasReparsePoint -Path $backupRoot)) {
@@ -214,7 +214,7 @@ if ($hadExisting -and (Test-HwpNativePathHasReparsePoint -Path $backupRoot)) {
     )
 }
 
-$stagePath = [IO.Path]::GetFullPath((Join-Path $rootPath ('.hwp-native.install-' + [guid]::NewGuid().ToString('n'))))
+$stagePath = [IO.Path]::GetFullPath((Join-Path $rootPath ('.hwp-skill.install-' + [guid]::NewGuid().ToString('n'))))
 $backupPath = ''
 $failedInstallPath = ''
 $movedExisting = $false
@@ -245,7 +245,7 @@ try {
     Invoke-HwpNativeInstallValidation -Validator $InstallValidator -Path $stagePath
 
     if ($hadExisting) {
-        $backupPath = New-HwpNativeUniqueChildPath -Parent $backupRoot -Prefix 'hwp-native'
+        $backupPath = New-HwpNativeUniqueChildPath -Parent $backupRoot -Prefix 'hwp-skill'
         if (-not (Test-HwpNativePathInsideRoot -Path $backupPath -Root $backupRoot)) {
             throw '백업 경로가 백업 폴더 밖에 있습니다.'
         }

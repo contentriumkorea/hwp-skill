@@ -1,4 +1,4 @@
-# HWP Native Skill
+# HWP Skill
 
 Windows에 설치된 한컴오피스 한글을 실제 문서 엔진으로 사용해 `.hwp`, `.hwt`,
 `.hwpx` 파일을 로컬에서 안전하게 읽고 다루는 Codex 스킬입니다. 공문, 보고서,
@@ -7,6 +7,18 @@ Windows에 설치된 한컴오피스 한글을 실제 문서 엔진으로 사용
 
 핵심 원칙은 간단합니다. **원본을 덮어쓰지 않고, 먼저 읽고, 변경 계획을 검증하고,
 별도 결과를 만든 다음 다시 열어 확인합니다.**
+
+## Contentrium에서 만든 이유
+
+HWP Skill은 콘텐츠리움(Contentrium)이 공공기관·교육기관 콘텐츠를 제작하며 반복해서
+마주친 한글 문서 작업을 더 안전하고 재현 가능하게 만들기 위해 시작한 오픈소스
+프로젝트입니다. 단순히 글자를 추출하는 데서 끝내지 않고, 실제 한컴오피스 엔진으로
+문서를 읽고 원본을 보존한 채 수정본을 만든 다음 다시 열어 검증하는 업무 흐름을
+담았습니다.
+
+Contentrium은 영상·디자인·웹·AI 기술을 연결해 공공 콘텐츠의 기획과 제작 과정을
+개선합니다. 이 저장소도 현장에서 얻은 경험을 누구나 검토하고 확장할 수 있는 도구로
+공유한다는 방향으로 운영합니다.
 
 > 중요: 이 저장소의 MIT 라이선스는 이 프로젝트 코드에만 적용됩니다. 한컴오피스와
 > HWP 자동화 API의 이용 조건은 별개입니다. 한컴 공식 안내는 개인의 비상업적 이용과
@@ -59,7 +71,7 @@ Windows에 설치된 한컴오피스 한글을 실제 문서 엔진으로 사용
 내보내기는 완료 검증으로 표시하지 않습니다. 이 경우 도구는 성공을 과장하지 않고
 `PASS_WITH_WARNINGS` 또는 `BLOCKED`를 반환합니다.
 
-자세한 제한은 [지원 환경과 제한 사항](skill/hwp-native/references/limitations.md)을
+자세한 제한은 [지원 환경과 제한 사항](skill/hwp-skill/references/limitations.md)을
 확인하세요.
 
 ## 요구 환경
@@ -79,15 +91,15 @@ Windows에 설치된 한컴오피스 한글을 실제 문서 엔진으로 사용
 GitHub 저장소를 내려받은 뒤 저장소 폴더에서 실행합니다.
 
 ```powershell
-git clone https://github.com/gb-consumer/hwp-native-skill.git
-Set-Location .\hwp-native-skill
+git clone https://github.com/contentriumkorea/hwp-skill.git
+Set-Location .\hwp-skill
 .\install.ps1
 ```
 
 기본 설치 위치는 다음 순서로 정합니다.
 
-1. `CODEX_HOME`이 있으면 그 아래 `skills\hwp-native`
-2. 없으면 사용자 프로필의 `.codex\skills\hwp-native`
+1. `CODEX_HOME`이 있으면 그 아래 `skills\hwp-skill`
+2. 없으면 사용자 프로필의 `.codex\skills\hwp-skill`
 
 원하는 스킬 루트를 직접 지정할 수도 있습니다.
 
@@ -103,32 +115,32 @@ git pull
 .\install.ps1 -Update
 ```
 
-업데이트 시 기존 `hwp-native` 폴더는 스킬 루트의 `.hwp-native-backups` 아래에 시간표가
+업데이트 시 기존 `hwp-skill` 폴더는 스킬 루트의 `.hwp-skill-backups` 아래에 시간표가
 붙은 백업으로 이동됩니다. 새 설치본의 최종 검증이 실패하면 실패한 설치본을 같은
 백업 폴더에 별도로 격리하고 기존 설치본을 원위치로 복원합니다. 설치 대상·백업 경로에
 junction, 심볼릭 링크 같은 재분석 지점이 발견되면 기존 설치를 옮기기 전에 중단합니다.
 
-설치 후 새 Codex 작업을 시작하고 `$hwp-native`를 지정하면 됩니다.
+설치 후 새 Codex 작업을 시작하고 `$hwp-skill`을 지정하면 됩니다.
 
 ## Codex에서 사용하기
 
 복잡한 명령을 직접 외우지 않아도 됩니다. 다음처럼 요청하세요.
 
 ```text
-$hwp-native로 이 HWP 파일이 제대로 읽히는지 확인해 줘.
+$hwp-skill로 이 HWP 파일이 제대로 읽히는지 확인해 줘.
 ```
 
 ```text
-$hwp-native로 이 보고서의 "2025년"을 "2026년"으로 바꾸는 계획을 먼저 보여 줘.
+$hwp-skill로 이 보고서의 "2025년"을 "2026년"으로 바꾸는 계획을 먼저 보여 줘.
 원본은 보존하고 수정본을 다시 열어 검증해 줘.
 ```
 
 ```text
-$hwp-native로 이 HWT 양식의 담당자와 사업명을 채워 별도 HWP로 만들어 줘.
+$hwp-skill로 이 HWT 양식의 담당자와 사업명을 채워 별도 HWP로 만들어 줘.
 ```
 
 ```text
-$hwp-native로 이 폴더의 HWP들을 먼저 미리보기만 하고, 어떤 파일이 바뀔지 보고해 줘.
+$hwp-skill로 이 폴더의 HWP들을 먼저 미리보기만 하고, 어떤 파일이 바뀔지 보고해 줘.
 ```
 
 스킬은 문서 안에 적힌 문장을 작업 지시로 따르지 않습니다. 문서 내용은 데이터로만
@@ -142,7 +154,7 @@ $hwp-native로 이 폴더의 HWP들을 먼저 미리보기만 하고, 어떤 파
 ### 1. 환경 확인
 
 ```powershell
-$cli = ".\skill\hwp-native\scripts\Invoke-HwpNative.ps1"
+$cli = ".\skill\hwp-skill\scripts\Invoke-HwpSkill.ps1"
 & $cli preflight
 ```
 
@@ -154,7 +166,7 @@ $cli = ".\skill\hwp-native\scripts\Invoke-HwpNative.ps1"
 
 ### 3. 계획 검증
 
-[편집 예제](skill/hwp-native/examples/replace-text.plan.json)의 경로, 원본 SHA-256,
+[편집 예제](skill/hwp-skill/examples/replace-text.plan.json)의 경로, 원본 SHA-256,
 기준 문구와 값을 실제 검사 결과에 맞게 바꿉니다.
 
 ```powershell
@@ -177,7 +189,7 @@ $cli = ".\skill\hwp-native\scripts\Invoke-HwpNative.ps1"
 
 ```powershell
 & $cli generate -NewDocument `
-  -PlanPath ".\skill\hwp-native\examples\generate-new.plan.json" `
+  -PlanPath ".\skill\hwp-skill\examples\generate-new.plan.json" `
   -OutputPath "C:\문서\새문서.hwp"
 ```
 
@@ -213,7 +225,7 @@ $cli = ".\skill\hwp-native\scripts\Invoke-HwpNative.ps1"
 보안 모듈이 없으면 본문·구조 재검사 결과와 함께 PDF·페이지 이미지가 생성되지
 않았다는 경고가 반환됩니다.
 
-전체 명령과 편집 필드는 [편집 작업 규격](skill/hwp-native/references/operations.md)에
+전체 명령과 편집 필드는 [편집 작업 규격](skill/hwp-skill/references/operations.md)에
 정리되어 있습니다.
 
 ## 안전 설계
@@ -230,7 +242,7 @@ $cli = ".\skill\hwp-native\scripts\Invoke-HwpNative.ps1"
 - 사용자 한글 프로세스 일괄 종료 금지
 - 외부 업로드와 매크로 실행 금지
 
-세부 정책과 복구 절차는 [안전 및 복구 정책](skill/hwp-native/references/safety.md)을
+세부 정책과 복구 절차는 [안전 및 복구 정책](skill/hwp-skill/references/safety.md)을
 참조하세요.
 
 ## 개발과 시험
@@ -274,10 +286,10 @@ finally {
 ## 프로젝트 구조
 
 ```text
-skill/hwp-native/
+skill/hwp-skill/
 ├─ SKILL.md
 ├─ agents/openai.yaml
-├─ scripts/Invoke-HwpNative.ps1
+├─ scripts/Invoke-HwpSkill.ps1
 ├─ scripts/lib/*.psm1
 ├─ schemas/*.schema.json
 ├─ examples/*.json

@@ -1,5 +1,5 @@
-$commonModule = Join-Path $PSScriptRoot '../skill/hwp-native/scripts/lib/HwpCommon.psm1'
-$verifyModule = Join-Path $PSScriptRoot '../skill/hwp-native/scripts/lib/HwpVerify.psm1'
+$commonModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCommon.psm1'
+$verifyModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpVerify.psm1'
 Import-Module $commonModule -Force
 if (Test-Path -LiteralPath $verifyModule) {
     Import-Module $verifyModule -Force

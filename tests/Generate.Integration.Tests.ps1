@@ -1,6 +1,6 @@
-$commonModule = Join-Path $PSScriptRoot '../skill/hwp-native/scripts/lib/HwpCommon.psm1'
-$inspectModule = Join-Path $PSScriptRoot '../skill/hwp-native/scripts/lib/HwpInspect.psm1'
-$generateModule = Join-Path $PSScriptRoot '../skill/hwp-native/scripts/lib/HwpGenerate.psm1'
+$commonModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCommon.psm1'
+$inspectModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpInspect.psm1'
+$generateModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpGenerate.psm1'
 $helperModule = Join-Path $PSScriptRoot 'TestHelpers.psm1'
 Import-Module $commonModule -Force
 Import-Module $inspectModule -Force

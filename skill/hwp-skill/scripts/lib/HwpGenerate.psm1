@@ -272,7 +272,7 @@ function Invoke-HwpGenerateField {
     $name = [string]$Block.name
     $value = [string]$Block.value
     $label = if (Test-HwpGenerateProperty -InputObject $Block -Name 'label') { [string]$Block.label } else { '' }
-    $memo = if (Test-HwpGenerateProperty -InputObject $Block -Name 'memo') { [string]$Block.memo } else { 'hwp-native 생성 필드' }
+    $memo = if (Test-HwpGenerateProperty -InputObject $Block -Name 'memo') { [string]$Block.memo } else { 'hwp-skill 생성 필드' }
     $display = if (Test-HwpGenerateProperty -InputObject $Block -Name 'display') { [string]$Block.display } else { "{{$name}}" }
     try {
         $null = $Session.Hwp.HAction.Run('MoveDocEnd')

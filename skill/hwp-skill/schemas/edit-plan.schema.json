@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/gb-consumer/hwp-native-skill/blob/main/skill/hwp-native/schemas/edit-plan.schema.json",
-  "title": "HWP 네이티브 편집 계획",
+  "$id": "https://github.com/contentriumkorea/hwp-skill/blob/main/skill/hwp-skill/schemas/edit-plan.schema.json",
+  "title": "HWP 스킬 편집 계획",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "source", "approvedAdvanced", "operations"],

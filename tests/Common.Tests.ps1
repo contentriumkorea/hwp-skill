@@ -1,4 +1,4 @@
-$modulePath = Join-Path $PSScriptRoot '../skill/hwp-native/scripts/lib/HwpCommon.psm1'
+$modulePath = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCommon.psm1'
 if (Test-Path -LiteralPath $modulePath) {
     Import-Module $modulePath -Force
 }
@@ -102,7 +102,7 @@ Describe '공통 파일 안전 함수' {
 
 Describe '공개 JSON 스키마' {
     It '편집 계획 스키마의 핵심 필드를 필수로 고정한다' {
-        $path = Join-Path $PSScriptRoot '../skill/hwp-native/schemas/edit-plan.schema.json'
+        $path = Join-Path $PSScriptRoot '../skill/hwp-skill/schemas/edit-plan.schema.json'
         $schema = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json
 
         foreach ($name in 'version','source','approvedAdvanced','operations') {
@@ -111,7 +111,7 @@ Describe '공개 JSON 스키마' {
     }
 
     It '검사 결과 스키마의 핵심 필드를 필수로 고정한다' {
-        $path = Join-Path $PSScriptRoot '../skill/hwp-native/schemas/inspection.schema.json'
+        $path = Join-Path $PSScriptRoot '../skill/hwp-skill/schemas/inspection.schema.json'
         $schema = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json
 
         foreach ($name in 'status','path','sha256','detectedKind','text','fields','controls','pageCount','warnings') {
