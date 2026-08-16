@@ -1,6 +1,6 @@
 Set-StrictMode -Version Latest
 
-Import-Module (Join-Path $PSScriptRoot 'HwpCommon.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'HwpCommon.psm1') -ErrorAction Stop
 
 function Get-HwpSecurityModuleNames {
     [CmdletBinding()]
@@ -96,6 +96,68 @@ function New-HwpSession {
     }
 
     throw "한컴오피스 자동화 객체를 만들 수 없습니다: $lastErrorMessage"
+}
+
+function Register-HwpSecurityModules {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [object]$Session,
+
+        [scriptblock]$SecurityModuleReader = { Get-HwpSecurityModuleNames }
+    )
+
+    try {
+        [object[]]$moduleNames = @(& $SecurityModuleReader)
+    }
+    catch {
+        return New-HwpResult -Status BLOCKED -Command register-security-module -Data ([pscustomobject]@{
+            RegisteredModules = @()
+            RegistryWritePerformed = $false
+        }) -Errors @("한컴 자동화 보안 모듈 등록 정보를 읽지 못했습니다: $($_.Exception.Message)")
+    }
+
+    if ($moduleNames.Count -eq 0) {
+        return New-HwpResult -Status BLOCKED -Command register-security-module -Data ([pscustomobject]@{
+            RegisteredModules = @()
+            RegistryWritePerformed = $false
+        }) -Errors @('등록된 공식 한컴 자동화 보안 모듈이 없어 파일 접근을 자동 승인할 수 없습니다.')
+    }
+
+    $registered = [Collections.Generic.List[string]]::new()
+    $errors = [Collections.Generic.List[string]]::new()
+    foreach ($moduleName in $moduleNames) {
+        if ([string]::IsNullOrWhiteSpace([string]$moduleName)) {
+            continue
+        }
+
+        try {
+            $enabled = [bool]$Session.Hwp.RegisterModule('FilePathCheckDLL', [string]$moduleName)
+            if ($enabled) {
+                $registered.Add([string]$moduleName)
+            }
+            else {
+                $errors.Add("보안 모듈을 활성화하지 못했습니다: $moduleName")
+            }
+        }
+        catch {
+            $errors.Add("보안 모듈 활성화 중 오류가 발생했습니다: $moduleName - $($_.Exception.Message)")
+        }
+    }
+
+    $data = [pscustomobject]@{
+        RegisteredModules = @($registered)
+        RegistryWritePerformed = $false
+    }
+    if ($registered.Count -eq 0) {
+        return New-HwpResult -Status BLOCKED -Command register-security-module -Data $data -Errors @($errors)
+    }
+    if ($errors.Count -gt 0) {
+        return New-HwpResult -Status PASS_WITH_WARNINGS -Command register-security-module -Data $data -Warnings @($errors)
+    }
+
+    New-HwpResult -Status PASS -Command register-security-module -Data $data
 }
 
 function Close-HwpSession {
@@ -213,6 +275,7 @@ function Invoke-HwpPreflight {
 Export-ModuleMember -Function @(
     'Get-HwpAutomationInfo',
     'New-HwpSession',
+    'Register-HwpSecurityModules',
     'Close-HwpSession',
     'Invoke-HwpPreflight'
 )

@@ -1,5 +1,6 @@
 .worktrees/
 tests/output/
+tmp/
 *.partial.hwp
 *.partial.hwt
 *.partial.hwpx

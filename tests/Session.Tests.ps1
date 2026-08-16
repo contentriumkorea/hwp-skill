@@ -12,6 +12,8 @@ function New-FakeHwpObject {
         Version = $Version
         QuitCount = 0
         ClearCount = 0
+        RegisterModuleResult = $true
+        RegisterCalls = [Collections.Generic.List[string]]::new()
     }
     $fake | Add-Member ScriptMethod Clear {
         param($option)
@@ -21,7 +23,58 @@ function New-FakeHwpObject {
     $fake | Add-Member ScriptMethod Quit {
         $this.QuitCount++
     }
+    $fake | Add-Member ScriptMethod RegisterModule {
+        param($moduleType, $moduleName)
+        $this.RegisterCalls.Add("$moduleType|$moduleName")
+        [bool]$this.RegisterModuleResult
+    }
     $fake
+}
+
+Describe 'Register-HwpSecurityModules' {
+    It '등록 정보가 없으면 파일을 열기 전에 BLOCKED로 반환한다' {
+        $fake = New-FakeHwpObject
+        $session = [pscustomobject]@{ Hwp=$fake; Owned=$true; Closed=$false }
+
+        $result = Register-HwpSecurityModules -Session $session -SecurityModuleReader { @() }
+
+        $result.Status | Should Be 'BLOCKED'
+        $fake.RegisterCalls.Count | Should Be 0
+        $result.Data.RegistryWritePerformed | Should Be $false
+    }
+
+    It '등록 정보 조회가 실패하면 예외 대신 BLOCKED 결과를 반환한다' {
+        $fake = New-FakeHwpObject
+        $session = [pscustomobject]@{ Hwp=$fake; Owned=$true; Closed=$false }
+
+        $result = Register-HwpSecurityModules -Session $session -SecurityModuleReader { throw 'registry unavailable' }
+
+        $result.Status | Should Be 'BLOCKED'
+        ($result.Errors -join ' ') | Should Match '등록 정보를 읽지 못했습니다'
+        $fake.RegisterCalls.Count | Should Be 0
+    }
+
+    It '레지스트리에 이미 있는 모듈 이름만 한컴 세션에 등록한다' {
+        $fake = New-FakeHwpObject
+        $session = [pscustomobject]@{ Hwp=$fake; Owned=$true; Closed=$false }
+
+        $result = Register-HwpSecurityModules -Session $session -SecurityModuleReader { @('FilePathCheckerModuleExample') }
+
+        $result.Status | Should Be 'PASS'
+        $fake.RegisterCalls[0] | Should Be 'FilePathCheckDLL|FilePathCheckerModuleExample'
+        $result.Data.RegisteredModules[0] | Should Be 'FilePathCheckerModuleExample'
+    }
+
+    It 'RegisterModule이 거짓을 반환하면 승인 성공으로 간주하지 않는다' {
+        $fake = New-FakeHwpObject
+        $fake.RegisterModuleResult = $false
+        $session = [pscustomobject]@{ Hwp=$fake; Owned=$true; Closed=$false }
+
+        $result = Register-HwpSecurityModules -Session $session -SecurityModuleReader { @('BrokenModule') }
+
+        $result.Status | Should Be 'BLOCKED'
+        $result.Errors[0] | Should Match '활성화'
+    }
 }
 
 Describe 'New-HwpSession' {
