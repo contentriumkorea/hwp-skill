@@ -98,6 +98,19 @@ Describe 'Invoke-HwpApply 사전 차단' {
     }
 }
 
+Describe '이미지 경로 접근 정책' {
+    It '등록된 보안 모듈이 없으면 이미지 파일 접근 전에 BLOCKED로 반환한다' {
+        $session = New-FakeTextSession -Text '이미지 삽입 위치'
+        $image = Join-Path $PSScriptRoot 'fixtures/source/fixture-blue.png'
+        $operation = New-InsertImageOperation -Path $image
+
+        $result = Invoke-HwpInsertImage -Session $session -Operation $operation -SecurityModuleReader { @() }
+
+        $result.Status | Should Be 'BLOCKED'
+        ($result.Errors -join ' ') | Should Match '보안 모듈'
+    }
+}
+
 $fixtureHwp = Join-Path $PSScriptRoot 'fixtures/source/native-fixture.hwp'
 $runNative = $env:HWP_NATIVE_RUN_INTEGRATION -eq '1' -and (Test-Path -LiteralPath $fixtureHwp)
 
@@ -170,5 +183,38 @@ Describe 'HWP 원자적 계획 적용 실제 한컴 통합 시험' -Tags Atomic,
         Test-Path -LiteralPath $result.FailedArtifactPath | Should Be $true
         (Get-HwpSha256 -LiteralPath $fixtureHwp) | Should Be $sourceHash
         @(Get-ChildItem -LiteralPath $TestDrive -Filter '*.partial.hwp').Count | Should Be 0
+    }
+}
+
+Describe 'HWP 표 구조 편집 실제 한컴 통합 시험' -Tags Native,Structure {
+    It '표를 추가하고 지정 셀을 채운 뒤 승인된 행을 추가한다' -Skip:(-not $runNative) {
+        $output = Join-Path $TestDrive 'table-edit.hwp'
+        $operations = @(
+            (New-InsertTableOperation -Anchor '표 삽입 위치' -Rows 2 -Columns 2),
+            (New-TableCellOperation -TableIndex 2 -Row 1 -Column 1 -After '첫 셀'),
+            (New-AddTableRowOperation -TableIndex 2 -AfterRow 2),
+            (New-TableCellOperation -TableIndex 2 -Row 3 -Column 1 -After '추가 행')
+        )
+
+        $session = New-HwpSession
+        try {
+            (Open-HwpDocumentFromMemory -Session $session -LiteralPath $fixtureHwp).Status | Should Be 'PASS'
+            $results = @(
+                foreach ($operation in $operations) {
+                    Invoke-HwpEditOperation -Session $session -Operation $operation -ApprovedAdvanced:$true
+                }
+            )
+            @($results | Where-Object Status -ne 'PASS').Count | Should Be 0
+            (Save-HwpMemoryDocument -Session $session -SourcePath $fixtureHwp -OutputPath $output).Status | Should Be 'PASS'
+        }
+        finally {
+            Close-HwpSession -Session $session
+        }
+
+        $after = Get-HwpInspection -LiteralPath $output
+        $after.Status | Should Be 'PASS'
+        @($after.Controls | Where-Object CtrlId -eq 'tbl').Count | Should Be 2
+        $after.Text | Should Match '첫 셀'
+        $after.Text | Should Match '추가 행'
     }
 }

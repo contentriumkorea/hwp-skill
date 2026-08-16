@@ -473,6 +473,469 @@ function Invoke-HwpSetField {
     })
 }
 
+function Get-HwpControlsById {
+    param(
+        [Parameter(Mandatory)][object]$Session,
+        [Parameter(Mandatory)][string]$CtrlId,
+        [ValidateRange(1, 100000)][int]$MaximumControls = 10000
+    )
+
+    $controls = [Collections.Generic.List[object]]::new()
+    $visited = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $control = $Session.Hwp.HeadCtrl
+    $scanned = 0
+    while ($null -ne $control) {
+        if ($scanned -ge $MaximumControls) {
+            throw "컨트롤 수가 안전 한도 $MaximumControls 개를 초과했습니다."
+        }
+        $instanceId = try { [string]$control.GetCtrlInstID() } catch { '' }
+        $identity = if ([string]::IsNullOrWhiteSpace($instanceId)) {
+            'runtime:{0}' -f [Runtime.CompilerServices.RuntimeHelpers]::GetHashCode($control)
+        }
+        else {
+            'instance:{0}' -f $instanceId
+        }
+        if (-not $visited.Add($identity)) {
+            break
+        }
+        if ([string]$control.CtrlID -eq $CtrlId) {
+            $controls.Add($control)
+        }
+        $control = try { $control.Next } catch { $null }
+        $scanned++
+    }
+    @($controls)
+}
+
+function Enter-HwpTableCell {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Session,
+        [ValidateRange(1, 1000)][int]$TableIndex,
+        [ValidateRange(1, 1000)][int]$Row,
+        [ValidateRange(1, 1000)][int]$Column
+    )
+
+    try {
+        $tables = @(Get-HwpControlsById -Session $Session -CtrlId 'tbl')
+        if ($TableIndex -gt $tables.Count) {
+            return New-HwpResult -Status BLOCKED -Command enter-table-cell -Data ([pscustomobject]@{
+                TableIndex = $TableIndex
+                TableCount = $tables.Count
+                Row = $Row
+                Column = $Column
+            }) -Errors @("표 인덱스가 범위를 벗어났습니다: $TableIndex / $($tables.Count)")
+        }
+        $table = $tables[$TableIndex - 1]
+        if (-not $Session.Hwp.SetPosBySet($table.GetAnchorPos(0))) {
+            throw '표의 기준 위치로 이동하지 못했습니다.'
+        }
+        $found = [string]$Session.Hwp.FindCtrl()
+        if ($found -ne 'tbl') {
+            throw "대상 위치에서 표 컨트롤을 찾지 못했습니다: $found"
+        }
+        if (-not $Session.Hwp.HAction.Run('ShapeObjTableSelCell')) {
+            throw '표의 첫 셀을 선택하지 못했습니다.'
+        }
+        for ($rowIndex = 1; $rowIndex -lt $Row; $rowIndex++) {
+            if (-not $Session.Hwp.HAction.Run('TableLowerCell')) {
+                return New-HwpResult -Status BLOCKED -Command enter-table-cell -Errors @(
+                    "표 $TableIndex 에 $Row 번째 행이 없습니다."
+                )
+            }
+        }
+        for ($columnIndex = 1; $columnIndex -lt $Column; $columnIndex++) {
+            if (-not $Session.Hwp.HAction.Run('TableRightCell')) {
+                return New-HwpResult -Status BLOCKED -Command enter-table-cell -Errors @(
+                    "표 $TableIndex 의 $Row 번째 행에 $Column 번째 열이 없습니다."
+                )
+            }
+        }
+        $fieldState = [int]$Session.Hwp.CurFieldState
+        if (($fieldState -band 15) -ne 1) {
+            return New-HwpResult -Status BLOCKED -Command enter-table-cell -Errors @(
+                "대상 위치가 표 셀이 아닙니다: CurFieldState=$fieldState"
+            )
+        }
+
+        New-HwpResult -Status PASS -Command enter-table-cell -Data ([pscustomobject]@{
+            TableIndex = $TableIndex
+            TableCount = $tables.Count
+            Row = $Row
+            Column = $Column
+            FieldState = $fieldState
+            TableControl = $table
+        })
+    }
+    catch {
+        New-HwpResult -Status FAILED -Command enter-table-cell -Errors @(
+            "표 셀 이동 중 오류가 발생했습니다: $($_.Exception.Message)"
+        )
+    }
+}
+
+function Invoke-HwpInsertTable {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Session,
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Operation
+    )
+
+    $rows = if (Test-HwpEditProperty -InputObject $Operation.target -Name 'rows') { [int]$Operation.target.rows } else { 0 }
+    $columns = if (Test-HwpEditProperty -InputObject $Operation.target -Name 'columns') { [int]$Operation.target.columns } else { 0 }
+    if ($rows -lt 1 -or $rows -gt 100 -or $columns -lt 1 -or $columns -gt 100) {
+        return New-HwpResult -Status BLOCKED -Command insert-table -Errors @(
+            '표 행과 열은 각각 1~100 범위여야 합니다.'
+        )
+    }
+    $placement = if (Test-HwpEditProperty -InputObject $Operation.target -Name 'placement') {
+        [string]$Operation.target.placement
+    }
+    else {
+        'after'
+    }
+    if ($placement -notin 'before', 'after') {
+        return New-HwpResult -Status BLOCKED -Command insert-table -Errors @('표 placement는 before 또는 after여야 합니다.')
+    }
+
+    $beforeCount = @(Get-HwpControlsById -Session $Session -CtrlId 'tbl').Count
+    $resolution = Resolve-HwpTextTarget -Session $Session -Operation $Operation
+    if ($resolution.Status -ne 'PASS') { return $resolution }
+    $selection = Select-HwpResolvedTarget -Session $Session -Operation $Operation -Resolution $resolution
+    if ($selection.Status -ne 'PASS') { return $selection }
+
+    try {
+        $position = if ($placement -eq 'before') { $selection.Data.StartPosition } else { $selection.Data.EndPosition }
+        if (-not $Session.Hwp.SetPosBySet($position)) {
+            throw '표 삽입 기준 위치로 이동하지 못했습니다.'
+        }
+        if (-not $Session.Hwp.HAction.Run('BreakPara')) {
+            throw '표 삽입용 문단을 만들지 못했습니다.'
+        }
+        $table = $Session.Hwp.HParameterSet.HTableCreation
+        $null = $Session.Hwp.HAction.GetDefault('TableCreate', $table.HSet)
+        $table.Rows = [uint16]$rows
+        $table.Cols = [uint16]$columns
+        $table.WidthType = 0
+        $table.HeightType = 0
+        if (-not $Session.Hwp.HAction.Execute('TableCreate', $table.HSet)) {
+            throw '한컴오피스가 표를 만들지 못했습니다.'
+        }
+        $afterCount = @(Get-HwpControlsById -Session $Session -CtrlId 'tbl').Count
+    }
+    catch {
+        return New-HwpResult -Status FAILED -Command insert-table -Errors @(
+            "표 삽입 중 오류가 발생했습니다: $($_.Exception.Message)"
+        )
+    }
+    if ($afterCount -ne $beforeCount + 1) {
+        return New-HwpResult -Status FAILED -Command insert-table -Errors @(
+            "표 개수 사후검증에 실패했습니다: $beforeCount -> $afterCount"
+        )
+    }
+
+    New-HwpResult -Status PASS -Command insert-table -Data ([pscustomobject]@{
+        OperationId = Get-HwpOperationId -Operation $Operation
+        Type = 'insert-table'
+        Applied = $true
+        Rows = $rows
+        Columns = $columns
+        Placement = $placement
+        TableCountBefore = $beforeCount
+        TableCountAfter = $afterCount
+    })
+}
+
+function Invoke-HwpSetTableCell {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Session,
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Operation
+    )
+
+    $tableIndex = if (Test-HwpEditProperty -InputObject $Operation.target -Name 'tableIndex') { [int]$Operation.target.tableIndex } else { 0 }
+    $row = if (Test-HwpEditProperty -InputObject $Operation.target -Name 'row') { [int]$Operation.target.row } else { 0 }
+    $column = if (Test-HwpEditProperty -InputObject $Operation.target -Name 'column') { [int]$Operation.target.column } else { 0 }
+    if ($tableIndex -lt 1 -or $row -lt 1 -or $column -lt 1) {
+        return New-HwpResult -Status BLOCKED -Command set-table-cell -Errors @(
+            'tableIndex, row, column은 모두 1 이상의 정수여야 합니다.'
+        )
+    }
+    $entered = Enter-HwpTableCell -Session $Session -TableIndex $tableIndex -Row $row -Column $column
+    if ($entered.Status -ne 'PASS') { return $entered }
+
+    $temporaryField = '__hwp_native_cell_' + [guid]::NewGuid().ToString('n')
+    $fieldAssigned = $false
+    try {
+        if (-not $Session.Hwp.SetCurFieldName($temporaryField, 0, '', '')) {
+            throw '대상 셀에 임시 검증 필드를 지정하지 못했습니다.'
+        }
+        $fieldAssigned = $true
+        $currentValue = [string]$Session.Hwp.GetFieldText($temporaryField)
+        if (Test-HwpEditProperty -InputObject $Operation -Name 'before') {
+            $expectedBefore = [string]$Operation.before
+            if (-not [string]::Equals($currentValue, $expectedBefore, [StringComparison]::Ordinal)) {
+                return New-HwpResult -Status BLOCKED -Command set-table-cell -Errors @(
+                    "표 $tableIndex 의 ($row,$column) 셀 값이 before와 다릅니다."
+                )
+            }
+        }
+        $newValue = if (Test-HwpEditProperty -InputObject $Operation -Name 'after') { [string]$Operation.after } else { '' }
+        $null = $Session.Hwp.PutFieldText($temporaryField, $newValue)
+        $verifiedValue = [string]$Session.Hwp.GetFieldText($temporaryField)
+        if (-not [string]::Equals($verifiedValue, $newValue, [StringComparison]::Ordinal)) {
+            throw '셀 값 사후검증에 실패했습니다.'
+        }
+    }
+    catch {
+        return New-HwpResult -Status FAILED -Command set-table-cell -Errors @(
+            "표 셀 변경 중 오류가 발생했습니다: $($_.Exception.Message)"
+        )
+    }
+    finally {
+        if ($fieldAssigned) {
+            try {
+                $null = $Session.Hwp.MoveToField($temporaryField, $true, $true, $false)
+                $null = $Session.Hwp.SetCurFieldName('', 0, '', '')
+            }
+            catch {
+                # 임시 필드 정리 실패는 아래 존재 여부 검증에서 보고한다.
+            }
+        }
+    }
+
+    if ([bool]$Session.Hwp.FieldExist($temporaryField)) {
+        return New-HwpResult -Status FAILED -Command set-table-cell -Errors @(
+            '셀 변경에 사용한 임시 필드를 제거하지 못했습니다.'
+        )
+    }
+    New-HwpResult -Status PASS -Command set-table-cell -Data ([pscustomobject]@{
+        OperationId = Get-HwpOperationId -Operation $Operation
+        Type = 'set-table-cell'
+        Applied = $true
+        TableIndex = $tableIndex
+        Row = $row
+        Column = $column
+        Before = $currentValue
+        After = $verifiedValue
+        TemporaryFieldRemoved = $true
+    })
+}
+
+function Invoke-HwpAddTableRow {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Session,
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Operation,
+        [bool]$ApprovedAdvanced = $false
+    )
+
+    $allowed = Assert-HwpOperationAllowed -Operation $Operation -ApprovedAdvanced:$ApprovedAdvanced
+    if ($allowed.Status -ne 'PASS') { return $allowed }
+    $tableIndex = if (Test-HwpEditProperty -InputObject $Operation.target -Name 'tableIndex') { [int]$Operation.target.tableIndex } else { 0 }
+    $afterRow = if (Test-HwpEditProperty -InputObject $Operation.target -Name 'afterRow') { [int]$Operation.target.afterRow } else { 0 }
+    if ($tableIndex -lt 1 -or $afterRow -lt 1) {
+        return New-HwpResult -Status BLOCKED -Command add-table-row -Errors @('tableIndex와 afterRow는 1 이상이어야 합니다.')
+    }
+    $entered = Enter-HwpTableCell -Session $Session -TableIndex $tableIndex -Row $afterRow -Column 1
+    if ($entered.Status -ne 'PASS') { return $entered }
+    if (-not $Session.Hwp.HAction.Run('TableInsertLowerRow')) {
+        return New-HwpResult -Status FAILED -Command add-table-row -Errors @('지정 행 아래에 새 행을 추가하지 못했습니다.')
+    }
+    $verified = Enter-HwpTableCell -Session $Session -TableIndex $tableIndex -Row ($afterRow + 1) -Column 1
+    if ($verified.Status -ne 'PASS') {
+        return New-HwpResult -Status FAILED -Command add-table-row -Errors @('추가된 행을 다시 찾지 못했습니다.')
+    }
+
+    New-HwpResult -Status PASS -Command add-table-row -Data ([pscustomobject]@{
+        OperationId = Get-HwpOperationId -Operation $Operation
+        Type = 'add-table-row'
+        Applied = $true
+        TableIndex = $tableIndex
+        AfterRow = $afterRow
+        VerifiedRow = $afterRow + 1
+    })
+}
+
+function Resolve-HwpImageFile {
+    param([Parameter(Mandatory)][string]$LiteralPath)
+
+    $resolved = (Resolve-Path -LiteralPath $LiteralPath -ErrorAction Stop).Path
+    if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) {
+        throw '이미지 경로가 파일이 아닙니다.'
+    }
+    $extension = [IO.Path]::GetExtension($resolved).ToLowerInvariant()
+    if ($extension -notin '.png', '.jpg', '.jpeg', '.gif', '.bmp') {
+        throw 'PNG, JPEG, GIF 또는 BMP 이미지만 지원합니다.'
+    }
+    $bytes = [IO.File]::ReadAllBytes($resolved)
+    $matches = switch ($extension) {
+        '.png' { $bytes.Length -ge 8 -and [BitConverter]::ToString($bytes, 0, 8) -eq '89-50-4E-47-0D-0A-1A-0A' }
+        { $_ -in '.jpg', '.jpeg' } { $bytes.Length -ge 3 -and $bytes[0] -eq 0xFF -and $bytes[1] -eq 0xD8 -and $bytes[2] -eq 0xFF }
+        '.gif' { $bytes.Length -ge 6 -and [Text.Encoding]::ASCII.GetString($bytes, 0, 6) -match '^GIF8[79]a$' }
+        '.bmp' { $bytes.Length -ge 2 -and $bytes[0] -eq 0x42 -and $bytes[1] -eq 0x4D }
+        default { $false }
+    }
+    if (-not $matches) {
+        throw '이미지 확장자와 실제 시그니처가 다릅니다.'
+    }
+    [pscustomobject]@{
+        Path = $resolved
+        Extension = $extension
+        Sha256 = (Get-FileHash -LiteralPath $resolved -Algorithm SHA256).Hash.ToLowerInvariant()
+        ByteLength = $bytes.Length
+    }
+}
+
+function Get-HwpPictureControls {
+    param([Parameter(Mandatory)][object]$Session)
+
+    @(
+        Get-HwpControlsById -Session $Session -CtrlId 'gso' |
+            Where-Object { [string]$_.UserDesc -match '그림|picture|image' }
+    )
+}
+
+function Invoke-HwpInsertImage {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Session,
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Operation,
+        [AllowNull()][scriptblock]$SecurityModuleReader = $null
+    )
+
+    try {
+        $imagePath = if (Test-HwpEditProperty -InputObject $Operation.target -Name 'imagePath') {
+            [string]$Operation.target.imagePath
+        }
+        else {
+            ''
+        }
+        $image = Resolve-HwpImageFile -LiteralPath $imagePath
+    }
+    catch {
+        return New-HwpResult -Status BLOCKED -Command insert-image -Errors @($_.Exception.Message)
+    }
+
+    $security = if ($null -eq $SecurityModuleReader) {
+        Register-HwpSecurityModules -Session $Session
+    }
+    else {
+        Register-HwpSecurityModules -Session $Session -SecurityModuleReader $SecurityModuleReader
+    }
+    if ($security.Status -eq 'BLOCKED' -or $security.Status -eq 'FAILED') {
+        return New-HwpResult -Status BLOCKED -Command insert-image -Data $image `
+            -Warnings @($security.Warnings) -Errors @($security.Errors)
+    }
+
+    $widthMm = if (Test-HwpEditProperty -InputObject $Operation.target -Name 'widthMm') { [int][Math]::Round([double]$Operation.target.widthMm) } else { 20 }
+    $heightMm = if (Test-HwpEditProperty -InputObject $Operation.target -Name 'heightMm') { [int][Math]::Round([double]$Operation.target.heightMm) } else { 20 }
+    if ($widthMm -lt 1 -or $heightMm -lt 1) {
+        return New-HwpResult -Status BLOCKED -Command insert-image -Errors @('이미지 크기는 1mm 이상이어야 합니다.')
+    }
+    $beforeCount = @(Get-HwpPictureControls -Session $Session).Count
+    $resolution = Resolve-HwpTextTarget -Session $Session -Operation $Operation
+    if ($resolution.Status -ne 'PASS') { return $resolution }
+    $selection = Select-HwpResolvedTarget -Session $Session -Operation $Operation -Resolution $resolution
+    if ($selection.Status -ne 'PASS') { return $selection }
+
+    try {
+        $placement = if (Test-HwpEditProperty -InputObject $Operation.target -Name 'placement') { [string]$Operation.target.placement } else { 'after' }
+        $position = if ($placement -eq 'before') { $selection.Data.StartPosition } else { $selection.Data.EndPosition }
+        if (-not $Session.Hwp.SetPosBySet($position)) { throw '이미지 삽입 위치로 이동하지 못했습니다.' }
+        if (-not $Session.Hwp.HAction.Run('BreakPara')) { throw '이미지 삽입용 문단을 만들지 못했습니다.' }
+        $picture = $Session.Hwp.InsertPicture($image.Path, $true, 1, $false, $false, 0, $widthMm, $heightMm)
+        if ($null -eq $picture) { throw 'InsertPicture가 결과 컨트롤을 반환하지 않았습니다.' }
+        $afterCount = @(Get-HwpPictureControls -Session $Session).Count
+    }
+    catch {
+        return New-HwpResult -Status FAILED -Command insert-image -Errors @(
+            "이미지 삽입 중 오류가 발생했습니다: $($_.Exception.Message)"
+        )
+    }
+    if ($afterCount -ne $beforeCount + 1) {
+        return New-HwpResult -Status FAILED -Command insert-image -Errors @('그림 컨트롤 개수 사후검증에 실패했습니다.')
+    }
+
+    New-HwpResult -Status $security.Status -Command insert-image -Data ([pscustomobject]@{
+        OperationId = Get-HwpOperationId -Operation $Operation
+        Type = 'insert-image'
+        Applied = $true
+        ImagePath = $image.Path
+        ImageSha256 = $image.Sha256
+        Embedded = $true
+        WidthMm = $widthMm
+        HeightMm = $heightMm
+        PictureCountBefore = $beforeCount
+        PictureCountAfter = $afterCount
+    }) -Warnings @($security.Warnings)
+}
+
+function Invoke-HwpReplaceImage {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Session,
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Operation,
+        [AllowNull()][scriptblock]$SecurityModuleReader = $null
+    )
+
+    try {
+        $image = Resolve-HwpImageFile -LiteralPath ([string]$Operation.target.imagePath)
+    }
+    catch {
+        return New-HwpResult -Status BLOCKED -Command replace-image -Errors @($_.Exception.Message)
+    }
+    $security = if ($null -eq $SecurityModuleReader) {
+        Register-HwpSecurityModules -Session $Session
+    }
+    else {
+        Register-HwpSecurityModules -Session $Session -SecurityModuleReader $SecurityModuleReader
+    }
+    if ($security.Status -eq 'BLOCKED' -or $security.Status -eq 'FAILED') {
+        return New-HwpResult -Status BLOCKED -Command replace-image -Data $image -Errors @($security.Errors)
+    }
+    $controlIndex = if (Test-HwpEditProperty -InputObject $Operation.target -Name 'controlIndex') { [int]$Operation.target.controlIndex } else { 0 }
+    $pictures = @(Get-HwpPictureControls -Session $Session)
+    if ($controlIndex -lt 1 -or $controlIndex -gt $pictures.Count) {
+        return New-HwpResult -Status BLOCKED -Command replace-image -Errors @(
+            "그림 컨트롤 인덱스가 범위를 벗어났습니다: $controlIndex / $($pictures.Count)"
+        )
+    }
+    $widthMm = if (Test-HwpEditProperty -InputObject $Operation.target -Name 'widthMm') { [int][Math]::Round([double]$Operation.target.widthMm) } else { 20 }
+    $heightMm = if (Test-HwpEditProperty -InputObject $Operation.target -Name 'heightMm') { [int][Math]::Round([double]$Operation.target.heightMm) } else { 20 }
+    try {
+        $anchor = $pictures[$controlIndex - 1].GetAnchorPos(0)
+        if (-not $Session.Hwp.SetPosBySet($anchor)) { throw '기존 그림 위치로 이동하지 못했습니다.' }
+        $found = [string]$Session.Hwp.FindCtrl()
+        if ($found -ne 'gso') { throw "기존 그림 컨트롤을 선택하지 못했습니다: $found" }
+        if (-not $Session.Hwp.HAction.Run('Delete')) { throw '기존 그림을 제거하지 못했습니다.' }
+        if (-not $Session.Hwp.SetPosBySet($anchor)) { throw '기존 그림 기준 위치를 복원하지 못했습니다.' }
+        $replacement = $Session.Hwp.InsertPicture($image.Path, $true, 1, $false, $false, 0, $widthMm, $heightMm)
+        if ($null -eq $replacement) { throw '교체 그림을 삽입하지 못했습니다.' }
+        $afterCount = @(Get-HwpPictureControls -Session $Session).Count
+    }
+    catch {
+        return New-HwpResult -Status FAILED -Command replace-image -Errors @(
+            "이미지 교체 중 오류가 발생했습니다: $($_.Exception.Message)"
+        )
+    }
+    if ($afterCount -ne $pictures.Count) {
+        return New-HwpResult -Status FAILED -Command replace-image -Errors @('그림 교체 후 컨트롤 개수가 달라졌습니다.')
+    }
+
+    New-HwpResult -Status $security.Status -Command replace-image -Data ([pscustomobject]@{
+        OperationId = Get-HwpOperationId -Operation $Operation
+        Type = 'replace-image'
+        Applied = $true
+        ControlIndex = $controlIndex
+        ImagePath = $image.Path
+        ImageSha256 = $image.Sha256
+        Embedded = $true
+        WidthMm = $widthMm
+        HeightMm = $heightMm
+    }) -Warnings @($security.Warnings)
+}
+
 function Invoke-HwpEditOperation {
     [CmdletBinding()]
     param(
@@ -492,6 +955,11 @@ function Invoke-HwpEditOperation {
         'insert-after' { Invoke-HwpInsertRelative -Session $Session -Operation $Operation; break }
         'delete-range' { Invoke-HwpDeleteRange -Session $Session -Operation $Operation -ApprovedAdvanced:$ApprovedAdvanced; break }
         'set-field' { Invoke-HwpSetField -Session $Session -Operation $Operation; break }
+        'insert-table' { Invoke-HwpInsertTable -Session $Session -Operation $Operation; break }
+        'set-table-cell' { Invoke-HwpSetTableCell -Session $Session -Operation $Operation; break }
+        'add-table-row' { Invoke-HwpAddTableRow -Session $Session -Operation $Operation -ApprovedAdvanced:$ApprovedAdvanced; break }
+        'insert-image' { Invoke-HwpInsertImage -Session $Session -Operation $Operation; break }
+        'replace-image' { Invoke-HwpReplaceImage -Session $Session -Operation $Operation; break }
         default {
             New-HwpResult -Status BLOCKED -Command edit-operation -Data $allowed.Data -Errors @(
                 "현재 구현에서 아직 실행할 수 없는 작업입니다: $($Operation.type)"
@@ -681,6 +1149,22 @@ function Test-HwpOperationPostcondition {
             $property = $Inspection.Fields.PSObject.Properties[$fieldName]
             $actual = if ($null -eq $property) { $null } else { [string]$property.Value }
             $passed = $null -ne $property -and [string]::Equals([string]$actual, [string]$expected, [StringComparison]::Ordinal)
+            break
+        }
+        'control-count' {
+            $ctrlId = if (Test-HwpEditProperty -InputObject $Operation.verify -Name 'ctrlId') {
+                [string]$Operation.verify.ctrlId
+            }
+            else {
+                ''
+            }
+            $actual = @($Inspection.Controls | Where-Object { [string]$_.CtrlId -eq $ctrlId }).Count
+            $passed = $ctrlId.Length -gt 0 -and $actual -ge [int]$expected
+            break
+        }
+        'operation-applied' {
+            $actual = $true
+            $passed = [bool]$expected
             break
         }
         default {
@@ -969,6 +1453,12 @@ Export-ModuleMember -Function @(
     'Invoke-HwpInsertRelative',
     'Invoke-HwpDeleteRange',
     'Invoke-HwpSetField',
+    'Enter-HwpTableCell',
+    'Invoke-HwpInsertTable',
+    'Invoke-HwpSetTableCell',
+    'Invoke-HwpAddTableRow',
+    'Invoke-HwpInsertImage',
+    'Invoke-HwpReplaceImage',
     'Invoke-HwpEditOperation',
     'Save-HwpMemoryDocument',
     'Test-HwpOperationPostcondition',
