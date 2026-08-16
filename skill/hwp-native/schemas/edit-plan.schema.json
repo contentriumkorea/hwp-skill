@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/hwp-native-skill/schemas/edit-plan.schema.json",
+  "title": "HWP 네이티브 편집 계획",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "source", "approvedAdvanced", "operations"],
+  "properties": {
+    "version": {
+      "const": "1.0"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" }
+      }
+    },
+    "approvedAdvanced": {
+      "type": "boolean"
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/operation" }
+    }
+  },
+  "$defs": {
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "risk", "target", "expectedMatches", "onFailure", "verify"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": {
+          "enum": [
+            "replace-text", "insert-before", "insert-after", "delete-range",
+            "set-field", "set-table-cell", "add-table-row", "insert-table",
+            "insert-image", "replace-image", "apply-char-style", "apply-para-style",
+            "insert-page-break", "set-section", "set-header-footer", "set-page-number",
+            "add-bookmark", "add-hyperlink", "add-caption", "add-footnote",
+            "add-endnote", "build-toc", "merge-documents", "export"
+          ]
+        },
+        "risk": { "enum": ["safe", "advanced"] },
+        "target": {
+          "type": "object",
+          "required": ["anchor"],
+          "properties": {
+            "anchor": { "type": "string" },
+            "beforeContext": { "type": "string" },
+            "afterContext": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "expectedMatches": { "type": "integer", "minimum": 0 },
+        "before": {},
+        "after": {},
+        "onFailure": { "enum": ["stop", "skip"] },
+        "verify": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["kind", "expected"],
+          "properties": {
+            "kind": { "type": "string", "minLength": 1 },
+            "expected": {}
+          }
+        }
+      }
+    }
+  }
+}

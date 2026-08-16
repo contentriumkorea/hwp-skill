@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/hwp-native-skill/schemas/inspection.schema.json",
+  "title": "HWP 네이티브 검사 결과",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "status", "path", "sha256", "detectedKind", "text",
+    "fields", "controls", "pageCount", "warnings"
+  ],
+  "properties": {
+    "status": {
+      "enum": ["PASS", "PASS_WITH_WARNINGS", "BLOCKED", "FAILED"]
+    },
+    "path": { "type": "string", "minLength": 1 },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "detectedKind": { "enum": ["HWP-BINARY", "HWPX-ZIP", "UNKNOWN"] },
+    "text": { "type": "string" },
+    "fields": { "type": "object" },
+    "controls": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["ctrlId"],
+        "properties": {
+          "ctrlId": { "type": "string" },
+          "userDesc": { "type": "string" },
+          "instanceId": {}
+        },
+        "additionalProperties": true
+      }
+    },
+    "pageCount": { "type": "integer", "minimum": 0 },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}
