@@ -2,14 +2,180 @@
 param(
     [Parameter(Mandatory, Position = 0)]
     [ValidateSet('preflight','inspect','validate-plan','apply','generate','batch','compare','verify','export')]
-    [string]$Command
+    [string]$Command,
+
+    [string]$LiteralPath,
+    [string]$PlanPath,
+    [string]$OutputPath,
+    [string]$OutputDirectory,
+    [string]$TemplatePath,
+    [switch]$NewDocument,
+    [string[]]$InputPaths,
+    [string]$InputDirectory,
+    [switch]$Apply,
+    [switch]$Recurse,
+    [string]$BeforePath,
+    [string]$AfterPath,
+    [ValidateSet('pdf','images')][string]$ExportKind = 'pdf',
+    [switch]$RequireUnattendedOpen
 )
 
-$result = [ordered]@{
-    status = 'BLOCKED'
-    command = $Command
-    errors = @('필수 실행 모듈을 불러올 수 없습니다.')
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+$WarningPreference = 'SilentlyContinue'
+
+function Read-HwpCliJson {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $resolved = (Resolve-Path -LiteralPath $Path -ErrorAction Stop).Path
+    if ([IO.Path]::GetExtension($resolved).ToLowerInvariant() -ne '.json') {
+        throw "JSON 파일이 아닙니다: $resolved"
+    }
+    $length = (Get-Item -LiteralPath $resolved).Length
+    if ($length -gt 10485760) { throw 'JSON 파일이 10MB 안전 한도를 초과했습니다.' }
+    $text = [IO.File]::ReadAllText($resolved, [Text.UTF8Encoding]::new($false, $true))
+    $text | ConvertFrom-Json -Depth 100 -ErrorAction Stop
 }
 
-$result | ConvertTo-Json -Depth 10
-exit 2
+function Assert-HwpCliValue {
+    param(
+        [AllowEmptyString()][string]$Value,
+        [Parameter(Mandatory)][string]$Name
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) { throw "$Name 인수가 필요합니다." }
+}
+
+$libraryRoot = Join-Path $PSScriptRoot 'lib'
+$result = $null
+try {
+    Import-Module (Join-Path $libraryRoot 'HwpCommon.psm1') -ErrorAction Stop
+    Import-Module (Join-Path $libraryRoot 'HwpSession.psm1') -ErrorAction Stop
+    Import-Module (Join-Path $libraryRoot 'HwpInspect.psm1') -ErrorAction Stop
+    Import-Module (Join-Path $libraryRoot 'HwpPlan.psm1') -ErrorAction Stop
+    Import-Module (Join-Path $libraryRoot 'HwpEdit.psm1') -ErrorAction Stop
+    Import-Module (Join-Path $libraryRoot 'HwpGenerate.psm1') -ErrorAction Stop
+    Import-Module (Join-Path $libraryRoot 'HwpVerify.psm1') -ErrorAction Stop
+    Import-Module (Join-Path $libraryRoot 'HwpBatch.psm1') -ErrorAction Stop
+
+    $result = switch ($Command) {
+        'preflight' {
+            Invoke-HwpPreflight -RequireUnattendedOpen:([bool]$RequireUnattendedOpen)
+            break
+        }
+        'inspect' {
+            Assert-HwpCliValue -Value $LiteralPath -Name 'LiteralPath'
+            Get-HwpInspection -LiteralPath $LiteralPath
+            break
+        }
+        'validate-plan' {
+            Assert-HwpCliValue -Value $PlanPath -Name 'PlanPath'
+            $imported = Import-HwpEditPlan -LiteralPath $PlanPath
+            New-HwpResult -Status $imported.Status -Command validate-plan -Data $imported.Data `
+                -Warnings @($imported.Warnings) -Errors @($imported.Errors)
+            break
+        }
+        'apply' {
+            Assert-HwpCliValue -Value $LiteralPath -Name 'LiteralPath'
+            Assert-HwpCliValue -Value $PlanPath -Name 'PlanPath'
+            $imported = Import-HwpEditPlan -LiteralPath $PlanPath
+            if ($imported.Status -ne 'PASS') { $imported; break }
+            if ([string]::IsNullOrWhiteSpace($OutputPath)) {
+                Invoke-HwpApply -LiteralPath $LiteralPath -Plan $imported.Data.Plan
+            }
+            else {
+                Invoke-HwpApply -LiteralPath $LiteralPath -Plan $imported.Data.Plan -OutputPath $OutputPath
+            }
+            break
+        }
+        'generate' {
+            Assert-HwpCliValue -Value $PlanPath -Name 'PlanPath'
+            Assert-HwpCliValue -Value $OutputPath -Name 'OutputPath'
+            if ($NewDocument) {
+                $plan = Read-HwpCliJson -Path $PlanPath
+                Invoke-HwpGenerate -NewDocument -Plan $plan -OutputPath $OutputPath
+            }
+            else {
+                Assert-HwpCliValue -Value $TemplatePath -Name 'TemplatePath'
+                $imported = Import-HwpEditPlan -LiteralPath $PlanPath
+                if ($imported.Status -ne 'PASS') { $imported; break }
+                Invoke-HwpGenerate -TemplatePath $TemplatePath -Plan $imported.Data.Plan -OutputPath $OutputPath
+            }
+            break
+        }
+        'batch' {
+            Assert-HwpCliValue -Value $PlanPath -Name 'PlanPath'
+            $imported = Import-HwpEditPlan -LiteralPath $PlanPath
+            if ($imported.Status -ne 'PASS') { $imported; break }
+            $hasDirectory = -not [string]::IsNullOrWhiteSpace($InputDirectory)
+            $hasPaths = $null -ne $InputPaths -and @($InputPaths).Count -gt 0
+            if ($hasDirectory -eq $hasPaths) { throw 'InputDirectory 또는 InputPaths 중 하나만 지정해야 합니다.' }
+            if ($hasDirectory) {
+                Invoke-HwpBatch -InputDirectory $InputDirectory -Plan $imported.Data.Plan `
+                    -OutputDirectory $OutputDirectory -Apply:([bool]$Apply) -Recurse:([bool]$Recurse)
+            }
+            else {
+                Invoke-HwpBatch -InputPaths $InputPaths -Plan $imported.Data.Plan `
+                    -OutputDirectory $OutputDirectory -Apply:([bool]$Apply)
+            }
+            break
+        }
+        'compare' {
+            Assert-HwpCliValue -Value $BeforePath -Name 'BeforePath'
+            Assert-HwpCliValue -Value $AfterPath -Name 'AfterPath'
+            $before = Read-HwpCliJson -Path $BeforePath
+            $after = Read-HwpCliJson -Path $AfterPath
+            Compare-HwpInspection -Before $before -After $after
+            break
+        }
+        'verify' {
+            Assert-HwpCliValue -Value $LiteralPath -Name 'LiteralPath'
+            Assert-HwpCliValue -Value $OutputDirectory -Name 'OutputDirectory'
+            $before = if ([string]::IsNullOrWhiteSpace($BeforePath)) { $null } else { Read-HwpCliJson -Path $BeforePath }
+            Invoke-HwpVerify -LiteralPath $LiteralPath -OutputDirectory $OutputDirectory -Before $before
+            break
+        }
+        'export' {
+            Assert-HwpCliValue -Value $LiteralPath -Name 'LiteralPath'
+            if ($ExportKind -eq 'pdf') {
+                Assert-HwpCliValue -Value $OutputPath -Name 'OutputPath'
+                Export-HwpPdf -LiteralPath $LiteralPath -OutputPath $OutputPath
+            }
+            else {
+                Assert-HwpCliValue -Value $OutputDirectory -Name 'OutputDirectory'
+                Export-HwpPageImages -LiteralPath $LiteralPath -ImageDirectory $OutputDirectory
+            }
+            break
+        }
+    }
+}
+catch {
+    if (Get-Command New-HwpResult -ErrorAction SilentlyContinue) {
+        $result = New-HwpResult -Status FAILED -Command $Command -Errors @($_.Exception.Message)
+    }
+    else {
+        $result = [pscustomobject]@{
+            status = 'FAILED'
+            command = $Command
+            data = $null
+            warnings = @()
+            errors = @($_.Exception.Message)
+        }
+    }
+}
+
+if ($null -eq $result) {
+    $result = [pscustomobject]@{
+        status = 'FAILED'
+        command = $Command
+        data = $null
+        warnings = @()
+        errors = @('명령이 결과를 반환하지 않았습니다.')
+    }
+}
+$result | ConvertTo-Json -Depth 100
+$status = [string]$result.status
+if ($status -in 'PASS','PASS_WITH_WARNINGS') { exit 0 }
+if ($status -eq 'BLOCKED') { exit 2 }
+exit 1
