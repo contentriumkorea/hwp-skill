@@ -145,6 +145,11 @@ $hwp-skill로 이 폴더의 HWP들을 먼저 미리보기만 하고, 어떤 파�
 기본 `silent`는 현재 사용자 세션의 `Hwp.exe`를 실행하지 않고 포커스를 가져오지
 않습니다.
 
+이 섹션의 Phase 1 계약은 분명합니다. `silent` HWP/HWT 경로는 현재 `BLOCKED`이며,
+아래 HWP/HWT 네이티브 예시는 미래 구현이 아니라 명시적으로 승인된 `interactive`
+예외일 때만 사용합니다. 이 예외는 한컴을 열 수 있고 사용자 화면에 창이 보일 수
+있습니다.
+
 ### 1. 환경 확인
 
 ```powershell
@@ -152,10 +157,10 @@ $cli = ".\skill\hwp-skill\scripts\Invoke-HwpSkill.ps1"
 & $cli preflight
 ```
 
-### 2. 문서 읽기
+### 2. HWPX 문서 읽기
 
 ```powershell
-& $cli inspect -LiteralPath "C:\문서\보고서.hwp"
+& $cli inspect -LiteralPath "C:\문서\보고서.hwpx"
 ```
 
 ### 3. 계획 검증
@@ -167,27 +172,53 @@ $cli = ".\skill\hwp-skill\scripts\Invoke-HwpSkill.ps1"
 & $cli validate-plan -PlanPath "C:\작업\replace.plan.json"
 ```
 
-### 4. 별도 수정본 만들기
+### 4. HWP/HWT inspect는 Phase 1 silent에서 BLOCKED
+
+```powershell
+& $cli inspect -LiteralPath "C:\문서\보고서.hwp"
+```
+
+이 호출은 기본 `silent`에서 `BLOCKED`를 반환합니다. `hwp-portable`이 준비되지 않은
+상태에서 GUI로 자동 전환하지 않습니다.
+
+### 5. HWP/HWT 네이티브 inspect 예외
+
+사용자가 현재 요청에서 한컴 창 실행을 명시적으로 승인한 경우에만 다음 예외를
+사용합니다. 이 경로는 한컴을 열 수 있습니다.
+
+```powershell
+& $cli inspect `
+  -LiteralPath "C:\문서\보고서.hwp" `
+  -ExecutionMode interactive `
+  -AllowInteractiveWindow
+```
+
+### 6. HWP/HWT apply 예외
 
 ```powershell
 & $cli apply `
   -LiteralPath "C:\문서\보고서.hwp" `
   -PlanPath "C:\작업\replace.plan.json" `
-  -OutputPath "C:\문서\보고서_수정본.hwp"
+  -OutputPath "C:\문서\보고서_수정본.hwp" `
+  -ExecutionMode interactive `
+  -AllowInteractiveWindow
 ```
 
-`OutputPath`를 생략하면 원본 폴더에 `_수정본_날짜시간`이 붙은 새 이름을 만듭니다.
-원본과 같은 경로는 거부합니다.
+이 예외도 명시적으로 승인된 `interactive`에서만 사용합니다. `OutputPath`를 생략하면
+원본 폴더에 `_수정본_날짜시간`이 붙은 새 이름을 만듭니다. 원본과 같은 경로는
+거부합니다.
 
-### 5. 새 문서 만들기
+### 7. HWP/HWT generate 예외
 
 ```powershell
 & $cli generate -NewDocument `
   -PlanPath ".\skill\hwp-skill\examples\generate-new.plan.json" `
-  -OutputPath "C:\문서\새문서.hwp"
+  -OutputPath "C:\문서\새문서.hwp" `
+  -ExecutionMode interactive `
+  -AllowInteractiveWindow
 ```
 
-### 6. 일괄 처리
+### 8. HWP/HWT batch 예외
 
 `-Apply`가 없으면 실제 파일을 만들지 않는 미리보기입니다.
 
@@ -195,7 +226,9 @@ $cli = ".\skill\hwp-skill\scripts\Invoke-HwpSkill.ps1"
 & $cli batch `
   -InputDirectory "C:\문서\입력" `
   -OutputDirectory "C:\문서\입력\결과" `
-  -PlanPath "C:\작업\replace.plan.json"
+  -PlanPath "C:\작업\replace.plan.json" `
+  -ExecutionMode interactive `
+  -AllowInteractiveWindow
 ```
 
 미리보기 확인 후 실제 적용:
@@ -205,36 +238,53 @@ $cli = ".\skill\hwp-skill\scripts\Invoke-HwpSkill.ps1"
   -InputDirectory "C:\문서\입력" `
   -OutputDirectory "C:\문서\입력\결과" `
   -PlanPath "C:\작업\replace.plan.json" `
-  -Apply
+  -Apply `
+  -ExecutionMode interactive `
+  -AllowInteractiveWindow
 ```
 
-### 7. 다시 열기와 시각 검증
+### 9. HWP/HWT verify 예외
 
 ```powershell
 & $cli verify `
   -LiteralPath "C:\문서\보고서_수정본.hwp" `
-  -OutputDirectory "C:\문서\검증"
+  -OutputDirectory "C:\문서\검증" `
+  -ExecutionMode interactive `
+  -AllowInteractiveWindow
 ```
 
-보안 모듈이 없으면 본문·구조 재검사 결과와 함께 PDF·페이지 이미지가 생성되지
-않았다는 경고가 반환됩니다.
+이 예외도 한컴을 열 수 있습니다. 보안 모듈이 없으면 본문·구조 재검사 결과와 함께
+PDF·페이지 이미지가 생성되지 않았다는 경고가 반환됩니다.
 
 전체 명령과 편집 필드는 [편집 작업 규격](skill/hwp-skill/references/operations.md)에
 정리되어 있습니다.
 
 ## 안전 설계
 
+### Phase 1 계약
+
+- 기본 `silent`는 현재 사용자 세션의 `Hwp.exe`를 실행하지 않는다.
+- `silent HWP/HWT` inspect, apply, generate, batch, verify는 현재 `BLOCKED`다.
+- `silent`는 HWPX inspect만 GUI 없이 사용 가능하다.
+- 준비되지 않은 엔진을 만나도 GUI로 자동 전환하지 않는다.
+- 결과 파일 자동 열기와 포커스 탈취를 하지 않는다.
+- HWPX ZIP 경로 탈출, 압축 폭탄, XML 외부 개체를 차단한다.
+- 사용자 한글 프로세스 일괄 종료를 하지 않는다.
+- 외부 업로드와 매크로 실행을 하지 않는다.
+
+### 명시적으로 승인된 interactive 또는 향후 구현 설계
+
 - 원본 작업 전후 SHA-256 확인
 - 확장자뿐 아니라 실제 파일 시그니처 검사
-- HWP/HWT를 파일 경로가 아닌 메모리로 열고 저장
+- 명시적으로 승인된 interactive에서만 HWP/HWT를 열고 편집하거나 저장
 - 임시 파일 저장 → 재열기 검사 → 최종 결과 승격
 - 실패 결과와 완성 결과 분리
 - 고급 작업의 명시적 승인 요구
 - 고급 작업은 계획 기록과 실행 시 `-ApproveAdvanced`를 모두 요구
 - 반복 문구가 둘 이상이면 추측하지 않고 중단
-- HWPX ZIP 경로 탈출, 압축 폭탄, XML 외부 개체 차단
-- 사용자 한글 프로세스 일괄 종료 금지
-- 외부 업로드와 매크로 실행 금지
+
+위 native 편집 흐름은 미래 구현 설명이 아니라, 현재 저장소에서 허용되는 경우에도
+명시적으로 승인된 interactive 예외로만 해석해야 합니다.
 
 세부 정책과 복구 절차는 [안전 및 복구 정책](skill/hwp-skill/references/safety.md)을
 참조하세요.

@@ -135,4 +135,21 @@ Describe 'hwp-skill 저장소 구조' {
         $readme | Should Match 'hwp-portable.*준비되지'
         $readme | Should Match '현재 사용자 세션.*Hwp.exe.*실행하지'
     }
+
+    It 'README는 HWP/HWT 네이티브 예시에 explicit interactive 승인만 허용한다' {
+        $readme = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../README.md') -Raw -Encoding UTF8
+        $readme | Should Match 'HWP/HWT.*silent.*BLOCKED'
+        $readme | Should Match 'interactive.*한컴 창'
+        $readme | Should Match '\-ExecutionMode interactive'
+        $readme | Should Match '\-AllowInteractiveWindow'
+        $readme | Should Match '한컴을 열 수 있'
+    }
+
+    It 'README 안전 설명은 현재 Phase 1 계약과 future interactive 설계를 구분한다' {
+        $readme = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../README.md') -Raw -Encoding UTF8
+        $readme | Should Match 'Phase 1 계약'
+        $readme | Should Match '미래 구현|향후 구현|future'
+        $readme | Should Match '명시적으로 승인된 interactive'
+        $readme | Should Match 'silent HWP/HWT.*BLOCKED'
+    }
 }
