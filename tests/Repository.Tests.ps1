@@ -1,4 +1,12 @@
 Describe 'hwp-skill 저장소 구조' {
+    It '내부 SDD 구현 보고서를 공개 Git 이력에 추적하지 않는다' {
+        $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+        $tracked = @(& git -C $repositoryRoot ls-files)
+        $trackedReports = @($tracked | Where-Object { $_ -match '^\.superpowers/sdd/.+-report\.md$' })
+
+        @($trackedReports).Count | Should Be 0
+    }
+
     It '스킬 메타데이터와 공용 진입점을 제공한다' {
         Test-Path "$PSScriptRoot/../skill/hwp-skill/SKILL.md" | Should Be $true
         Test-Path "$PSScriptRoot/../skill/hwp-skill/agents/openai.yaml" | Should Be $true
@@ -151,5 +159,16 @@ Describe 'hwp-skill 저장소 구조' {
         $readme | Should Match '미래 구현|향후 구현|future'
         $readme | Should Match '명시적으로 승인된 interactive'
         $readme | Should Match 'silent HWP/HWT.*BLOCKED'
+    }
+
+    It 'README는 현재 시험 실행기 승인 계약과 공개 release 용어를 사용한다' {
+        $readme = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../README.md') -Raw -Encoding UTF8
+
+        $readme | Should Not Match 'Task 8'
+        $readme | Should Not Match '\-Suite Integration'
+        $readme | Should Match 'run-tests\.ps1 -Suite Native -AllowInteractiveNative'
+        $readme | Should Match 'run-tests\.ps1 -Suite All -AllowInteractiveNative'
+        $readme | Should Match 'HWP_NATIVE_RUN_INTEGRATION'
+        $readme | Should Match '종료 코드 2'
     }
 }

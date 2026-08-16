@@ -25,10 +25,20 @@ function New-HwpExecutionContext {
 function Test-HwpExecutionContext {
     param([AllowNull()][object]$ExecutionContext)
 
-    $null -ne $ExecutionContext -and
-        $ExecutionContext.PSObject.Properties.Name -contains 'Mode' -and
-        $ExecutionContext.PSObject.Properties.Name -contains 'AllowInteractiveWindow' -and
-        [string]$ExecutionContext.Mode -in 'silent', 'isolated-native', 'interactive'
+    if ($null -eq $ExecutionContext) { return $false }
+
+    $propertyNames = @($ExecutionContext.PSObject.Properties.Name)
+    if ($propertyNames -notcontains 'SchemaVersion' -or
+        $propertyNames -notcontains 'Mode' -or
+        $propertyNames -notcontains 'AllowInteractiveWindow') {
+        return $false
+    }
+
+    $ExecutionContext.SchemaVersion -is [string] -and
+        [string]::Equals([string]$ExecutionContext.SchemaVersion, '1.0', [StringComparison]::Ordinal) -and
+        $ExecutionContext.Mode -is [string] -and
+        [string]$ExecutionContext.Mode -in 'silent', 'isolated-native', 'interactive' -and
+        $ExecutionContext.AllowInteractiveWindow -is [bool]
 }
 
 function Assert-HwpLocalGuiAllowed {
@@ -38,7 +48,7 @@ function Assert-HwpLocalGuiAllowed {
         throw '유효한 HWP 실행 컨텍스트가 필요합니다.'
     }
     if ([string]$ExecutionContext.Mode -ne 'interactive' -or
-        -not [bool]$ExecutionContext.AllowInteractiveWindow) {
+        $ExecutionContext.AllowInteractiveWindow -ne $true) {
         throw '현재 사용자 세션의 한컴 실행은 interactive 모드에서만 허용됩니다.'
     }
 }

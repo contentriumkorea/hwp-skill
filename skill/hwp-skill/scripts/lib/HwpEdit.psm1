@@ -2573,7 +2573,11 @@ function Invoke-HwpApply {
         [bool]$ApproveAdvanced = $false,
         [object]$ExecutionContext = (New-HwpExecutionContext),
         [object]$Capabilities = (Get-HwpCapabilitySnapshot -ExecutionContext $ExecutionContext),
-        [scriptblock]$SessionFactory = { param($executionContext) New-HwpSession -ExecutionContext $executionContext }
+        [scriptblock]$SessionFactory = { param($executionContext) New-HwpSession -ExecutionContext $executionContext },
+        [scriptblock]$Inspector = {
+            param($path, $executionContext, $capabilities)
+            Get-HwpInspection -LiteralPath $path -ExecutionContext $executionContext -Capabilities $capabilities
+        }
     )
 
     $validation = Test-HwpEditPlan -Plan $Plan
@@ -2735,7 +2739,7 @@ function Invoke-HwpApply {
             -Warnings @($warnings) -Errors @($errors)
     }
 
-    $inspection = Get-HwpInspection -LiteralPath $temporaryPath
+    $inspection = & $Inspector $temporaryPath $ExecutionContext $Capabilities
     if ($inspection.Status -eq 'BLOCKED' -or $inspection.Status -eq 'FAILED') {
         foreach ($message in @($inspection.Errors)) { $errors.Add([string]$message) }
     }

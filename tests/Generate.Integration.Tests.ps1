@@ -24,6 +24,7 @@ Describe 'HWT/HWP 양식 기반 생성 실제 한컴 통합 시험' -Tags Native
         $output1 = Join-Path $TestDrive '양식생성-1.hwp'
         $output2 = Join-Path $TestDrive '양식생성-2.hwp'
         $interactiveExecutionContext = New-TestInteractiveExecutionContext
+        $interactiveCapabilities = Get-HwpCapabilitySnapshot -ExecutionContext $interactiveExecutionContext
 
         $plan1 = New-ValidPlan -SourcePath $fixtureHwt -SourceSha256 $sourceHash
         $plan1.operations = @((New-FieldOperation -Name '담당자' -Before '시험 담당자' -After '김한글'))
@@ -31,9 +32,9 @@ Describe 'HWT/HWP 양식 기반 생성 실제 한컴 통합 시험' -Tags Native
         $plan2.operations = @((New-FieldOperation -Name '담당자' -Before '시험 담당자' -After '박문서'))
 
         $result1 = Invoke-HwpGenerate -TemplatePath $fixtureHwt -Plan $plan1 -OutputPath $output1 `
-            -ExecutionContext $interactiveExecutionContext
+            -ExecutionContext $interactiveExecutionContext -Capabilities $interactiveCapabilities
         $result2 = Invoke-HwpGenerate -TemplatePath $fixtureHwt -Plan $plan2 -OutputPath $output2 `
-            -ExecutionContext $interactiveExecutionContext
+            -ExecutionContext $interactiveExecutionContext -Capabilities $interactiveCapabilities
 
         $result1.Status | Should Be 'PASS'
         $result2.Status | Should Be 'PASS'
@@ -48,6 +49,7 @@ Describe 'HWT/HWP 양식 기반 생성 실제 한컴 통합 시험' -Tags Native
         $output = Join-Path $TestDrive '새공공문서.hwp'
         $observation = [pscustomobject]@{ SawStaging = $false }
         $interactiveExecutionContext = New-TestInteractiveExecutionContext
+        $interactiveCapabilities = Get-HwpCapabilitySnapshot -ExecutionContext $interactiveExecutionContext
         $inspector = {
             param($path, $executionContext, $capabilities)
             if ($path -notmatch '\.partial\.hwp$') { throw "임시 검증 경로가 아닙니다: $path" }
@@ -78,7 +80,8 @@ Describe 'HWT/HWP 양식 기반 생성 실제 한컴 통합 시험' -Tags Native
         }
 
         $result = Invoke-HwpGenerate -NewDocument -Plan $plan -OutputPath $output `
-            -ExecutionContext $interactiveExecutionContext -Inspector $inspector
+            -ExecutionContext $interactiveExecutionContext -Capabilities $interactiveCapabilities `
+            -Inspector $inspector
 
         $result.Status | Should Be 'PASS'
         $result.After.Text | Should Match '가상 공공문서'
@@ -92,6 +95,27 @@ Describe 'HWT/HWP 양식 기반 생성 실제 한컴 통합 시험' -Tags Native
 }
 
 Describe 'Invoke-HwpGenerate 사전 차단' {
+    It 'silent HWPX 생성은 RequestedFormat 라우팅 결과를 보존하고 세션을 호출하지 않는다' {
+        $output = Join-Path $TestDrive 'silent-generate.hwpx'
+        $plan = [pscustomobject]@{
+            version = '1.0'
+            content = @([pscustomobject]@{ type = 'paragraph'; text = 'HWPX 생성 차단' })
+        }
+        $hwpExecutionContext = New-HwpExecutionContext
+        $capabilities = Get-HwpCapabilitySnapshot -ExecutionContext $hwpExecutionContext `
+            -NativeRegistrationProbe { $true } -PortableBackendProbe { $false } -IsolatedWorkerProbe { $false }
+        $calls = [pscustomobject]@{ Value = 0 }
+        $factory = ({ param($context) $calls.Value++; throw '세션 호출 금지' }.GetNewClosure())
+
+        $result = Invoke-HwpGenerate -NewDocument -Plan $plan -OutputPath $output `
+            -ExecutionContext $hwpExecutionContext -Capabilities $capabilities -SessionFactory $factory
+
+        $result.Status | Should Be 'BLOCKED'
+        ($result.Errors -join ' ') | Should Match 'hwpx-direct'
+        $calls.Value | Should Be 0
+        Test-Path -LiteralPath $output | Should Be $false
+    }
+
     It 'silent 생성은 지원되지 않는 백엔드에서 세션 팩터리를 호출하지 않는다' {
         $output = Join-Path $TestDrive 'silent-generate.hwp'
         $plan = [pscustomobject]@{

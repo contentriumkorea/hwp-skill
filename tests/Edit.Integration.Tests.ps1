@@ -171,6 +171,8 @@ Describe 'HWP 메모리 편집 실제 한컴 통합 시험' -Tags Native {
     It '한 곳만 바꾸고 앞뒤 삽입과 필드 입력 후 별도 HWP로 저장한다' -Skip:(-not $runNative) {
         $sourceHash = Get-HwpSha256 -LiteralPath $fixtureHwp
         $output = Join-Path $TestDrive 'edited.hwp'
+        $interactiveExecutionContext = New-TestInteractiveExecutionContext
+        $interactiveCapabilities = Get-HwpCapabilitySnapshot -ExecutionContext $interactiveExecutionContext
         $operations = @(
             (New-Operation -Type 'replace-text' -Anchor '기존 문구' -Before '기존 문구' -After '새 문구'),
             (New-Operation -Type 'insert-before' -Anchor '새 문구' -Before '' -After '[앞] '),
@@ -179,7 +181,7 @@ Describe 'HWP 메모리 편집 실제 한컴 통합 시험' -Tags Native {
             (New-Operation -Type 'delete-range' -Anchor '쪽 나누기 위치' -Before '쪽 나누기 위치' -After '' -Risk 'advanced')
         )
 
-        $session = New-HwpSession -ExecutionContext (New-TestInteractiveExecutionContext)
+        $session = New-HwpSession -ExecutionContext $interactiveExecutionContext
         try {
             $open = Open-HwpDocumentFromMemory -Session $session -LiteralPath $fixtureHwp
             $open.Status | Should Be 'PASS'
@@ -196,7 +198,8 @@ Describe 'HWP 메모리 편집 실제 한컴 통합 시험' -Tags Native {
             Close-HwpSession -Session $session
         }
 
-        $after = Get-HwpInspection -LiteralPath $output
+        $after = Get-HwpInspection -LiteralPath $output `
+            -ExecutionContext $interactiveExecutionContext -Capabilities $interactiveCapabilities
         $after.Status | Should Be 'PASS'
         $after.Text | Should Match '\[앞\] 새 문구를 안전하게 변경합니다\. \[뒤\]'
         $after.Text | Should Not Match '기존 문구'
@@ -212,8 +215,11 @@ Describe 'HWP 원자적 계획 적용 실제 한컴 통합 시험' -Tags Atomic,
         $sourceHash = Get-HwpSha256 -LiteralPath $fixtureHwp
         $output = Join-Path $TestDrive 'atomic-success.hwp'
         $plan = New-ValidPlan -SourcePath $fixtureHwp -SourceSha256 $sourceHash
+        $interactiveExecutionContext = New-TestInteractiveExecutionContext
+        $interactiveCapabilities = Get-HwpCapabilitySnapshot -ExecutionContext $interactiveExecutionContext
 
-        $result = Invoke-HwpApply -LiteralPath $fixtureHwp -Plan $plan -OutputPath $output
+        $result = Invoke-HwpApply -LiteralPath $fixtureHwp -Plan $plan -OutputPath $output `
+            -ExecutionContext $interactiveExecutionContext -Capabilities $interactiveCapabilities
 
         $result.Status | Should Be 'PASS'
         $result.OutputPath | Should Be ([IO.Path]::GetFullPath($output))
@@ -228,8 +234,11 @@ Describe 'HWP 원자적 계획 적용 실제 한컴 통합 시험' -Tags Atomic,
         $output = Join-Path $TestDrive 'atomic-failure.hwp'
         $plan = New-ValidPlan -SourcePath $fixtureHwp -SourceSha256 $sourceHash
         $plan.operations[0].verify.expected = '존재하지 않는 결과'
+        $interactiveExecutionContext = New-TestInteractiveExecutionContext
+        $interactiveCapabilities = Get-HwpCapabilitySnapshot -ExecutionContext $interactiveExecutionContext
 
-        $result = Invoke-HwpApply -LiteralPath $fixtureHwp -Plan $plan -OutputPath $output
+        $result = Invoke-HwpApply -LiteralPath $fixtureHwp -Plan $plan -OutputPath $output `
+            -ExecutionContext $interactiveExecutionContext -Capabilities $interactiveCapabilities
 
         $result.Status | Should Be 'FAILED'
         Test-Path -LiteralPath $result.OutputPath | Should Be $false
@@ -242,6 +251,8 @@ Describe 'HWP 원자적 계획 적용 실제 한컴 통합 시험' -Tags Atomic,
 Describe 'HWP 표 구조 편집 실제 한컴 통합 시험' -Tags Native,Structure {
     It '표를 추가하고 지정 셀을 채운 뒤 승인된 행을 추가한다' -Skip:(-not $runNative) {
         $output = Join-Path $TestDrive 'table-edit.hwp'
+        $interactiveExecutionContext = New-TestInteractiveExecutionContext
+        $interactiveCapabilities = Get-HwpCapabilitySnapshot -ExecutionContext $interactiveExecutionContext
         $operations = @(
             (New-InsertTableOperation -Anchor '표 삽입 위치' -Rows 2 -Columns 2),
             (New-TableCellOperation -TableIndex 2 -Row 1 -Column 1 -After '첫 셀'),
@@ -249,7 +260,7 @@ Describe 'HWP 표 구조 편집 실제 한컴 통합 시험' -Tags Native,Struct
             (New-TableCellOperation -TableIndex 2 -Row 3 -Column 1 -After '추가 행')
         )
 
-        $session = New-HwpSession -ExecutionContext (New-TestInteractiveExecutionContext)
+        $session = New-HwpSession -ExecutionContext $interactiveExecutionContext
         try {
             (Open-HwpDocumentFromMemory -Session $session -LiteralPath $fixtureHwp).Status | Should Be 'PASS'
             $results = @(
@@ -264,7 +275,8 @@ Describe 'HWP 표 구조 편집 실제 한컴 통합 시험' -Tags Native,Struct
             Close-HwpSession -Session $session
         }
 
-        $after = Get-HwpInspection -LiteralPath $output
+        $after = Get-HwpInspection -LiteralPath $output `
+            -ExecutionContext $interactiveExecutionContext -Capabilities $interactiveCapabilities
         $after.Status | Should Be 'PASS'
         @($after.Controls | Where-Object CtrlId -eq 'tbl').Count | Should Be 2
         $after.Text | Should Match '첫 셀'
@@ -275,14 +287,17 @@ Describe 'HWP 표 구조 편집 실제 한컴 통합 시험' -Tags Native,Struct
 Describe 'HWP 서식과 문서 구조 편집 실제 한컴 통합 시험' -Tags Native,Structure {
     It '글자·문단 서식과 쪽 나누기를 적용하고 재열어서 확인한다' -Skip:(-not $runNative) {
         $output = Join-Path $TestDrive 'format-and-break.hwp'
-        $before = Get-HwpInspection -LiteralPath $fixtureHwp
+        $interactiveExecutionContext = New-TestInteractiveExecutionContext
+        $interactiveCapabilities = Get-HwpCapabilitySnapshot -ExecutionContext $interactiveExecutionContext
+        $before = Get-HwpInspection -LiteralPath $fixtureHwp `
+            -ExecutionContext $interactiveExecutionContext -Capabilities $interactiveCapabilities
         $operations = @(
             (New-CharStyleOperation -Anchor 'HWP 스킬 통합 시험' -HeightPt 14 -Bold $true),
             (New-ParaStyleOperation -Anchor 'HWP 스킬 통합 시험' -Align center),
             (New-PageBreakOperation -Anchor '쪽 나누기 위치' -Placement after)
         )
 
-        $session = New-HwpSession -ExecutionContext (New-TestInteractiveExecutionContext)
+        $session = New-HwpSession -ExecutionContext $interactiveExecutionContext
         try {
             (Open-HwpDocumentFromMemory -Session $session -LiteralPath $fixtureHwp).Status | Should Be 'PASS'
             $results = @(
@@ -297,7 +312,7 @@ Describe 'HWP 서식과 문서 구조 편집 실제 한컴 통합 시험' -Tags 
             Close-HwpSession -Session $session
         }
 
-        $reopened = New-HwpSession -ExecutionContext (New-TestInteractiveExecutionContext)
+        $reopened = New-HwpSession -ExecutionContext $interactiveExecutionContext
         try {
             (Open-HwpDocumentFromMemory -Session $reopened -LiteralPath $output).Status | Should Be 'PASS'
             $snapshot = Get-HwpTextStyleSnapshot -Session $reopened -Operation (New-Operation -Anchor 'HWP 스킬 통합 시험')
@@ -310,12 +325,15 @@ Describe 'HWP 서식과 문서 구조 편집 실제 한컴 통합 시험' -Tags 
             Close-HwpSession -Session $reopened
         }
 
-        $after = Get-HwpInspection -LiteralPath $output
+        $after = Get-HwpInspection -LiteralPath $output `
+            -ExecutionContext $interactiveExecutionContext -Capabilities $interactiveCapabilities
         $after.PageCount | Should Be ($before.PageCount + 1)
     }
 
     It '승인된 구역 설정과 머리말·꼬리말·쪽 번호를 적용한다' -Skip:(-not $runNative) {
         $output = Join-Path $TestDrive 'section-and-header.hwp'
+        $interactiveExecutionContext = New-TestInteractiveExecutionContext
+        $interactiveCapabilities = Get-HwpCapabilitySnapshot -ExecutionContext $interactiveExecutionContext
         $operations = @(
             (New-SectionOperation -Anchor 'HWP 스킬 통합 시험' -Orientation landscape -LeftMarginMm 16 -RightMarginMm 16),
             (New-HeaderFooterOperation -Anchor 'HWP 스킬 통합 시험' -Kind header -Text '가상 머리말'),
@@ -323,7 +341,7 @@ Describe 'HWP 서식과 문서 구조 편집 실제 한컴 통합 시험' -Tags 
             (New-PageNumberOperation -Anchor 'HWP 스킬 통합 시험' -Position bottom-center -StartNumber 1)
         )
 
-        $session = New-HwpSession -ExecutionContext (New-TestInteractiveExecutionContext)
+        $session = New-HwpSession -ExecutionContext $interactiveExecutionContext
         try {
             (Open-HwpDocumentFromMemory -Session $session -LiteralPath $fixtureHwp).Status | Should Be 'PASS'
             $results = @(
@@ -338,7 +356,7 @@ Describe 'HWP 서식과 문서 구조 편집 실제 한컴 통합 시험' -Tags 
             Close-HwpSession -Session $session
         }
 
-        $reopened = New-HwpSession -ExecutionContext (New-TestInteractiveExecutionContext)
+        $reopened = New-HwpSession -ExecutionContext $interactiveExecutionContext
         try {
             (Open-HwpDocumentFromMemory -Session $reopened -LiteralPath $output).Status | Should Be 'PASS'
             $section = Get-HwpSectionSnapshot -Session $reopened -Operation (New-Operation -Anchor 'HWP 스킬 통합 시험')
@@ -355,7 +373,8 @@ Describe 'HWP 서식과 문서 구조 편집 실제 한컴 통합 시험' -Tags 
             Close-HwpSession -Session $reopened
         }
 
-        $after = Get-HwpInspection -LiteralPath $output
+        $after = Get-HwpInspection -LiteralPath $output `
+            -ExecutionContext $interactiveExecutionContext -Capabilities $interactiveCapabilities
         @($after.Controls | Where-Object CtrlId -eq 'head').Count | Should Be 1
         @($after.Controls | Where-Object CtrlId -eq 'foot').Count | Should Be 1
         @($after.Controls | Where-Object CtrlId -eq 'pgnp').Count | Should Be 1
@@ -366,6 +385,8 @@ Describe 'HWP 참조 개체 편집 실제 한컴 통합 시험' -Tags Native,Ref
     It '캡션·각주·미주·하이퍼링크·책갈피를 넣고 재열어서 확인한다' -Skip:(-not $runNative) {
         $sourceHash = Get-HwpSha256 -LiteralPath $fixtureHwp
         $output = Join-Path $TestDrive 'reference-objects.hwp'
+        $interactiveExecutionContext = New-TestInteractiveExecutionContext
+        $interactiveCapabilities = Get-HwpCapabilitySnapshot -ExecutionContext $interactiveExecutionContext
         $operations = @(
             (New-CaptionOperation -ControlId tbl -ControlIndex 1 -Text '시험 표 캡션'),
             (New-NoteOperation -Type add-footnote -Anchor '쪽 나누기 위치' -Text '각주 시험 내용'),
@@ -374,7 +395,7 @@ Describe 'HWP 참조 개체 편집 실제 한컴 통합 시험' -Tags Native,Ref
             (New-BookmarkOperation -Anchor 'HWP 스킬 통합 시험' -Name '통합시험_제목')
         )
 
-        $session = New-HwpSession -ExecutionContext (New-TestInteractiveExecutionContext)
+        $session = New-HwpSession -ExecutionContext $interactiveExecutionContext
         try {
             (Open-HwpDocumentFromMemory -Session $session -LiteralPath $fixtureHwp).Status | Should Be 'PASS'
             $results = @(
@@ -389,7 +410,8 @@ Describe 'HWP 참조 개체 편집 실제 한컴 통합 시험' -Tags Native,Ref
             Close-HwpSession -Session $session
         }
 
-        $after = Get-HwpInspection -LiteralPath $output
+        $after = Get-HwpInspection -LiteralPath $output `
+            -ExecutionContext $interactiveExecutionContext -Capabilities $interactiveCapabilities
         $after.Status | Should Be 'PASS'
         $after.Text | Should Match '시험 표 캡션'
         $after.Text | Should Match '각주 시험 내용'
@@ -404,12 +426,14 @@ Describe 'HWP 참조 개체 편집 실제 한컴 통합 시험' -Tags Native,Ref
     It '안전한 수동 차례를 만들고 HWP를 메모리 방식으로 병합한다' -Skip:(-not $runNative) {
         $sourceHash = Get-HwpSha256 -LiteralPath $fixtureHwp
         $output = Join-Path $TestDrive 'toc-and-merge.hwp'
+        $interactiveExecutionContext = New-TestInteractiveExecutionContext
+        $interactiveCapabilities = Get-HwpCapabilitySnapshot -ExecutionContext $interactiveExecutionContext
         $operations = @(
             (New-TocOperation -Anchor '쪽 나누기 위치' -HeadingAnchors @('HWP 스킬 통합 시험','표 삽입 위치') -Title '차례'),
             (New-MergeOperation -Paths @($fixtureHwp) -PageBreakBetween $true -VerifyText '기존 문구' -VerifyCount 2)
         )
 
-        $session = New-HwpSession -ExecutionContext (New-TestInteractiveExecutionContext)
+        $session = New-HwpSession -ExecutionContext $interactiveExecutionContext
         try {
             (Open-HwpDocumentFromMemory -Session $session -LiteralPath $fixtureHwp).Status | Should Be 'PASS'
             $results = @(
@@ -424,7 +448,8 @@ Describe 'HWP 참조 개체 편집 실제 한컴 통합 시험' -Tags Native,Ref
             Close-HwpSession -Session $session
         }
 
-        $after = Get-HwpInspection -LiteralPath $output
+        $after = Get-HwpInspection -LiteralPath $output `
+            -ExecutionContext $interactiveExecutionContext -Capabilities $interactiveCapabilities
         $after.Status | Should Be 'PASS'
         $after.Text | Should Match '차례'
         $after.Text | Should Match "HWP 스킬 통합 시험\t1"

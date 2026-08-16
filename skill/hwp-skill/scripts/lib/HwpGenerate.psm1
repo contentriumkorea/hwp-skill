@@ -463,7 +463,11 @@ function Invoke-HwpGenerateFromTemplate {
         [bool]$ApproveAdvanced = $false,
         [object]$ExecutionContext = (New-HwpExecutionContext),
         [object]$Capabilities = (Get-HwpCapabilitySnapshot -ExecutionContext $ExecutionContext),
-        [scriptblock]$SessionFactory = { param($executionContext) New-HwpSession -ExecutionContext $executionContext }
+        [scriptblock]$SessionFactory = { param($executionContext) New-HwpSession -ExecutionContext $executionContext },
+        [scriptblock]$Inspector = {
+            param($path, $executionContext, $capabilities)
+            Get-HwpInspection -LiteralPath $path -ExecutionContext $executionContext -Capabilities $capabilities
+        }
     )
 
     try {
@@ -497,7 +501,7 @@ function Invoke-HwpGenerateFromTemplate {
 
     $apply = Invoke-HwpApply -LiteralPath $kind.Path -Plan $Plan -OutputPath $OutputPath `
         -ApproveAdvanced:$ApproveAdvanced -ExecutionContext $ExecutionContext `
-        -Capabilities $Capabilities -SessionFactory $SessionFactory
+        -Capabilities $Capabilities -SessionFactory $SessionFactory -Inspector $Inspector
     $currentHash = Get-HwpSha256 -LiteralPath $kind.Path
     if ($currentHash -ne $templateHash) {
         return New-HwpGenerateResult -Status FAILED -Mode template -TemplatePath $kind.Path `
@@ -534,9 +538,12 @@ function Invoke-HwpGenerateNewDocument {
         return New-HwpGenerateResult -Status BLOCKED -Mode new-document -Errors @($validation.Errors)
     }
     $resolvedOutput = [IO.Path]::GetFullPath($OutputPath)
-    if ([IO.Path]::GetExtension($resolvedOutput).ToLowerInvariant() -ne '.hwp') {
+    try {
+        $requestedFormat = Get-HwpRequestedFormat -OutputPath $resolvedOutput
+    }
+    catch {
         return New-HwpGenerateResult -Status BLOCKED -Mode new-document -OutputPath $resolvedOutput `
-            -Errors @('새 문서 결과는 .hwp 파일이어야 합니다.')
+            -Errors @($_.Exception.Message)
     }
     if (Test-Path -LiteralPath $resolvedOutput) {
         return New-HwpGenerateResult -Status BLOCKED -Mode new-document -OutputPath $resolvedOutput `
@@ -547,7 +554,7 @@ function Invoke-HwpGenerateNewDocument {
         return New-HwpGenerateResult -Status BLOCKED -Mode new-document -OutputPath $resolvedOutput `
             -Errors @("결과 폴더가 없습니다: $directory")
     }
-    $route = Resolve-HwpBackend -Command generate -DetectedKind NONE -OutputPath $resolvedOutput `
+    $route = Resolve-HwpBackend -Command generate -DetectedKind NONE -RequestedFormat $requestedFormat `
         -ExecutionContext $ExecutionContext -Capabilities $Capabilities
     if ($route.Status -ne 'PASS') {
         return New-HwpGenerateResult -Status $route.Status -Mode new-document -OutputPath $resolvedOutput `
@@ -704,7 +711,7 @@ function Invoke-HwpGenerate {
     if ($PSCmdlet.ParameterSetName -eq 'Template') {
         return Invoke-HwpGenerateFromTemplate -TemplatePath $TemplatePath -Plan $Plan -OutputPath $OutputPath `
             -ApproveAdvanced:([bool]$ApproveAdvanced) -ExecutionContext $ExecutionContext `
-            -Capabilities $Capabilities -SessionFactory $SessionFactory
+            -Capabilities $Capabilities -SessionFactory $SessionFactory -Inspector $Inspector
     }
     Invoke-HwpGenerateNewDocument -Plan $Plan -OutputPath $OutputPath -ExecutionContext $ExecutionContext `
         -Capabilities $Capabilities -SessionFactory $SessionFactory -Inspector $Inspector

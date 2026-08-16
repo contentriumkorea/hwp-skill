@@ -57,4 +57,23 @@ Describe 'HWP 공용 CLI 실행 모드' {
         $json.detectedKind | Should Be 'HWP-BINARY'
         ($json.errors -join ' ') | Should Match 'hwp-portable'
     }
+
+    It 'silent HWPX 생성은 요청 형식을 계산한 뒤 직접 엔진 미지원으로 차단한다' {
+        $planPath = Join-Path $TestDrive 'generate.plan.json'
+        $outputPath = Join-Path $TestDrive 'generated.hwpx'
+        $plan = [pscustomobject]@{
+            version = '1.0'
+            content = @([pscustomobject]@{ type = 'paragraph'; text = 'HWPX 생성 차단' })
+        }
+        [IO.File]::WriteAllText($planPath, ($plan | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
+
+        $raw = & $pwsh -NoProfile -File $cli generate -NewDocument -PlanPath $planPath -OutputPath $outputPath
+        $exitCode = $LASTEXITCODE
+        $json = ($raw -join "`n") | ConvertFrom-Json
+
+        $exitCode | Should Be 2
+        $json.status | Should Be 'BLOCKED'
+        ($json.errors -join ' ') | Should Match 'hwpx-direct'
+        Test-Path -LiteralPath $outputPath | Should Be $false
+    }
 }

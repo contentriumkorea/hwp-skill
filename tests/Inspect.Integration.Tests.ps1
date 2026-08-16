@@ -3,10 +3,12 @@ $executionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpEx
 $capabilitiesModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCapabilities.psm1'
 $sessionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpSession.psm1'
 $inspectModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpInspect.psm1'
+$helperModule = Join-Path $PSScriptRoot 'TestHelpers.psm1'
 Import-Module $commonModule -Force
 Import-Module $executionModule -Force
 Import-Module $capabilitiesModule -Force
 Import-Module $sessionModule -Force
+Import-Module $helperModule -Force
 if (Test-Path -LiteralPath $inspectModule) {
     Import-Module $inspectModule -Force
 }
@@ -218,6 +220,7 @@ Describe 'HWP 읽기 함수의 가짜 세션 계약' {
 
 Describe 'Get-HwpInspection' {
     BeforeAll {
+        Import-Module $executionModule -Force -Global
         $script:fixtureHwpx = New-SyntheticHwpx -LiteralPath (Join-Path $TestDrive 'silent.hwpx')
         $script:fixtureHwp = Join-Path $PSScriptRoot 'fixtures/source/native-fixture.hwp'
         $script:silentCapabilities = Get-HwpCapabilitySnapshot `
@@ -363,7 +366,10 @@ $runNativeHwt = $env:HWP_NATIVE_RUN_INTEGRATION -eq '1' -and (Test-Path -Literal
 
 Describe 'Get-HwpInspection 실제 한컴 통합 시험' -Tags Native {
     It 'HWP 본문과 필드와 페이지 정보를 추출한다' -Skip:(-not $runNative) {
-        $actual = Get-HwpInspection -LiteralPath $fixtureHwp
+        $interactiveExecutionContext = New-TestInteractiveExecutionContext
+        $interactiveCapabilities = Get-HwpCapabilitySnapshot -ExecutionContext $interactiveExecutionContext
+        $actual = Get-HwpInspection -LiteralPath $fixtureHwp `
+            -ExecutionContext $interactiveExecutionContext -Capabilities $interactiveCapabilities
 
         $actual.Status | Should Be 'PASS'
         $actual.Text | Should Match 'HWP 스킬 통합 시험'
@@ -374,8 +380,11 @@ Describe 'Get-HwpInspection 실제 한컴 통합 시험' -Tags Native {
 
     It 'HWT를 원본 변경 없이 HWP 메모리 문서로 읽는다' -Skip:(-not $runNativeHwt) {
         $beforeHash = Get-HwpSha256 -LiteralPath $fixtureHwt
+        $interactiveExecutionContext = New-TestInteractiveExecutionContext
+        $interactiveCapabilities = Get-HwpCapabilitySnapshot -ExecutionContext $interactiveExecutionContext
 
-        $actual = Get-HwpInspection -LiteralPath $fixtureHwt
+        $actual = Get-HwpInspection -LiteralPath $fixtureHwt `
+            -ExecutionContext $interactiveExecutionContext -Capabilities $interactiveCapabilities
 
         $actual.Status | Should Be 'PASS'
         $actual.DetectedKind | Should Be 'HWP-BINARY'

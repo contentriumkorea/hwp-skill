@@ -121,6 +121,12 @@ function New-HwpSession {
         [AllowNull()][object]$ExecutionContext = $null,
         [bool]$Visible = $false,
         [scriptblock]$ComFactory = { param($progId) New-Object -ComObject $progId },
+        [scriptblock]$ProcessIdProvider = {
+            @(
+                Get-Process -Name Hwp -ErrorAction SilentlyContinue |
+                    Select-Object -ExpandProperty Id
+            )
+        },
         [scriptblock]$ProcessOwnershipResolver = {
             param($hwp,$beforeProcessIds,$isComObject)
             Resolve-HwpSessionProcessOwnership -Hwp $hwp -BeforeProcessIds $beforeProcessIds -IsComObject:$isComObject
@@ -139,9 +145,7 @@ function New-HwpSession {
         foreach ($progId in 'HWPFrame.HwpObject.2', 'HWPFrame.HwpObject') {
             $hwp = $null
             try {
-                [int[]]$beforeProcessIds = @(
-                    Get-Process -Name Hwp -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id
-                )
+                [int[]]$beforeProcessIds = @(& $ProcessIdProvider)
                 $hwp = & $ComFactory $progId
                 if ($null -eq $hwp) {
                     throw "$progId 생성 결과가 비어 있습니다."

@@ -81,8 +81,13 @@ function Invoke-SilentCliJson {
         ExitCode = $exitCode
         Json = ($raw -join "`n") | ConvertFrom-Json
         NewProcessIds = @($monitor.NewProcessIds)
+        NewHwpProcessIds = @($monitor.NewHwpProcessIds)
+        NewWinwordProcessIds = @($monitor.NewWinwordProcessIds)
+        NewExplorerProcessIds = @($monitor.NewExplorerProcessIds)
         NewVisibleWindowHandles = @($monitor.NewVisibleWindowHandles)
+        NewVisibleWindowProcessIds = @($monitor.NewVisibleWindowProcessIds)
         ForegroundCapturedByHwp = $monitor.ForegroundCapturedByHwp
+        ForegroundChanged = $monitor.ForegroundChanged
     }
 }
 
@@ -90,11 +95,36 @@ function Assert-NoHwpActivity {
     param([Parameter(Mandatory)][object]$Observation)
 
     @($Observation.NewProcessIds).Count | Should Be 0
+    @($Observation.NewHwpProcessIds).Count | Should Be 0
+    @($Observation.NewWinwordProcessIds).Count | Should Be 0
+    @($Observation.NewExplorerProcessIds).Count | Should Be 0
     @($Observation.NewVisibleWindowHandles).Count | Should Be 0
+    @($Observation.NewVisibleWindowProcessIds).Count | Should Be 0
     $Observation.ForegroundCapturedByHwp | Should Be $false
+    $Observation.ForegroundChanged | Should Be $false
 }
 
 Describe 'HWP silent acceptance gate' {
+    It '감시기는 HWP, Word, Explorer, 모든 새 최상위 창과 포그라운드 변경을 노출한다' {
+        $monitor = New-HwpSilentActivityMonitor
+        $propertyNames = @($monitor.PSObject.Properties.Name)
+        try {
+            foreach ($propertyName in @(
+                'NewHwpProcessIds',
+                'NewWinwordProcessIds',
+                'NewExplorerProcessIds',
+                'NewVisibleWindowHandles',
+                'NewVisibleWindowProcessIds',
+                'ForegroundChanged'
+            )) {
+                ($propertyNames -contains $propertyName) | Should Be $true
+            }
+        }
+        finally {
+            $monitor.Dispose()
+        }
+    }
+
     It 'capabilities와 preflight가 포커스와 HWP 프로세스를 바꾸지 않는다' {
         $capabilities = Invoke-SilentCliJson -Arguments @('capabilities')
         $preflight = Invoke-SilentCliJson -Arguments @('preflight')

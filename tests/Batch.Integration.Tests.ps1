@@ -20,15 +20,20 @@ Describe 'HWP 일괄 적용 실제 한컴 통합 시험' -Tags Native,Batch {
         Copy-Item -LiteralPath $fixtureHwp -Destination $input
         $sourceHash = Get-HwpSha256 -LiteralPath $input
         $plan = New-ValidPlan -SourcePath $input -SourceSha256 $sourceHash
+        $interactiveExecutionContext = New-TestInteractiveExecutionContext
+        $interactiveCapabilities = Get-HwpCapabilitySnapshot -ExecutionContext $interactiveExecutionContext
 
-        $result = Invoke-HwpBatch -InputPaths @($input) -Plan $plan -Apply
+        $result = Invoke-HwpBatch -InputPaths @($input) -Plan $plan -Apply `
+            -ExecutionContext $interactiveExecutionContext -Capabilities $interactiveCapabilities
 
         $result.Status | Should Be 'PASS'
         $result.DryRun | Should Be $false
         @($result.Items).Count | Should Be 1
         $result.Items[0].Status | Should Be 'PASS'
         Test-Path -LiteralPath $result.Items[0].OutputPath | Should Be $true
-        (Get-HwpInspection -LiteralPath $result.Items[0].OutputPath).Text | Should Match '새 문구'
+        (Get-HwpInspection -LiteralPath $result.Items[0].OutputPath `
+            -ExecutionContext $interactiveExecutionContext -Capabilities $interactiveCapabilities).Text |
+            Should Match '새 문구'
         (Get-HwpSha256 -LiteralPath $input) | Should Be $sourceHash
     }
 }

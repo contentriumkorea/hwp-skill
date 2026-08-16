@@ -1,8 +1,8 @@
 # HWP Skill
 
-Windows에서 `.hwp`, `.hwt`, `.hwpx`를 다루기 위한 Codex 스킬 저장소입니다. Task 8이
-반영된 현재 공개 상태는 **Phase 1 무창 계약 문서화**이며, 기본 실행 모드는 `silent`
-입니다. 공문, 보고서, 계획서, 회의록, 제안서, 스토리보드처럼 원본 보존과 사용자
+Windows에서 `.hwp`, `.hwt`, `.hwpx`를 다루기 위한 Codex 스킬 저장소입니다. 현재 공개
+릴리스는 **Phase 1 무창 계약**을 제공하며, 기본 실행 모드는 `silent`입니다. 공문,
+보고서, 계획서, 회의록, 제안서, 스토리보드처럼 원본 보존과 사용자
 포커스 유지가 중요한 한글 문서 파일 요청을 대상으로 합니다.
 
 핵심 원칙은 간단합니다. **원본을 덮어쓰지 않고, 기본 `silent` 모드에서 먼저 검사하며,
@@ -291,33 +291,39 @@ PDF·페이지 이미지가 생성되지 않았다는 경고가 반환됩니다.
 
 ## 개발과 시험
 
-정적 안전 시험:
+기본 시험은 정적 안전 시험만 실행합니다.
 
 ```powershell
+.\tests\run-tests.ps1
+# 다음 명령도 같은 범위를 실행합니다.
 .\tests\run-tests.ps1 -Suite Static
 ```
 
 네이티브 통합 시험은 실제 한컴오피스를 시작할 수 있으므로 기본 `silent` 공개 계약과
 분리해서 봐야 합니다. 현재 사용자 세션의 `Hwp.exe`를 실행하지 않는 기본 동작을
-검증할 때는 정적 시험과 `silent` 스모크를 우선 사용합니다.
+검증할 때는 정적 시험과 `silent` 스모크를 우선 사용합니다. `Native`와 `All`은
+`-AllowInteractiveNative`가 없으면 시험 수집 전에 종료 코드 2로 차단되며, 승인되지
+않은 네이티브 시험을 단순히 건너뛰는 방식으로 처리하지 않습니다.
+
+실제 한컴 통합 시나리오는 실행기 승인과 별개로 `HWP_NATIVE_RUN_INTEGRATION=1` 환경
+변수도 설정해야 합니다. 즉, 아래 두 승인은 모두 있어야 합니다.
 
 ```powershell
 $env:HWP_NATIVE_RUN_INTEGRATION = '1'
 try {
-  .\tests\run-tests.ps1 -Suite Integration
+  .\tests\run-tests.ps1 -Suite Native -AllowInteractiveNative
 }
 finally {
   Remove-Item Env:HWP_NATIVE_RUN_INTEGRATION -ErrorAction SilentlyContinue
 }
 ```
 
-보호 스위치를 켜지 않으면 네이티브 항목은 `Skipped`로 표시됩니다. 전체 시험에서
-네이티브 항목까지 실행하려면 다음과 같이 합니다.
+정적 시험과 승인된 네이티브 시험을 함께 실행하려면 다음과 같이 합니다.
 
 ```powershell
 $env:HWP_NATIVE_RUN_INTEGRATION = '1'
 try {
-  .\tests\run-tests.ps1 -Suite All
+  .\tests\run-tests.ps1 -Suite All -AllowInteractiveNative
 }
 finally {
   Remove-Item Env:HWP_NATIVE_RUN_INTEGRATION -ErrorAction SilentlyContinue

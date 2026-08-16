@@ -114,7 +114,7 @@ function Test-HwpBackendCandidate {
         }
         'interactive' {
             if ([string]$Backend.id -eq 'hancom-isolated') { return $false }
-            if ([string]$Backend.id -eq 'hancom-interactive' -and -not [bool]$ExecutionContext.AllowInteractiveWindow) {
+            if ([string]$Backend.id -eq 'hancom-interactive' -and $ExecutionContext.AllowInteractiveWindow -ne $true) {
                 return $false
             }
         }
@@ -143,22 +143,21 @@ function Resolve-HwpBackend {
     param(
         [Parameter(Mandatory)][string]$Command,
         [string]$DetectedKind = 'NONE',
+        [ValidateSet('none', 'hwp', 'hwpx')]
+        [string]$RequestedFormat = 'none',
         [object]$ExecutionContext = (New-HwpExecutionContext),
-        [Parameter(Mandatory)][object]$Capabilities,
-        [string]$OutputPath = ''
+        [Parameter(Mandatory)][object]$Capabilities
     )
 
     if (-not (Test-HwpExecutionContext $ExecutionContext)) {
         throw '유효한 HWP 실행 컨텍스트가 필요합니다.'
     }
 
-    if ([string]$ExecutionContext.Mode -eq 'interactive' -and -not [bool]$ExecutionContext.AllowInteractiveWindow) {
+    if ([string]$ExecutionContext.Mode -eq 'interactive' -and $ExecutionContext.AllowInteractiveWindow -ne $true) {
         return New-HwpBlockedRoute `
             -Reason 'Interactive execution requires explicit AllowInteractiveWindow approval.' `
             -Errors @('interactive 모드는 -AllowInteractiveWindow의 명시적 승인이 필요합니다.')
     }
-
-    $requestedFormat = Get-HwpRequestedFormat -OutputPath $OutputPath
 
     foreach ($backendId in $script:RouteOrder) {
         $backend = Get-HwpBackendById -Capabilities $Capabilities -BackendId $backendId
@@ -170,7 +169,7 @@ function Resolve-HwpBackend {
                 -Backend $backend `
                 -Command $Command `
                 -DetectedKind $DetectedKind `
-                -RequestedFormat $requestedFormat `
+                -RequestedFormat $RequestedFormat `
                 -ExecutionContext $ExecutionContext) {
             return New-HwpPassRoute -Backend $backend
         }
@@ -183,7 +182,7 @@ function Resolve-HwpBackend {
                     -Reason 'No silent backend supports inspect for HWP-BINARY.' `
                     -Errors @('hwp-portable 백엔드가 준비되지 않았으며 GUI로 자동 전환하지 않습니다.')
             }
-            if ($Command -eq 'generate' -and $requestedFormat -eq 'hwpx') {
+            if ($Command -eq 'generate' -and $RequestedFormat -eq 'hwpx') {
                 return New-HwpBlockedRoute `
                     -Reason 'No silent backend supports generate for requested format hwpx.' `
                     -Errors @('hwpx-direct 백엔드는 현재 generate를 선언하지 않았으며 GUI로 자동 전환하지 않습니다.')

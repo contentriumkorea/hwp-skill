@@ -76,6 +76,14 @@ Describe 'HWP 백엔드 라우터' {
         Test-Path $routerModule | Should Be $true
     }
 
+    It '공개 라우터 계약은 RequestedFormat을 받고 OutputPath를 노출하지 않는다' {
+        Import-Module $routerModule -Force
+        $parameters = (Get-Command Resolve-HwpBackend).Parameters.Keys
+
+        ($parameters -contains 'RequestedFormat') | Should Be $true
+        ($parameters -contains 'OutputPath') | Should Be $false
+    }
+
     It 'core 명령은 형식과 무관하게 core 백엔드를 선택한다' {
         $capabilities = New-TestRouterInputs $executionModule $capabilityModule $routerModule
         $route = Resolve-HwpBackend -Command preflight -DetectedKind NONE `
@@ -152,6 +160,24 @@ Describe 'HWP 백엔드 라우터' {
         @($route.Errors) | Should Be @('interactive 모드는 -AllowInteractiveWindow의 명시적 승인이 필요합니다.')
     }
 
+    It '위조된 Boolean과 스키마 컨텍스트는 라우터 후보 평가 전에 거부한다' {
+        $capabilities = New-CapabilitiesWithBackends -PortableAvailable $true -InteractiveAvailable $true
+        $forgedContexts = @(
+            [pscustomobject]@{ SchemaVersion = '1.0'; Mode = 'interactive'; AllowInteractiveWindow = 'false' },
+            [pscustomobject]@{ SchemaVersion = '1.0'; Mode = 'interactive'; AllowInteractiveWindow = 1 },
+            [pscustomobject]@{ SchemaVersion = '1.0'; Mode = 'interactive'; AllowInteractiveWindow = $null },
+            [pscustomobject]@{ SchemaVersion = '1.0'; Mode = 'interactive' },
+            [pscustomobject]@{ SchemaVersion = '9.9'; Mode = 'interactive'; AllowInteractiveWindow = $true }
+        )
+
+        foreach ($forgedContext in $forgedContexts) {
+            {
+                Resolve-HwpBackend -Command inspect -DetectedKind HWP-BINARY `
+                    -ExecutionContext $forgedContext -Capabilities $capabilities
+            } | Should Throw '유효한 HWP 실행 컨텍스트가 필요합니다.'
+        }
+    }
+
     It 'silent HWP 라우팅은 portable이 가능하면 interactive보다 먼저 portable을 선택한다' {
         $capabilities = New-CapabilitiesWithBackends -PortableAvailable $true -InteractiveAvailable $true
         $route = Resolve-HwpBackend -Command inspect -DetectedKind HWP-BINARY `
@@ -187,7 +213,7 @@ Describe 'HWP 백엔드 라우터' {
 
     It 'silent HWPX generate는 이 단계에서 정확히 차단된다' {
         $capabilities = New-TestRouterInputs $executionModule $capabilityModule $routerModule
-        $route = Resolve-HwpBackend -Command generate -DetectedKind NONE -OutputPath 'result.hwpx' `
+        $route = Resolve-HwpBackend -Command generate -DetectedKind NONE -RequestedFormat hwpx `
             -ExecutionContext (New-HwpExecutionContext) -Capabilities $capabilities
 
         $route.Status | Should Be 'BLOCKED'
@@ -204,6 +230,21 @@ Describe 'HWP 백엔드 라우터' {
         Get-HwpRequestedFormat -OutputPath 'result.hwp' | Should Be 'hwp'
         Get-HwpRequestedFormat -OutputPath 'result.hwpx' | Should Be 'hwpx'
         { Get-HwpRequestedFormat -OutputPath 'result.pdf' } | Should Throw '출력 형식은 HWP 또는 HWPX여야 합니다.'
+    }
+
+    It '요청 형식은 none, hwp, hwpx만 허용한다' {
+        $capabilities = New-TestRouterInputs $executionModule $capabilityModule $routerModule
+        $message = ''
+
+        try {
+            HwpBackendRouter\Resolve-HwpBackend -Command generate -DetectedKind NONE -RequestedFormat pdf `
+                -ExecutionContext (New-HwpExecutionContext) -Capabilities $capabilities -ErrorAction Stop
+        }
+        catch {
+            $message = $_.Exception.Message
+        }
+
+        $message | Should Match 'none,hwp,hwpx'
     }
 
     It 'backend id 조회는 없는 엔진을 null로 돌려준다' {

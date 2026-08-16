@@ -25,25 +25,49 @@ public sealed class HwpSilentActivityMonitor : IDisposable
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
-    private readonly HashSet<int> baselineProcessIds;
+    private readonly HashSet<int> baselineHwpProcessIds;
+    private readonly HashSet<int> baselineWinwordProcessIds;
+    private readonly HashSet<int> baselineExplorerProcessIds;
     private readonly HashSet<long> baselineWindowHandles;
     private readonly long baselineForegroundHandle;
-    private readonly ConcurrentDictionary<int, byte> newProcessIds = new ConcurrentDictionary<int, byte>();
+    private readonly ConcurrentDictionary<int, byte> newHwpProcessIds = new ConcurrentDictionary<int, byte>();
+    private readonly ConcurrentDictionary<int, byte> newWinwordProcessIds = new ConcurrentDictionary<int, byte>();
+    private readonly ConcurrentDictionary<int, byte> newExplorerProcessIds = new ConcurrentDictionary<int, byte>();
     private readonly ConcurrentDictionary<long, byte> newWindowHandles = new ConcurrentDictionary<long, byte>();
+    private readonly ConcurrentDictionary<int, byte> newWindowProcessIds = new ConcurrentDictionary<int, byte>();
     private Thread worker;
     private volatile bool running;
     private volatile bool foregroundCapturedByHwp;
+    private volatile bool foregroundChanged;
 
     public HwpSilentActivityMonitor()
     {
-        baselineProcessIds = GetHwpProcessIds();
-        baselineWindowHandles = GetVisibleHwpWindowHandles(baselineProcessIds);
+        baselineHwpProcessIds = GetProcessIds("Hwp");
+        baselineWinwordProcessIds = GetProcessIds("WINWORD");
+        baselineExplorerProcessIds = GetProcessIds("explorer");
+        baselineWindowHandles = new HashSet<long>(GetVisibleTopLevelWindows().Keys);
         baselineForegroundHandle = GetForegroundWindow().ToInt64();
     }
 
-    public int[] NewProcessIds { get { return newProcessIds.Keys.OrderBy(x => x).ToArray(); } }
+    public int[] NewProcessIds
+    {
+        get
+        {
+            return newHwpProcessIds.Keys
+                .Concat(newWinwordProcessIds.Keys)
+                .Concat(newExplorerProcessIds.Keys)
+                .Distinct()
+                .OrderBy(x => x)
+                .ToArray();
+        }
+    }
+    public int[] NewHwpProcessIds { get { return newHwpProcessIds.Keys.OrderBy(x => x).ToArray(); } }
+    public int[] NewWinwordProcessIds { get { return newWinwordProcessIds.Keys.OrderBy(x => x).ToArray(); } }
+    public int[] NewExplorerProcessIds { get { return newExplorerProcessIds.Keys.OrderBy(x => x).ToArray(); } }
     public long[] NewVisibleWindowHandles { get { return newWindowHandles.Keys.OrderBy(x => x).ToArray(); } }
+    public int[] NewVisibleWindowProcessIds { get { return newWindowProcessIds.Keys.OrderBy(x => x).ToArray(); } }
     public bool ForegroundCapturedByHwp { get { return foregroundCapturedByHwp; } }
+    public bool ForegroundChanged { get { return foregroundChanged; } }
 
     public void Start()
     {
@@ -73,52 +97,66 @@ public sealed class HwpSilentActivityMonitor : IDisposable
 
     private void Snapshot()
     {
-        HashSet<int> processIds = GetHwpProcessIds();
-        foreach (int id in processIds)
-        {
-            if (!baselineProcessIds.Contains(id))
-            {
-                newProcessIds.TryAdd(id, 0);
-            }
-        }
+        HashSet<int> hwpProcessIds = GetProcessIds("Hwp");
+        CaptureNewProcesses(hwpProcessIds, baselineHwpProcessIds, newHwpProcessIds);
+        CaptureNewProcesses(GetProcessIds("WINWORD"), baselineWinwordProcessIds, newWinwordProcessIds);
+        CaptureNewProcesses(GetProcessIds("explorer"), baselineExplorerProcessIds, newExplorerProcessIds);
 
-        HashSet<long> windowHandles = GetVisibleHwpWindowHandles(processIds);
-        foreach (long handle in windowHandles)
+        Dictionary<long, int> windows = GetVisibleTopLevelWindows();
+        foreach (KeyValuePair<long, int> window in windows)
         {
-            if (!baselineWindowHandles.Contains(handle))
+            if (!baselineWindowHandles.Contains(window.Key))
             {
-                newWindowHandles.TryAdd(handle, 0);
+                newWindowHandles.TryAdd(window.Key, 0);
+                if (window.Value > 0) newWindowProcessIds.TryAdd(window.Value, 0);
             }
         }
 
         long foreground = GetForegroundWindow().ToInt64();
-        if (foreground != baselineForegroundHandle && windowHandles.Contains(foreground))
+        if (foreground != baselineForegroundHandle)
         {
-            foregroundCapturedByHwp = true;
+            foregroundChanged = true;
+            int foregroundProcessId;
+            if (windows.TryGetValue(foreground, out foregroundProcessId) && hwpProcessIds.Contains(foregroundProcessId))
+            {
+                foregroundCapturedByHwp = true;
+            }
         }
     }
 
-    private static HashSet<int> GetHwpProcessIds()
+    private static void CaptureNewProcesses(
+        HashSet<int> current,
+        HashSet<int> baseline,
+        ConcurrentDictionary<int, byte> destination)
     {
-        return new HashSet<int>(Process.GetProcessesByName("Hwp").Select(p => p.Id));
+        foreach (int id in current)
+        {
+            if (!baseline.Contains(id)) destination.TryAdd(id, 0);
+        }
     }
 
-    private static HashSet<long> GetVisibleHwpWindowHandles(HashSet<int> hwpProcessIds)
+    private static HashSet<int> GetProcessIds(string processName)
     {
-        HashSet<long> result = new HashSet<long>();
+        HashSet<int> result = new HashSet<int>();
+        foreach (Process process in Process.GetProcessesByName(processName))
+        {
+            try { result.Add(process.Id); }
+            catch { }
+            finally { process.Dispose(); }
+        }
+        return result;
+    }
+
+    private static Dictionary<long, int> GetVisibleTopLevelWindows()
+    {
+        Dictionary<long, int> result = new Dictionary<long, int>();
         EnumWindows((hWnd, lParam) =>
         {
-            if (!IsWindowVisible(hWnd))
-            {
-                return true;
-            }
+            if (!IsWindowVisible(hWnd)) return true;
 
             uint processId;
             GetWindowThreadProcessId(hWnd, out processId);
-            if (hwpProcessIds.Contains((int)processId))
-            {
-                result.Add(hWnd.ToInt64());
-            }
+            result[hWnd.ToInt64()] = (int)processId;
             return true;
         }, IntPtr.Zero);
         return result;
