@@ -112,20 +112,22 @@ Describe 'hwp-skill 저장소 구조' {
         (($valid | ConvertTo-Json -Depth 30) | Test-Json -SchemaFile $schemaPath -ErrorAction SilentlyContinue) | Should Be $false
     }
 
-    It 'SKILL.md가 간결한 한국어 안전 워크플로를 명시한다' {
+    It 'SKILL.md가 단일 silent 오케스트레이션과 한국어 안전 경계를 명시한다' {
         $skillPath = Join-Path $PSScriptRoot '../skill/hwp-skill/SKILL.md'
         $skill = Get-Content -LiteralPath $skillPath -Raw -Encoding UTF8
         (Get-Content -LiteralPath $skillPath -Encoding UTF8).Count | Should BeLessThan 500
-        $skill | Should Match '사전 점검'
-        $skill | Should Match '검사'
-        $skill | Should Match '계획'
-        $skill | Should Match '승인'
-        $skill | Should Match '다시 열'
+        $skill | Should Match '단일.*(?:진입점|오케스트레이터)'
+        $skill | Should Match '내부.*(?:계획|상태)'
+        $skill | Should Match '원본'
+        $skill | Should Match 'silent'
+        $skill | Should Match '진행 안내는 최대 1회'
         $skill | Should Match '원본'
         $skill | Should Match '(?m)^name:\s+hwp-skill\r?$'
 
         $interface = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../skill/hwp-skill/agents/openai.yaml') -Raw -Encoding UTF8
         $interface | Should Match '\$hwp-skill'
+        $interface | Should Match '단일 silent'
+        $interface | Should Match '내부 계획·명령·엔진 상태'
     }
 
     It '한글 문서 작성 요청과 무창 기본 정책을 메타데이터에 포함한다' {

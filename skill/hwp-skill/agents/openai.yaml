@@ -1,4 +1,4 @@
 interface:
   display_name: "HWP Skill"
   short_description: "창을 띄우지 않고 HWP·HWPX 문서를 안전하게 처리합니다"
-  default_prompt: "$hwp-skill을 사용해 기본 silent 모드로 한글 문서를 처리하고 원본과 사용자 포커스를 보존해 주세요."
+  default_prompt: "$hwp-skill을 한글 문서 작업의 단일 silent 오케스트레이터로 사용하세요. 내부 계획·명령·엔진 상태는 표시하지 말고, 원본과 사용자 포커스를 보존한 새 결과만 검증해 보고하세요. 한컴 창은 사용자가 현재 요청에서 화면 표시를 명시한 경우에만 사용하세요."
