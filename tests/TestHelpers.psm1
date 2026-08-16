@@ -1,3 +1,5 @@
+Import-Module (Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpExecution.psm1') -Force
+
 function New-Operation {
     [CmdletBinding()]
     param(
@@ -376,8 +378,13 @@ function New-MergeOperation {
     $operation
 }
 
+function New-TestInteractiveExecutionContext {
+    New-HwpExecutionContext -Mode interactive -AllowInteractiveWindow
+}
+
 Export-ModuleMember -Function @(
     'New-Operation',
+    'New-TestInteractiveExecutionContext',
     'New-ValidPlan',
     'New-FieldOperation',
     'Set-OperationContext',

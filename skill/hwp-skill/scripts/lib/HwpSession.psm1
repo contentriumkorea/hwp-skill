@@ -1,6 +1,7 @@
 Set-StrictMode -Version Latest
 
 Import-Module (Join-Path $PSScriptRoot 'HwpCommon.psm1') -ErrorAction Stop
+Import-Module (Join-Path $PSScriptRoot 'HwpExecution.psm1') -ErrorAction Stop
 
 function Test-HwpWindowsPlatform {
     [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
@@ -106,6 +107,8 @@ function Get-HwpAutomationInfo {
 function New-HwpSession {
     [CmdletBinding()]
     param(
+        [Parameter(Mandatory)]
+        [object]$ExecutionContext,
         [bool]$Visible = $false,
         [scriptblock]$ComFactory = { param($progId) New-Object -ComObject $progId },
         [scriptblock]$ProcessOwnershipResolver = {
@@ -117,6 +120,8 @@ function New-HwpSession {
         [ValidateRange(0, 5000)]
         [int]$RetryDelayMilliseconds = 300
     )
+
+    Assert-HwpLocalGuiAllowed -ExecutionContext $ExecutionContext
 
     $lastErrorMessage = '등록된 ProgID를 찾지 못했습니다.'
     for ($attempt = 1; $attempt -le $RetryCount; $attempt++) {
@@ -298,6 +303,8 @@ function Close-HwpSession {
 function Invoke-HwpPreflight {
     [CmdletBinding()]
     param(
+        [Parameter(Mandatory)]
+        [object]$ExecutionContext,
         [switch]$RequireUnattendedOpen,
         [bool]$Visible = $false,
         [scriptblock]$ComFactory = { param($progId) New-Object -ComObject $progId },
@@ -316,7 +323,7 @@ function Invoke-HwpPreflight {
 
     $session = $null
     try {
-        $session = New-HwpSession -Visible $Visible -ComFactory $ComFactory
+        $session = New-HwpSession -ExecutionContext $ExecutionContext -Visible $Visible -ComFactory $ComFactory
     }
     catch {
         return New-HwpResult -Status BLOCKED -Command preflight -Data ([pscustomobject]@{

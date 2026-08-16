@@ -1,9 +1,13 @@
 $commonModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCommon.psm1'
+$executionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpExecution.psm1'
 $sessionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpSession.psm1'
+$helpersModule = Join-Path $PSScriptRoot 'TestHelpers.psm1'
 Import-Module $commonModule -Force
+Import-Module $executionModule -Force
 if (Test-Path -LiteralPath $sessionModule) {
     Import-Module $sessionModule -Force
 }
+Import-Module $helpersModule -Force
 
 function New-FakeHwpObject {
     param([string]$Version = '13, 0, 0, 711')
@@ -90,7 +94,7 @@ Describe 'New-HwpSession' {
             $fake
         }.GetNewClosure()
 
-        $session = New-HwpSession -ComFactory $factory
+        $session = New-HwpSession -ExecutionContext (New-TestInteractiveExecutionContext) -ComFactory $factory
 
         $session.ProgId | Should Be 'HWPFrame.HwpObject'
         $session.Version | Should Be '13, 0, 0, 711'
@@ -101,7 +105,7 @@ Describe 'New-HwpSession' {
         $fake = New-FakeHwpObject
         $factory = { param($progId) $fake }.GetNewClosure()
 
-        $session = New-HwpSession -Visible $false -ComFactory $factory
+        $session = New-HwpSession -ExecutionContext (New-TestInteractiveExecutionContext) -Visible $false -ComFactory $factory
 
         $session.Owned | Should Be $true
         $session.Visible | Should Be $false
@@ -116,7 +120,7 @@ Describe 'New-HwpSession' {
             [pscustomobject]@{ Owned = $false; ProcessId = 309564; Reason = 'existing-process' }
         }
 
-        $session = New-HwpSession -ComFactory $factory -ProcessOwnershipResolver $resolver
+        $session = New-HwpSession -ExecutionContext (New-TestInteractiveExecutionContext) -ComFactory $factory -ProcessOwnershipResolver $resolver
         Close-HwpSession -Session $session
 
         $session.Owned | Should Be $false
@@ -139,7 +143,7 @@ Describe 'New-HwpSession' {
             $fake
         }.GetNewClosure()
 
-        $session = New-HwpSession -ComFactory $factory -RetryCount 2 -RetryDelayMilliseconds 0
+        $session = New-HwpSession -ExecutionContext (New-TestInteractiveExecutionContext) -ComFactory $factory -RetryCount 2 -RetryDelayMilliseconds 0
 
         $session.Hwp | Should Be $fake
         $attempts.Count | Should Be 3
@@ -193,7 +197,7 @@ Describe 'Close-HwpSession' {
 
 Describe 'Invoke-HwpPreflight' {
     It '등록된 COM 객체가 없으면 BLOCKED를 반환한다' {
-        $result = Invoke-HwpPreflight -ComFactory { param($progId) throw 'class not registered' }
+        $result = Invoke-HwpPreflight -ExecutionContext (New-TestInteractiveExecutionContext) -ComFactory { param($progId) throw 'class not registered' }
 
         $result.Status | Should Be 'BLOCKED'
         $result.Errors[0] | Should Match '한컴오피스 자동화'
@@ -203,7 +207,7 @@ Describe 'Invoke-HwpPreflight' {
         $fake = New-FakeHwpObject
         $factory = { param($progId) $fake }.GetNewClosure()
 
-        $result = Invoke-HwpPreflight -ComFactory $factory -SecurityModuleReader { @() }
+        $result = Invoke-HwpPreflight -ExecutionContext (New-TestInteractiveExecutionContext) -ComFactory $factory -SecurityModuleReader { @() }
 
         $result.Status | Should Be 'PASS_WITH_WARNINGS'
         $result.Data.UnattendedOpenReady | Should Be $false
@@ -215,7 +219,7 @@ Describe 'Invoke-HwpPreflight' {
         $fake = New-FakeHwpObject
         $factory = { param($progId) $fake }.GetNewClosure()
 
-        $result = Invoke-HwpPreflight -RequireUnattendedOpen -ComFactory $factory -SecurityModuleReader { @() }
+        $result = Invoke-HwpPreflight -ExecutionContext (New-TestInteractiveExecutionContext) -RequireUnattendedOpen -ComFactory $factory -SecurityModuleReader { @() }
 
         $result.Status | Should Be 'BLOCKED'
         $result.Data.UnattendedOpenReady | Should Be $false
@@ -226,7 +230,7 @@ Describe 'Invoke-HwpPreflight' {
         $fake = New-FakeHwpObject
         $factory = { param($progId) $fake }.GetNewClosure()
 
-        $result = Invoke-HwpPreflight -ComFactory $factory -SecurityModuleReader { @('FilePathCheckerModule') }
+        $result = Invoke-HwpPreflight -ExecutionContext (New-TestInteractiveExecutionContext) -ComFactory $factory -SecurityModuleReader { @('FilePathCheckerModule') }
 
         $result.Status | Should Be 'PASS'
         $result.Data.Version | Should Be '13, 0, 0, 711'

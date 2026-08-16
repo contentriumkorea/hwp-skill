@@ -2,7 +2,8 @@
 param(
     [string]$OutputDirectory = (Join-Path $PSScriptRoot 'source'),
     [switch]$Force,
-    [switch]$Visible
+    [switch]$Visible,
+    [switch]$AllowInteractiveNative
 )
 
 Set-StrictMode -Version Latest
@@ -10,6 +11,7 @@ $ErrorActionPreference = 'Stop'
 
 $libraryRoot = Join-Path $PSScriptRoot '../../skill/hwp-skill/scripts/lib'
 Import-Module (Join-Path $libraryRoot 'HwpCommon.psm1') -Force
+Import-Module (Join-Path $libraryRoot 'HwpExecution.psm1') -Force
 Import-Module (Join-Path $libraryRoot 'HwpSession.psm1') -Force
 
 function Write-FixtureResult {
@@ -76,7 +78,8 @@ function New-HwpFixtureFile {
         [switch]$Visible
     )
 
-    $session = New-HwpSession -Visible ([bool]$Visible)
+    $executionContext = New-HwpExecutionContext -Mode interactive -AllowInteractiveWindow
+    $session = New-HwpSession -ExecutionContext $executionContext -Visible ([bool]$Visible)
     try {
         $memoryMode = $Format -eq 'HWP'
         $security = $null
@@ -167,6 +170,10 @@ $existing = @($expected | Where-Object { Test-Path -LiteralPath $_ })
 if ($existing.Count -gt 0 -and -not $Force) {
     Write-FixtureResult -Status BLOCKED -Data @{ ExistingFiles=$existing } `
         -Errors @('기존 가상 시험 문서를 덮어쓰지 않습니다. 다시 만들려면 -Force를 명시하십시오.') -ExitCode 2
+}
+if (-not $AllowInteractiveNative) {
+    Write-FixtureResult -Status BLOCKED -Data @{ AllowInteractiveNative = $false } `
+        -Errors @('시험 문서 생성은 사용자에게 보이는 로컬 한컴 실행이므로 -AllowInteractiveNative 명시 승인이 필요합니다.') -ExitCode 2
 }
 
 New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
