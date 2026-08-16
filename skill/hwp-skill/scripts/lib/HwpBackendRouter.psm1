@@ -152,6 +152,12 @@ function Resolve-HwpBackend {
         throw '유효한 HWP 실행 컨텍스트가 필요합니다.'
     }
 
+    if ([string]$ExecutionContext.Mode -eq 'interactive' -and -not [bool]$ExecutionContext.AllowInteractiveWindow) {
+        return New-HwpBlockedRoute `
+            -Reason 'Interactive execution requires explicit AllowInteractiveWindow approval.' `
+            -Errors @('interactive 모드는 -AllowInteractiveWindow의 명시적 승인이 필요합니다.')
+    }
+
     $requestedFormat = Get-HwpRequestedFormat -OutputPath $OutputPath
 
     foreach ($backendId in $script:RouteOrder) {
