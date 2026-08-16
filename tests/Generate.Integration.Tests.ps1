@@ -23,14 +23,17 @@ Describe 'HWT/HWP 양식 기반 생성 실제 한컴 통합 시험' -Tags Native
         $sourceHash = Get-HwpSha256 -LiteralPath $fixtureHwt
         $output1 = Join-Path $TestDrive '양식생성-1.hwp'
         $output2 = Join-Path $TestDrive '양식생성-2.hwp'
+        $interactiveExecutionContext = New-TestInteractiveExecutionContext
 
         $plan1 = New-ValidPlan -SourcePath $fixtureHwt -SourceSha256 $sourceHash
         $plan1.operations = @((New-FieldOperation -Name '담당자' -Before '시험 담당자' -After '김한글'))
         $plan2 = New-ValidPlan -SourcePath $fixtureHwt -SourceSha256 $sourceHash
         $plan2.operations = @((New-FieldOperation -Name '담당자' -Before '시험 담당자' -After '박문서'))
 
-        $result1 = Invoke-HwpGenerate -TemplatePath $fixtureHwt -Plan $plan1 -OutputPath $output1
-        $result2 = Invoke-HwpGenerate -TemplatePath $fixtureHwt -Plan $plan2 -OutputPath $output2
+        $result1 = Invoke-HwpGenerate -TemplatePath $fixtureHwt -Plan $plan1 -OutputPath $output1 `
+            -ExecutionContext $interactiveExecutionContext
+        $result2 = Invoke-HwpGenerate -TemplatePath $fixtureHwt -Plan $plan2 -OutputPath $output2 `
+            -ExecutionContext $interactiveExecutionContext
 
         $result1.Status | Should Be 'PASS'
         $result2.Status | Should Be 'PASS'
@@ -44,12 +47,16 @@ Describe 'HWT/HWP 양식 기반 생성 실제 한컴 통합 시험' -Tags Native
     It '빈 문서 계획으로 제목·본문·표를 가진 재열 수 있는 HWP를 만든다' -Skip:(-not $runNative) {
         $output = Join-Path $TestDrive '새공공문서.hwp'
         $observation = [pscustomobject]@{ SawStaging = $false }
+        $interactiveExecutionContext = New-TestInteractiveExecutionContext
         $inspector = {
-            param($path)
+            param($path, $executionContext, $capabilities)
             if ($path -notmatch '\.partial\.hwp$') { throw "임시 검증 경로가 아닙니다: $path" }
             if (Test-Path -LiteralPath $output) { throw '재열기 검사 전에 최종 결과가 생성되었습니다.' }
+            if ([string]$executionContext.Mode -ne 'interactive' -or -not [bool]$executionContext.AllowInteractiveWindow) {
+                throw '승인된 interactive 실행 컨텍스트가 전달되지 않았습니다.'
+            }
             $observation.SawStaging = $true
-            Get-HwpInspection -LiteralPath $path
+            Get-HwpInspection -LiteralPath $path -ExecutionContext $executionContext -Capabilities $capabilities
         }.GetNewClosure()
         $plan = [pscustomobject]@{
             version = '1.0'
@@ -70,7 +77,8 @@ Describe 'HWT/HWP 양식 기반 생성 실제 한컴 통합 시험' -Tags Native
             )
         }
 
-        $result = Invoke-HwpGenerate -NewDocument -Plan $plan -OutputPath $output -Inspector $inspector
+        $result = Invoke-HwpGenerate -NewDocument -Plan $plan -OutputPath $output `
+            -ExecutionContext $interactiveExecutionContext -Inspector $inspector
 
         $result.Status | Should Be 'PASS'
         $result.After.Text | Should Match '가상 공공문서'

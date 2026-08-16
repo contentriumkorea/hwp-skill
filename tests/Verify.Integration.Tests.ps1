@@ -18,7 +18,9 @@ $runNative = $env:HWP_NATIVE_RUN_INTEGRATION -eq '1' -and (Test-Path -LiteralPat
 
 Describe 'HWP 재열기와 시각 검증 실제 한컴 통합 시험' -Tags Native,Verify {
     It '보안 모듈 준비 상태에 따라 PDF·페이지 이미지 또는 명시적 경고를 반환한다' -Skip:(-not $runNative) {
-        $result = Invoke-HwpVerify -LiteralPath $fixtureHwp -OutputDirectory $TestDrive
+        $interactiveExecutionContext = New-TestInteractiveExecutionContext
+        $result = Invoke-HwpVerify -LiteralPath $fixtureHwp -OutputDirectory $TestDrive `
+            -ExecutionContext $interactiveExecutionContext
 
         $result.Status | Should Match '^PASS'
         $result.After.Status | Should Match '^PASS'
