@@ -2,6 +2,8 @@ Set-StrictMode -Version Latest
 
 Import-Module (Join-Path $PSScriptRoot 'HwpCommon.psm1') -ErrorAction Stop
 Import-Module (Join-Path $PSScriptRoot 'HwpPlan.psm1') -ErrorAction Stop
+Import-Module (Join-Path $PSScriptRoot 'HwpSession.psm1') -ErrorAction Stop
+Import-Module (Join-Path $PSScriptRoot 'HwpInspect.psm1') -ErrorAction Stop
 
 function Test-HwpEditProperty {
     param(
@@ -594,6 +596,372 @@ function Save-HwpMemoryDocument {
     })
 }
 
+function Get-HwpFailureArtifactPath {
+    param([Parameter(Mandatory)][string]$FinalPath)
+
+    $directory = [IO.Path]::GetDirectoryName($FinalPath)
+    $name = [IO.Path]::GetFileNameWithoutExtension($FinalPath)
+    $stamp = (Get-Date).ToString('yyyyMMdd_HHmmss')
+    $candidate = [IO.Path]::Combine($directory, "${name}_${stamp}.failed.hwp")
+    $sequence = 1
+    while (Test-Path -LiteralPath $candidate) {
+        $candidate = [IO.Path]::Combine($directory, ('{0}_{1}_{2:D2}.failed.hwp' -f $name, $stamp, $sequence))
+        $sequence++
+    }
+    $candidate
+}
+
+function Test-HwpOperationPostcondition {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Operation,
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Inspection
+    )
+
+    $kind = if ((Test-HwpEditProperty -InputObject $Operation -Name 'verify') -and
+        (Test-HwpEditProperty -InputObject $Operation.verify -Name 'kind')) {
+        [string]$Operation.verify.kind
+    }
+    else {
+        ''
+    }
+    $expected = if ((Test-HwpEditProperty -InputObject $Operation -Name 'verify') -and
+        (Test-HwpEditProperty -InputObject $Operation.verify -Name 'expected')) {
+        $Operation.verify.expected
+    }
+    else {
+        $null
+    }
+    $operationId = Get-HwpOperationId -Operation $Operation
+    $passed = $false
+    $actual = $null
+
+    switch ($kind) {
+        'text-contains' {
+            $actual = [string]$Inspection.Text
+            $passed = $actual.Contains([string]$expected, [StringComparison]::Ordinal)
+            break
+        }
+        'text-not-contains' {
+            $actual = [string]$Inspection.Text
+            $passed = -not $actual.Contains([string]$expected, [StringComparison]::Ordinal)
+            break
+        }
+        'text-count' {
+            $needle = if (Test-HwpEditProperty -InputObject $Operation.verify -Name 'value') {
+                [string]$Operation.verify.value
+            }
+            elseif (Test-HwpEditProperty -InputObject $Operation -Name 'after') {
+                [string]$Operation.after
+            }
+            else {
+                Get-HwpOperationAnchor -Operation $Operation
+            }
+            $count = 0
+            $offset = 0
+            $text = [string]$Inspection.Text
+            while ($needle.Length -gt 0 -and $offset -le $text.Length - $needle.Length) {
+                $index = $text.IndexOf($needle, $offset, [StringComparison]::Ordinal)
+                if ($index -lt 0) { break }
+                $count++
+                $offset = $index + $needle.Length
+            }
+            $actual = $count
+            $passed = $count -eq [int]$expected
+            break
+        }
+        'field-equals' {
+            $fieldName = if ((Test-HwpEditProperty -InputObject $Operation -Name 'target') -and
+                (Test-HwpEditProperty -InputObject $Operation.target -Name 'fieldName')) {
+                [string]$Operation.target.fieldName
+            }
+            else {
+                Get-HwpOperationAnchor -Operation $Operation
+            }
+            $property = $Inspection.Fields.PSObject.Properties[$fieldName]
+            $actual = if ($null -eq $property) { $null } else { [string]$property.Value }
+            $passed = $null -ne $property -and [string]::Equals([string]$actual, [string]$expected, [StringComparison]::Ordinal)
+            break
+        }
+        default {
+            return New-HwpResult -Status BLOCKED -Command verify-operation -Data ([pscustomobject]@{
+                OperationId = $operationId
+                Kind = $kind
+                Expected = $expected
+                Actual = $null
+                Passed = $false
+            }) -Errors @("지원하지 않는 후조건 검사입니다: $kind")
+        }
+    }
+
+    $data = [pscustomobject]@{
+        OperationId = $operationId
+        Kind = $kind
+        Expected = $expected
+        Actual = $actual
+        Passed = $passed
+    }
+    if (-not $passed) {
+        return New-HwpResult -Status FAILED -Command verify-operation -Data $data -Errors @(
+            "작업 $operationId 후조건이 충족되지 않았습니다: $kind"
+        )
+    }
+    New-HwpResult -Status PASS -Command verify-operation -Data $data
+}
+
+function New-HwpApplyResult {
+    param(
+        [ValidateSet('PASS','PASS_WITH_WARNINGS','BLOCKED','FAILED')][string]$Status,
+        [string]$SourcePath = '',
+        [string]$SourceSha256 = '',
+        [string]$OutputPath = '',
+        [string]$TemporaryPath = '',
+        [string]$FailedArtifactPath = '',
+        [object[]]$OperationResults = @(),
+        [object[]]$VerificationResults = @(),
+        [AllowNull()][object]$Inspection = $null,
+        [string[]]$Warnings = @(),
+        [string[]]$Errors = @()
+    )
+
+    $data = [pscustomobject]@{
+        SourcePath = $SourcePath
+        SourceSha256 = $SourceSha256
+        OutputPath = $OutputPath
+        TemporaryPath = $TemporaryPath
+        FailedArtifactPath = $FailedArtifactPath
+        OperationResults = @($OperationResults)
+        VerificationResults = @($VerificationResults)
+        Inspection = $Inspection
+    }
+    $result = New-HwpResult -Status $Status -Command apply-plan -Data $data -Warnings $Warnings -Errors $Errors
+    $result | Add-Member NoteProperty SourcePath $SourcePath
+    $result | Add-Member NoteProperty SourceSha256 $SourceSha256
+    $result | Add-Member NoteProperty OutputPath $OutputPath
+    $result | Add-Member NoteProperty TemporaryPath $TemporaryPath
+    $result | Add-Member NoteProperty FailedArtifactPath $FailedArtifactPath
+    $result | Add-Member NoteProperty OperationResults @($OperationResults)
+    $result | Add-Member NoteProperty VerificationResults @($VerificationResults)
+    $result | Add-Member NoteProperty Inspection $Inspection
+    $result
+}
+
+function Invoke-HwpApply {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$LiteralPath,
+        [Parameter(Mandatory)][ValidateNotNull()][object]$Plan,
+        [string]$OutputPath = '',
+        [scriptblock]$SessionFactory = { New-HwpSession }
+    )
+
+    $validation = Test-HwpEditPlan -Plan $Plan
+    if ($validation.Status -ne 'PASS') {
+        return New-HwpApplyResult -Status BLOCKED -Errors @($validation.Errors) -Warnings @($validation.Warnings)
+    }
+
+    try {
+        $format = Get-HwpFileKind -LiteralPath $LiteralPath
+        $sourcePath = $format.Path
+        $sourceHash = Get-HwpSha256 -LiteralPath $sourcePath
+    }
+    catch {
+        return New-HwpApplyResult -Status BLOCKED -Errors @($_.Exception.Message)
+    }
+    if (-not $format.ExtensionMatches) {
+        return New-HwpApplyResult -Status BLOCKED -SourcePath $sourcePath -SourceSha256 $sourceHash -Errors @(
+            '확장자와 실제 파일 형식이 다릅니다.'
+        )
+    }
+    if ($format.DetectedKind -ne 'HWP-BINARY') {
+        return New-HwpApplyResult -Status BLOCKED -SourcePath $sourcePath -SourceSha256 $sourceHash -Errors @(
+            '현재 원자적 네이티브 편집은 HWP 또는 HWT 바이너리만 지원합니다.'
+        )
+    }
+
+    try {
+        $plannedSourcePath = [IO.Path]::GetFullPath([string]$Plan.source.path)
+    }
+    catch {
+        return New-HwpApplyResult -Status BLOCKED -SourcePath $sourcePath -SourceSha256 $sourceHash -Errors @(
+            "계획의 source.path가 올바르지 않습니다: $($_.Exception.Message)"
+        )
+    }
+    if (-not [string]::Equals($sourcePath, $plannedSourcePath, [StringComparison]::OrdinalIgnoreCase)) {
+        return New-HwpApplyResult -Status BLOCKED -SourcePath $sourcePath -SourceSha256 $sourceHash -Errors @(
+            '계획의 source.path가 적용 대상과 다릅니다.'
+        )
+    }
+    if (-not [string]::Equals($sourceHash, [string]$Plan.source.sha256, [StringComparison]::OrdinalIgnoreCase)) {
+        return New-HwpApplyResult -Status BLOCKED -SourcePath $sourcePath -SourceSha256 $sourceHash -Errors @(
+            '계획의 source.sha256이 현재 원본 SHA-256과 다릅니다.'
+        )
+    }
+
+    if ([string]::IsNullOrWhiteSpace($OutputPath)) {
+        $hwpCandidate = [IO.Path]::ChangeExtension($sourcePath, '.hwp')
+        $finalPath = Get-HwpVersionedPath -LiteralPath $hwpCandidate
+    }
+    else {
+        $finalPath = [IO.Path]::GetFullPath($OutputPath)
+    }
+    if ([string]::Equals($sourcePath, $finalPath, [StringComparison]::OrdinalIgnoreCase)) {
+        return New-HwpApplyResult -Status BLOCKED -SourcePath $sourcePath -SourceSha256 $sourceHash `
+            -OutputPath $finalPath -Errors @('원본 문서와 같은 출력 경로는 허용되지 않습니다.')
+    }
+    if ([IO.Path]::GetExtension($finalPath).ToLowerInvariant() -ne '.hwp') {
+        return New-HwpApplyResult -Status BLOCKED -SourcePath $sourcePath -SourceSha256 $sourceHash `
+            -OutputPath $finalPath -Errors @('결과 경로는 .hwp 확장자여야 합니다.')
+    }
+    $finalDirectory = [IO.Path]::GetDirectoryName($finalPath)
+    if (-not (Test-Path -LiteralPath $finalDirectory -PathType Container)) {
+        return New-HwpApplyResult -Status BLOCKED -SourcePath $sourcePath -SourceSha256 $sourceHash `
+            -OutputPath $finalPath -Errors @("결과 폴더가 존재하지 않습니다: $finalDirectory")
+    }
+    if (Test-Path -LiteralPath $finalPath) {
+        return New-HwpApplyResult -Status BLOCKED -SourcePath $sourcePath -SourceSha256 $sourceHash `
+            -OutputPath $finalPath -Errors @("기존 결과 파일을 덮어쓰지 않습니다: $finalPath")
+    }
+
+    $finalName = [IO.Path]::GetFileNameWithoutExtension($finalPath)
+    $temporaryPath = [IO.Path]::Combine(
+        $finalDirectory,
+        ('{0}.{1}.partial.hwp' -f $finalName, [guid]::NewGuid().ToString('n'))
+    )
+    $operationResults = [Collections.Generic.List[object]]::new()
+    $appliedOperations = [Collections.Generic.List[object]]::new()
+    $verificationResults = [Collections.Generic.List[object]]::new()
+    $warnings = [Collections.Generic.List[string]]::new()
+    $errors = [Collections.Generic.List[string]]::new()
+    $session = $null
+    $stopped = $false
+    $failedArtifactPath = ''
+    $inspection = $null
+
+    try {
+        $session = & $SessionFactory
+        if ($null -eq $session) {
+            throw '세션 팩터리가 한컴 세션을 반환하지 않았습니다.'
+        }
+        $open = Open-HwpDocumentFromMemory -Session $session -LiteralPath $sourcePath
+        if ($open.Status -ne 'PASS') {
+            foreach ($message in @($open.Errors)) { $errors.Add([string]$message) }
+            $stopped = $true
+        }
+
+        if (-not $stopped) {
+            foreach ($operation in @($Plan.operations)) {
+                $result = Invoke-HwpEditOperation -Session $session -Operation $operation `
+                    -ApprovedAdvanced:([bool]$Plan.approvedAdvanced)
+                $operationResults.Add($result)
+                if ($result.Status -eq 'PASS') {
+                    $appliedOperations.Add($operation)
+                    continue
+                }
+
+                $policy = if (Test-HwpEditProperty -InputObject $operation -Name 'onFailure') {
+                    [string]$operation.onFailure
+                }
+                else {
+                    'stop'
+                }
+                if ($policy -eq 'skip') {
+                    $warnings.Add("작업을 건너뛰었습니다: $(Get-HwpOperationId -Operation $operation)")
+                    foreach ($message in @($result.Errors)) { $warnings.Add([string]$message) }
+                    continue
+                }
+
+                foreach ($message in @($result.Errors)) { $errors.Add([string]$message) }
+                $stopped = $true
+                break
+            }
+        }
+
+        if (-not $stopped) {
+            $save = Save-HwpMemoryDocument -Session $session -SourcePath $sourcePath -OutputPath $temporaryPath
+            if ($save.Status -ne 'PASS') {
+                foreach ($message in @($save.Errors)) { $errors.Add([string]$message) }
+                $stopped = $true
+            }
+        }
+    }
+    catch {
+        $errors.Add("편집 계획 실행 중 오류가 발생했습니다: $($_.Exception.Message)")
+        $stopped = $true
+    }
+    finally {
+        if ($null -ne $session) {
+            Close-HwpSession -Session $session
+        }
+    }
+
+    if ($stopped) {
+        return New-HwpApplyResult -Status BLOCKED -SourcePath $sourcePath -SourceSha256 $sourceHash `
+            -OutputPath $finalPath -TemporaryPath $temporaryPath -OperationResults @($operationResults) `
+            -Warnings @($warnings) -Errors @($errors)
+    }
+
+    $inspection = Get-HwpInspection -LiteralPath $temporaryPath
+    if ($inspection.Status -eq 'BLOCKED' -or $inspection.Status -eq 'FAILED') {
+        foreach ($message in @($inspection.Errors)) { $errors.Add([string]$message) }
+    }
+    else {
+        foreach ($operation in $appliedOperations) {
+            $verification = Test-HwpOperationPostcondition -Operation $operation -Inspection $inspection
+            $verificationResults.Add($verification)
+            if ($verification.Status -ne 'PASS') {
+                foreach ($message in @($verification.Errors)) { $errors.Add([string]$message) }
+            }
+        }
+    }
+
+    $sourceHashAfter = Get-HwpSha256 -LiteralPath $sourcePath
+    if ($sourceHashAfter -ne $sourceHash) {
+        $errors.Add('적용 과정에서 원본 SHA-256이 변경되었습니다.')
+    }
+
+    if ($errors.Count -gt 0) {
+        if (Test-Path -LiteralPath $temporaryPath) {
+            $failedArtifactPath = Get-HwpFailureArtifactPath -FinalPath $finalPath
+            try {
+                [IO.File]::Move($temporaryPath, $failedArtifactPath)
+            }
+            catch {
+                $errors.Add("실패 산출물을 분리하지 못했습니다: $($_.Exception.Message)")
+            }
+        }
+        return New-HwpApplyResult -Status FAILED -SourcePath $sourcePath -SourceSha256 $sourceHash `
+            -OutputPath $finalPath -TemporaryPath $temporaryPath -FailedArtifactPath $failedArtifactPath `
+            -OperationResults @($operationResults) -VerificationResults @($verificationResults) `
+            -Inspection $inspection -Warnings @($warnings) -Errors @($errors)
+    }
+
+    try {
+        [IO.File]::Move($temporaryPath, $finalPath)
+    }
+    catch {
+        $errors.Add("검증된 임시 결과를 최종 경로로 승격하지 못했습니다: $($_.Exception.Message)")
+        if (Test-Path -LiteralPath $temporaryPath) {
+            $failedArtifactPath = Get-HwpFailureArtifactPath -FinalPath $finalPath
+            try { [IO.File]::Move($temporaryPath, $failedArtifactPath) } catch { }
+        }
+        return New-HwpApplyResult -Status FAILED -SourcePath $sourcePath -SourceSha256 $sourceHash `
+            -OutputPath $finalPath -TemporaryPath $temporaryPath -FailedArtifactPath $failedArtifactPath `
+            -OperationResults @($operationResults) -VerificationResults @($verificationResults) `
+            -Inspection $inspection -Warnings @($warnings) -Errors @($errors)
+    }
+
+    $status = if ($warnings.Count -gt 0 -or $inspection.Status -eq 'PASS_WITH_WARNINGS') {
+        'PASS_WITH_WARNINGS'
+    }
+    else {
+        'PASS'
+    }
+    New-HwpApplyResult -Status $status -SourcePath $sourcePath -SourceSha256 $sourceHash `
+        -OutputPath $finalPath -TemporaryPath $temporaryPath -OperationResults @($operationResults) `
+        -VerificationResults @($verificationResults) -Inspection $inspection -Warnings @($warnings)
+}
+
 Export-ModuleMember -Function @(
     'Resolve-HwpTextTarget',
     'Select-HwpResolvedTarget',
@@ -602,5 +970,7 @@ Export-ModuleMember -Function @(
     'Invoke-HwpDeleteRange',
     'Invoke-HwpSetField',
     'Invoke-HwpEditOperation',
-    'Save-HwpMemoryDocument'
+    'Save-HwpMemoryDocument',
+    'Test-HwpOperationPostcondition',
+    'Invoke-HwpApply'
 )

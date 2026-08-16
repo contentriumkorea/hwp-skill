@@ -71,6 +71,33 @@ Describe 'Invoke-HwpEditOperation 정책' {
     }
 }
 
+Describe 'Invoke-HwpApply 사전 차단' {
+    It '계획의 원본 SHA-256이 다르면 한컴 세션을 만들기 전에 차단한다' {
+        $path = Join-Path $TestDrive 'source.hwp'
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'fixtures/source/native-fixture.hwp') -Destination $path
+        $plan = New-ValidPlan -SourcePath $path -SourceSha256 ('0' * 64)
+        $factoryCount = [pscustomobject]@{ Value = 0 }
+        $factory = { $factoryCount.Value++; throw '호출되면 안 됨' }.GetNewClosure()
+
+        $result = Invoke-HwpApply -LiteralPath $path -Plan $plan -SessionFactory $factory
+
+        $result.Status | Should Be 'BLOCKED'
+        ($result.Errors -join ' ') | Should Match 'SHA-256'
+        $factoryCount.Value | Should Be 0
+    }
+
+    It '원본과 같은 출력 경로를 거부한다' {
+        $path = Join-Path $TestDrive 'same.hwp'
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'fixtures/source/native-fixture.hwp') -Destination $path
+        $plan = New-ValidPlan -SourcePath $path -SourceSha256 (Get-HwpSha256 -LiteralPath $path)
+
+        $result = Invoke-HwpApply -LiteralPath $path -Plan $plan -OutputPath $path
+
+        $result.Status | Should Be 'BLOCKED'
+        ($result.Errors -join ' ') | Should Match '원본'
+    }
+}
+
 $fixtureHwp = Join-Path $PSScriptRoot 'fixtures/source/native-fixture.hwp'
 $runNative = $env:HWP_NATIVE_RUN_INTEGRATION -eq '1' -and (Test-Path -LiteralPath $fixtureHwp)
 
@@ -111,5 +138,37 @@ Describe 'HWP 메모리 편집 실제 한컴 통합 시험' -Tags Native {
         $after.Fields.담당자 | Should Be '홍길동'
         (Get-HwpSha256 -LiteralPath $fixtureHwp) | Should Be $sourceHash
         $output | Should Not Be $fixtureHwp
+    }
+}
+
+Describe 'HWP 원자적 계획 적용 실제 한컴 통합 시험' -Tags Atomic,Native {
+    It '성공한 계획만 최종 경로로 승격하고 원본 SHA-256을 보존한다' -Skip:(-not $runNative) {
+        $sourceHash = Get-HwpSha256 -LiteralPath $fixtureHwp
+        $output = Join-Path $TestDrive 'atomic-success.hwp'
+        $plan = New-ValidPlan -SourcePath $fixtureHwp -SourceSha256 $sourceHash
+
+        $result = Invoke-HwpApply -LiteralPath $fixtureHwp -Plan $plan -OutputPath $output
+
+        $result.Status | Should Be 'PASS'
+        $result.OutputPath | Should Be ([IO.Path]::GetFullPath($output))
+        Test-Path -LiteralPath $result.OutputPath | Should Be $true
+        $result.Inspection.Text | Should Match '새 문구'
+        (Get-HwpSha256 -LiteralPath $fixtureHwp) | Should Be $sourceHash
+        @(Get-ChildItem -LiteralPath $TestDrive -Filter '*.partial.hwp').Count | Should Be 0
+    }
+
+    It '후조건 실패 시 완료 경로를 만들지 않고 실패 산출물을 분리한다' -Skip:(-not $runNative) {
+        $sourceHash = Get-HwpSha256 -LiteralPath $fixtureHwp
+        $output = Join-Path $TestDrive 'atomic-failure.hwp'
+        $plan = New-ValidPlan -SourcePath $fixtureHwp -SourceSha256 $sourceHash
+        $plan.operations[0].verify.expected = '존재하지 않는 결과'
+
+        $result = Invoke-HwpApply -LiteralPath $fixtureHwp -Plan $plan -OutputPath $output
+
+        $result.Status | Should Be 'FAILED'
+        Test-Path -LiteralPath $result.OutputPath | Should Be $false
+        Test-Path -LiteralPath $result.FailedArtifactPath | Should Be $true
+        (Get-HwpSha256 -LiteralPath $fixtureHwp) | Should Be $sourceHash
+        @(Get-ChildItem -LiteralPath $TestDrive -Filter '*.partial.hwp').Count | Should Be 0
     }
 }

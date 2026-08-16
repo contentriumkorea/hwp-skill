@@ -107,6 +107,24 @@ Describe 'New-HwpSession' {
         $session.Visible | Should Be $false
         $session.Closed | Should Be $false
     }
+
+    It '첫 생성 주기의 두 ProgID가 모두 실패하면 제한 횟수 안에서 다시 시도한다' {
+        $fake = New-FakeHwpObject
+        $attempts = [Collections.Generic.List[string]]::new()
+        $factory = {
+            param($progId)
+            $attempts.Add($progId)
+            if ($attempts.Count -le 2) {
+                throw 'RPC server is stopping'
+            }
+            $fake
+        }.GetNewClosure()
+
+        $session = New-HwpSession -ComFactory $factory -RetryCount 2 -RetryDelayMilliseconds 0
+
+        $session.Hwp | Should Be $fake
+        $attempts.Count | Should Be 3
+    }
 }
 
 Describe 'Close-HwpSession' {

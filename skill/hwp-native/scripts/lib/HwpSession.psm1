@@ -55,43 +55,57 @@ function New-HwpSession {
     [CmdletBinding()]
     param(
         [bool]$Visible = $false,
-        [scriptblock]$ComFactory = { param($progId) New-Object -ComObject $progId }
+        [scriptblock]$ComFactory = { param($progId) New-Object -ComObject $progId },
+        [ValidateRange(1, 10)]
+        [int]$RetryCount = 3,
+        [ValidateRange(0, 5000)]
+        [int]$RetryDelayMilliseconds = 300
     )
 
     $lastErrorMessage = '등록된 ProgID를 찾지 못했습니다.'
-    foreach ($progId in 'HWPFrame.HwpObject.2', 'HWPFrame.HwpObject') {
-        try {
-            $hwp = & $ComFactory $progId
-            if ($null -eq $hwp) {
-                $lastErrorMessage = "$progId 생성 결과가 비어 있습니다."
-                continue
-            }
-
+    for ($attempt = 1; $attempt -le $RetryCount; $attempt++) {
+        foreach ($progId in 'HWPFrame.HwpObject.2', 'HWPFrame.HwpObject') {
+            $hwp = $null
             try {
-                $hwp.XHwpWindows.Item(0).Visible = $Visible
+                $hwp = & $ComFactory $progId
+                if ($null -eq $hwp) {
+                    throw "$progId 생성 결과가 비어 있습니다."
+                }
+
+                if ([Runtime.InteropServices.Marshal]::IsComObject($hwp)) {
+                    $version = [string]$hwp.Version
+                    $null = $hwp.IsActionEnable('InsertText')
+                }
+                else {
+                    $version = try { [string]$hwp.Version } catch { 'unknown' }
+                }
+
+                try {
+                    $hwp.XHwpWindows.Item(0).Visible = $Visible
+                }
+                catch {
+                    # 창이 만들어지기 전이거나 시험용 객체인 경우에도 세션 자체는 유효할 수 있다.
+                }
+
+                return [pscustomobject]@{
+                    Hwp = $hwp
+                    ProgId = $progId
+                    Version = $version
+                    Owned = $true
+                    Visible = $Visible
+                    Closed = $false
+                }
             }
             catch {
-                # 창이 만들어지기 전이거나 시험용 객체인 경우에도 세션 자체는 유효할 수 있다.
-            }
-
-            $version = try {
-                [string]$hwp.Version
-            }
-            catch {
-                'unknown'
-            }
-
-            return [pscustomobject]@{
-                Hwp = $hwp
-                ProgId = $progId
-                Version = $version
-                Owned = $true
-                Visible = $Visible
-                Closed = $false
+                $lastErrorMessage = $_.Exception.Message
+                if ($null -ne $hwp -and [Runtime.InteropServices.Marshal]::IsComObject($hwp)) {
+                    try { $null = [Runtime.InteropServices.Marshal]::FinalReleaseComObject($hwp) } catch { }
+                }
             }
         }
-        catch {
-            $lastErrorMessage = $_.Exception.Message
+
+        if ($attempt -lt $RetryCount -and $RetryDelayMilliseconds -gt 0) {
+            Start-Sleep -Milliseconds $RetryDelayMilliseconds
         }
     }
 
@@ -209,6 +223,9 @@ function Close-HwpSession {
             # COM 해제 실패가 사용자 프로세스 강제 종료로 이어져서는 안 된다.
         }
     }
+
+    [GC]::Collect()
+    [GC]::WaitForPendingFinalizers()
 }
 
 function Invoke-HwpPreflight {
