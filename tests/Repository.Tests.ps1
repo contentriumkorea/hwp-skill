@@ -6,6 +6,14 @@ Describe 'hwp-skill 저장소 구조' {
         Test-Path "$PSScriptRoot/../skill/hwp-native" | Should Be $false
     }
 
+    It 'Codex UI에 HWP Skill이라는 영문 표시명을 제공한다' {
+        $interface = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../skill/hwp-skill/agents/openai.yaml') -Raw -Encoding UTF8
+        $displayNameMatch = [regex]::Match($interface, '(?m)^\s{2}display_name:\s*"([^"]+)"\s*$')
+
+        $displayNameMatch.Success | Should Be $true
+        $displayNameMatch.Groups[1].Value | Should Be 'HWP Skill'
+    }
+
     It '공개 배포에 필요한 한국어 문서와 라이선스를 제공한다' {
         foreach ($relativePath in @(
             '../README.md',
