@@ -1,1 +1,8 @@
 .worktrees/
+tests/output/
+*.partial.hwp
+*.partial.hwt
+*.partial.hwpx
+*.failed.hwp
+*.failed.hwt
+*.failed.hwpx

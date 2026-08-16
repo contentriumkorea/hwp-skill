@@ -1,0 +1,4 @@
+interface:
+  display_name: "HWP 네이티브"
+  short_description: "한컴오피스로 HWP·HWT·HWPX를 안전하게 읽고 편집합니다"
+  default_prompt: "$hwp-native로 이 한글 문서를 검사하고 원본을 보존한 수정 계획을 만들어 주세요."
