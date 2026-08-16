@@ -108,6 +108,25 @@ Describe 'New-HwpSession' {
         $session.Closed | Should Be $false
     }
 
+    It '프로세스 소유권을 입증하지 못하면 빌린 세션으로 표시한다' {
+        $fake = New-FakeHwpObject
+        $factory = { param($progId) $fake }.GetNewClosure()
+        $resolver = {
+            param($hwp,$beforeIds,$isComObject)
+            [pscustomobject]@{ Owned = $false; ProcessId = 309564; Reason = 'existing-process' }
+        }
+
+        $session = New-HwpSession -ComFactory $factory -ProcessOwnershipResolver $resolver
+        Close-HwpSession -Session $session
+
+        $session.Owned | Should Be $false
+        $session.ProcessId | Should Be 309564
+        $session.OwnershipReason | Should Be 'existing-process'
+        $fake.ClearCount | Should Be 0
+        $fake.QuitCount | Should Be 0
+        $session.Closed | Should Be $true
+    }
+
     It '첫 생성 주기의 두 ProgID가 모두 실패하면 제한 횟수 안에서 다시 시도한다' {
         $fake = New-FakeHwpObject
         $attempts = [Collections.Generic.List[string]]::new()

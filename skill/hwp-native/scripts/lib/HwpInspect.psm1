@@ -104,7 +104,10 @@ function Open-HwpDocumentFromMemory {
 
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
-        [string]$LiteralPath
+        [string]$LiteralPath,
+
+        [ValidateRange(8, 2147483647)]
+        [long]$MaximumFileBytes = 134217728
     )
 
     $format = Get-HwpFileKind -LiteralPath $LiteralPath
@@ -112,6 +115,15 @@ function Open-HwpDocumentFromMemory {
         return New-HwpResult -Status BLOCKED -Command open-memory -Data $format -Errors @(
             '메모리 열기는 실제 형식이 HWP 바이너리인 HWP 또는 HWT에만 사용할 수 있습니다.'
         )
+    }
+    $fileLength = (Get-Item -LiteralPath $format.Path -ErrorAction Stop).Length
+    if ($fileLength -gt $MaximumFileBytes) {
+        return New-HwpResult -Status BLOCKED -Command open-memory -Data ([pscustomobject]@{
+            Path = $format.Path
+            FileKind = $format
+            ByteLength = [long]$fileLength
+            MaximumFileBytes = [long]$MaximumFileBytes
+        }) -Errors @("HWP/HWT 파일 크기가 메모리 처리 안전 한도 $MaximumFileBytes 바이트를 초과했습니다.")
     }
 
     try {

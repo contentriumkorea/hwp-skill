@@ -2,11 +2,63 @@ Set-StrictMode -Version Latest
 
 Import-Module (Join-Path $PSScriptRoot 'HwpCommon.psm1') -ErrorAction Stop
 
+function Test-HwpWindowsPlatform {
+    [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
+}
+
+function Resolve-HwpSessionProcessOwnership {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][object]$Hwp,
+        [int[]]$BeforeProcessIds = @(),
+        [bool]$IsComObject = $true
+    )
+
+    if (-not $IsComObject) {
+        return [pscustomobject]@{ Owned = $true; ProcessId = 0; Reason = 'non-com-test-double' }
+    }
+    if (-not (Test-HwpWindowsPlatform)) {
+        return [pscustomobject]@{ Owned = $false; ProcessId = 0; Reason = 'non-windows' }
+    }
+
+    try {
+        $windowHandle = [IntPtr]([int64]$Hwp.XHwpWindows.Item(0).WindowHandle)
+        if ($windowHandle -eq [IntPtr]::Zero) { throw '한글 자동화 창 핸들이 비어 있습니다.' }
+        if ($null -eq ('HwpNativeWindowOwnership' -as [type])) {
+            Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class HwpNativeWindowOwnership
+{
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+}
+'@
+        }
+        [uint32]$windowProcessId = 0
+        $threadId = [HwpNativeWindowOwnership]::GetWindowThreadProcessId($windowHandle, [ref]$windowProcessId)
+        if ($threadId -eq 0 -or $windowProcessId -eq 0) { throw '창 핸들의 프로세스를 확인하지 못했습니다.' }
+        $process = Get-Process -Id ([int]$windowProcessId) -ErrorAction Stop
+        if (-not [string]::Equals($process.ProcessName, 'Hwp', [StringComparison]::OrdinalIgnoreCase)) {
+            throw "자동화 창의 프로세스가 Hwp가 아닙니다: $($process.ProcessName)"
+        }
+        $wasRunning = [int]$windowProcessId -in @($BeforeProcessIds)
+        [pscustomobject]@{
+            Owned = -not $wasRunning
+            ProcessId = [int]$windowProcessId
+            Reason = if ($wasRunning) { 'existing-window-process' } else { 'new-window-process' }
+        }
+    }
+    catch {
+        [pscustomobject]@{ Owned = $false; ProcessId = 0; Reason = "ownership-unverified: $($_.Exception.Message)" }
+    }
+}
+
 function Get-HwpSecurityModuleNames {
     [CmdletBinding()]
     param()
 
-    if (-not $IsWindows) {
+    if (-not (Test-HwpWindowsPlatform)) {
         return @()
     }
 
@@ -42,7 +94,7 @@ function Get-HwpAutomationInfo {
     )
 
     [pscustomobject]@{
-        IsWindows = [bool]$IsWindows
+        IsWindows = [bool](Test-HwpWindowsPlatform)
         PowerShellVersion = $PSVersionTable.PSVersion.ToString()
         CandidateProgIds = @('HWPFrame.HwpObject.2', 'HWPFrame.HwpObject')
         SecurityModules = @($securityModules)
@@ -56,6 +108,10 @@ function New-HwpSession {
     param(
         [bool]$Visible = $false,
         [scriptblock]$ComFactory = { param($progId) New-Object -ComObject $progId },
+        [scriptblock]$ProcessOwnershipResolver = {
+            param($hwp,$beforeProcessIds,$isComObject)
+            Resolve-HwpSessionProcessOwnership -Hwp $hwp -BeforeProcessIds $beforeProcessIds -IsComObject:$isComObject
+        },
         [ValidateRange(1, 10)]
         [int]$RetryCount = 3,
         [ValidateRange(0, 5000)]
@@ -67,12 +123,16 @@ function New-HwpSession {
         foreach ($progId in 'HWPFrame.HwpObject.2', 'HWPFrame.HwpObject') {
             $hwp = $null
             try {
+                [int[]]$beforeProcessIds = @(
+                    Get-Process -Name Hwp -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id
+                )
                 $hwp = & $ComFactory $progId
                 if ($null -eq $hwp) {
                     throw "$progId 생성 결과가 비어 있습니다."
                 }
 
-                if ([Runtime.InteropServices.Marshal]::IsComObject($hwp)) {
+                $isComObject = [Runtime.InteropServices.Marshal]::IsComObject($hwp)
+                if ($isComObject) {
                     $version = [string]$hwp.Version
                     $null = $hwp.IsActionEnable('InsertText')
                 }
@@ -87,11 +147,25 @@ function New-HwpSession {
                     # 창이 만들어지기 전이거나 시험용 객체인 경우에도 세션 자체는 유효할 수 있다.
                 }
 
+                $ownership = & $ProcessOwnershipResolver $hwp $beforeProcessIds $isComObject
+                if ($null -eq $ownership -or
+                    -not ($ownership.PSObject.Properties.Name -contains 'Owned')) {
+                    throw '프로세스 소유권 확인기가 유효한 결과를 반환하지 않았습니다.'
+                }
+                if ($isComObject -and -not [bool]$ownership.Owned) {
+                    $reason = if ($ownership.PSObject.Properties.Name -contains 'Reason') { [string]$ownership.Reason } else { 'unknown' }
+                    try { $null = [Runtime.InteropServices.Marshal]::FinalReleaseComObject($hwp) } catch { }
+                    $hwp = $null
+                    throw "새 전용 한글 프로세스 소유권을 확인하지 못했습니다: $reason"
+                }
+
                 return [pscustomobject]@{
                     Hwp = $hwp
                     ProgId = $progId
                     Version = $version
-                    Owned = $true
+                    Owned = [bool]$ownership.Owned
+                    ProcessId = if ($ownership.PSObject.Properties.Name -contains 'ProcessId') { [int]$ownership.ProcessId } else { 0 }
+                    OwnershipReason = if ($ownership.PSObject.Properties.Name -contains 'Reason') { [string]$ownership.Reason } else { '' }
                     Visible = $Visible
                     Closed = $false
                 }
@@ -187,15 +261,8 @@ function Close-HwpSession {
     }
 
     $owned = $Session.PSObject.Properties.Name -contains 'Owned' -and [bool]$Session.Owned
-    if (-not $owned) {
-        if ($Session.PSObject.Properties.Name -contains 'Closed') {
-            $Session.Closed = $true
-        }
-        return
-    }
-
     $hwp = if ($Session.PSObject.Properties.Name -contains 'Hwp') { $Session.Hwp } else { $null }
-    if ($null -ne $hwp) {
+    if ($owned -and $null -ne $hwp) {
         try {
             $null = $hwp.Clear(1)
         }
@@ -265,6 +332,9 @@ function Invoke-HwpPreflight {
             ProgId = $session.ProgId
             Version = $session.Version
             Visible = $session.Visible
+            Owned = $session.Owned
+            ProcessId = $session.ProcessId
+            OwnershipReason = $session.OwnershipReason
             SecurityModules = @($securityModules)
             UnattendedOpenReady = $unattendedOpenReady
             RegistryWritePerformed = $false
@@ -294,5 +364,6 @@ Export-ModuleMember -Function @(
     'New-HwpSession',
     'Register-HwpSecurityModules',
     'Close-HwpSession',
-    'Invoke-HwpPreflight'
+    'Invoke-HwpPreflight',
+    'Resolve-HwpSessionProcessOwnership'
 )
