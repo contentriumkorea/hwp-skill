@@ -435,6 +435,23 @@ function Get-HwpGenerateFailurePath {
     $candidate
 }
 
+function Move-HwpGenerateStagingToFailure {
+    param(
+        [Parameter(Mandatory)][string]$StagingPath,
+        [Parameter(Mandatory)][string]$OutputPath
+    )
+
+    if (-not (Test-Path -LiteralPath $StagingPath -PathType Leaf)) { return '' }
+    $failurePath = Get-HwpGenerateFailurePath -OutputPath $OutputPath
+    try {
+        [IO.File]::Move($StagingPath, $failurePath)
+        $failurePath
+    }
+    catch {
+        ''
+    }
+}
+
 function Invoke-HwpGenerateFromTemplate {
     param(
         [Parameter(Mandatory)][string]$TemplatePath,
@@ -485,7 +502,8 @@ function Invoke-HwpGenerateFromTemplate {
 function Invoke-HwpGenerateNewDocument {
     param(
         [Parameter(Mandatory)][object]$Plan,
-        [Parameter(Mandatory)][string]$OutputPath
+        [Parameter(Mandatory)][string]$OutputPath,
+        [scriptblock]$Inspector = { param($path) Get-HwpInspection -LiteralPath $path }
     )
 
     $validation = Test-HwpNewDocumentPlan -Plan $Plan
@@ -506,6 +524,10 @@ function Invoke-HwpGenerateNewDocument {
         return New-HwpGenerateResult -Status BLOCKED -Mode new-document -OutputPath $resolvedOutput `
             -Errors @("결과 폴더가 없습니다: $directory")
     }
+    $stagingPath = [IO.Path]::Combine(
+        $directory,
+        ('{0}.{1}.partial.hwp' -f [IO.Path]::GetFileNameWithoutExtension($resolvedOutput), [guid]::NewGuid().ToString('n'))
+    )
 
     $session = $null
     $operationResults = [Collections.Generic.List[object]]::new()
@@ -533,7 +555,7 @@ function Invoke-HwpGenerateNewDocument {
             }
         }
         if ($errors.Count -eq 0) {
-            $save = Save-HwpGeneratedMemoryDocument -Session $session -OutputPath $resolvedOutput
+            $save = Save-HwpGeneratedMemoryDocument -Session $session -OutputPath $stagingPath
             if ($save.Status -ne 'PASS') {
                 foreach ($message in @($save.Errors)) { $errors.Add([string]$message) }
             }
@@ -546,14 +568,27 @@ function Invoke-HwpGenerateNewDocument {
         if ($null -ne $session) { Close-HwpSession -Session $session }
     }
     if ($errors.Count -gt 0) {
+        $failedArtifactPath = Move-HwpGenerateStagingToFailure -StagingPath $stagingPath -OutputPath $resolvedOutput
         return New-HwpGenerateResult -Status BLOCKED -Mode new-document -OutputPath $resolvedOutput `
-            -OperationResults @($operationResults) -Warnings @($warnings) -Errors @($errors)
+            -OperationResults @($operationResults) -FailedArtifactPath $failedArtifactPath `
+            -Warnings @($warnings) -Errors @($errors)
     }
 
-    $after = Get-HwpInspection -LiteralPath $resolvedOutput
+    try {
+        $after = & $Inspector $stagingPath
+    }
+    catch {
+        $after = $null
+        $errors.Add("생성 임시 결과 재열기 검사 중 오류가 발생했습니다: $($_.Exception.Message)")
+    }
+    if ($null -eq $after) {
+        $failedArtifactPath = Move-HwpGenerateStagingToFailure -StagingPath $stagingPath -OutputPath $resolvedOutput
+        return New-HwpGenerateResult -Status FAILED -Mode new-document -OutputPath $resolvedOutput `
+            -OperationResults @($operationResults) -FailedArtifactPath $failedArtifactPath `
+            -Warnings @($warnings) -Errors @($errors)
+    }
     if ($after.Status -notin 'PASS','PASS_WITH_WARNINGS') {
-        $failedArtifactPath = Get-HwpGenerateFailurePath -OutputPath $resolvedOutput
-        try { [IO.File]::Move($resolvedOutput, $failedArtifactPath) } catch { $failedArtifactPath = '' }
+        $failedArtifactPath = Move-HwpGenerateStagingToFailure -StagingPath $stagingPath -OutputPath $resolvedOutput
         return New-HwpGenerateResult -Status FAILED -Mode new-document -OutputPath $resolvedOutput `
             -After $after -OperationResults @($operationResults) -FailedArtifactPath $failedArtifactPath `
             -Warnings @($warnings) -Errors @($after.Errors)
@@ -584,8 +619,24 @@ function Invoke-HwpGenerateNewDocument {
         }
     }
     if ($errors.Count -gt 0) {
-        $failedArtifactPath = Get-HwpGenerateFailurePath -OutputPath $resolvedOutput
-        try { [IO.File]::Move($resolvedOutput, $failedArtifactPath) } catch { $failedArtifactPath = '' }
+        $failedArtifactPath = Move-HwpGenerateStagingToFailure -StagingPath $stagingPath -OutputPath $resolvedOutput
+        return New-HwpGenerateResult -Status FAILED -Mode new-document -OutputPath $resolvedOutput `
+            -After $after -OperationResults @($operationResults) -FailedArtifactPath $failedArtifactPath `
+            -Warnings @($warnings) -Errors @($errors)
+    }
+
+    try {
+        if (Test-Path -LiteralPath $resolvedOutput) {
+            throw "검증 중 결과 경로가 새로 생성되어 덮어쓰지 않습니다: $resolvedOutput"
+        }
+        [IO.File]::Move($stagingPath, $resolvedOutput)
+        if ($after.PSObject.Properties.Name -contains 'path') {
+            $after.path = $resolvedOutput
+        }
+    }
+    catch {
+        $errors.Add("검증된 생성 결과를 최종 경로로 승격하지 못했습니다: $($_.Exception.Message)")
+        $failedArtifactPath = Move-HwpGenerateStagingToFailure -StagingPath $stagingPath -OutputPath $resolvedOutput
         return New-HwpGenerateResult -Status FAILED -Mode new-document -OutputPath $resolvedOutput `
             -After $after -OperationResults @($operationResults) -FailedArtifactPath $failedArtifactPath `
             -Warnings @($warnings) -Errors @($errors)
@@ -607,14 +658,15 @@ function Invoke-HwpGenerate {
 
         [Parameter(Mandatory)][ValidateNotNull()][object]$Plan,
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$OutputPath,
-        [switch]$ApproveAdvanced
+        [switch]$ApproveAdvanced,
+        [scriptblock]$Inspector = { param($path) Get-HwpInspection -LiteralPath $path }
     )
 
     if ($PSCmdlet.ParameterSetName -eq 'Template') {
         return Invoke-HwpGenerateFromTemplate -TemplatePath $TemplatePath -Plan $Plan -OutputPath $OutputPath `
             -ApproveAdvanced:([bool]$ApproveAdvanced)
     }
-    Invoke-HwpGenerateNewDocument -Plan $Plan -OutputPath $OutputPath
+    Invoke-HwpGenerateNewDocument -Plan $Plan -OutputPath $OutputPath -Inspector $Inspector
 }
 
 Export-ModuleMember -Function @(

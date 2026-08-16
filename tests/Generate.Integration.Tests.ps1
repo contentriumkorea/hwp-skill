@@ -39,6 +39,14 @@ Describe 'HWT/HWP 양식 기반 생성 실제 한컴 통합 시험' -Tags Native
 
     It '빈 문서 계획으로 제목·본문·표를 가진 재열 수 있는 HWP를 만든다' -Skip:(-not $runNative) {
         $output = Join-Path $TestDrive '새공공문서.hwp'
+        $observation = [pscustomobject]@{ SawStaging = $false }
+        $inspector = {
+            param($path)
+            if ($path -notmatch '\.partial\.hwp$') { throw "임시 검증 경로가 아닙니다: $path" }
+            if (Test-Path -LiteralPath $output) { throw '재열기 검사 전에 최종 결과가 생성되었습니다.' }
+            $observation.SawStaging = $true
+            Get-HwpInspection -LiteralPath $path
+        }.GetNewClosure()
         $plan = [pscustomobject]@{
             version = '1.0'
             content = @(
@@ -58,7 +66,7 @@ Describe 'HWT/HWP 양식 기반 생성 실제 한컴 통합 시험' -Tags Native
             )
         }
 
-        $result = Invoke-HwpGenerate -NewDocument -Plan $plan -OutputPath $output
+        $result = Invoke-HwpGenerate -NewDocument -Plan $plan -OutputPath $output -Inspector $inspector
 
         $result.Status | Should Be 'PASS'
         $result.After.Text | Should Match '가상 공공문서'
@@ -66,6 +74,7 @@ Describe 'HWT/HWP 양식 기반 생성 실제 한컴 통합 시험' -Tags Native
         $result.After.Text | Should Match '항목'
         $result.After.Text | Should Match '완료'
         @($result.After.Controls | Where-Object CtrlId -eq 'tbl').Count | Should Be 1
+        $observation.SawStaging | Should Be $true
         Test-Path -LiteralPath $result.OutputPath | Should Be $true
     }
 }
