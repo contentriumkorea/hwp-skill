@@ -57,4 +57,34 @@ function New-ValidPlan {
     }
 }
 
-Export-ModuleMember -Function New-Operation, New-ValidPlan
+function New-FieldOperation {
+    [CmdletBinding()]
+    param(
+        [string]$Name = '담당자',
+        [string]$Before = '시험 담당자',
+        [string]$After = '홍길동'
+    )
+
+    $operation = New-Operation -Type 'set-field' -Anchor $Name -Before $Before -After $After
+    $operation.target | Add-Member NoteProperty fieldName $Name
+    $operation.verify.kind = 'field-equals'
+    $operation
+}
+
+function Set-OperationContext {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory, ValueFromPipeline)]
+        [object]$Operation,
+        [string]$BeforeContext = '',
+        [string]$AfterContext = ''
+    )
+
+    process {
+        $Operation.target.beforeContext = $BeforeContext
+        $Operation.target.afterContext = $AfterContext
+        $Operation
+    }
+}
+
+Export-ModuleMember -Function New-Operation, New-ValidPlan, New-FieldOperation, Set-OperationContext
