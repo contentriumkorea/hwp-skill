@@ -1,6 +1,9 @@
 Set-StrictMode -Version Latest
 
 Import-Module (Join-Path $PSScriptRoot 'HwpCommon.psm1') -ErrorAction Stop
+Import-Module (Join-Path $PSScriptRoot 'HwpExecution.psm1') -ErrorAction Stop
+Import-Module (Join-Path $PSScriptRoot 'HwpCapabilities.psm1') -ErrorAction Stop
+Import-Module (Join-Path $PSScriptRoot 'HwpBackendRouter.psm1') -ErrorAction Stop
 Import-Module (Join-Path $PSScriptRoot 'HwpSession.psm1') -ErrorAction Stop
 
 function New-HwpInspectionRecord {
@@ -595,7 +598,11 @@ function Get-HwpInspection {
         [ValidateNotNullOrEmpty()]
         [string]$LiteralPath,
 
-        [scriptblock]$SessionFactory = { New-HwpSession },
+        [object]$ExecutionContext = (New-HwpExecutionContext),
+
+        [object]$Capabilities = (Get-HwpCapabilitySnapshot -ExecutionContext $ExecutionContext),
+
+        [scriptblock]$SessionFactory = { param($executionContext) New-HwpSession -ExecutionContext $executionContext },
 
         [AllowNull()]
         [scriptblock]$SecurityModuleReader = $null
@@ -634,9 +641,22 @@ function Get-HwpInspection {
             -Warnings @($package.Warnings)
     }
 
+    $route = Resolve-HwpBackend -Command inspect -DetectedKind $detectedKind `
+        -ExecutionContext $ExecutionContext -Capabilities $Capabilities
+    if ($route.Status -ne 'PASS') {
+        return New-HwpInspectionRecord -Status $route.Status -Path $resolvedPath `
+            -Sha256 $sha256 -DetectedKind $detectedKind `
+            -Warnings @($route.Warnings) -Errors @($route.Errors)
+    }
+    if ($route.BackendId -ne 'hancom-interactive') {
+        return New-HwpInspectionRecord -Status BLOCKED -Path $resolvedPath `
+            -Sha256 $sha256 -DetectedKind $detectedKind `
+            -Errors @("백엔드 구현이 현재 단계에 없습니다: $($route.BackendId)")
+    }
+
     $session = $null
     try {
-        $session = & $SessionFactory
+        $session = & $SessionFactory $ExecutionContext
         if ($null -eq $session) {
             throw '세션 팩터리가 한컴 세션을 반환하지 않았습니다.'
         }

@@ -1,7 +1,11 @@
 $commonModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCommon.psm1'
+$executionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpExecution.psm1'
+$capabilitiesModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCapabilities.psm1'
 $sessionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpSession.psm1'
 $inspectModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpInspect.psm1'
 Import-Module $commonModule -Force
+Import-Module $executionModule -Force
+Import-Module $capabilitiesModule -Force
 Import-Module $sessionModule -Force
 if (Test-Path -LiteralPath $inspectModule) {
     Import-Module $inspectModule -Force
@@ -213,6 +217,22 @@ Describe 'HWP 읽기 함수의 가짜 세션 계약' {
 }
 
 Describe 'Get-HwpInspection' {
+    BeforeAll {
+        $script:fixtureHwpx = New-SyntheticHwpx -LiteralPath (Join-Path $TestDrive 'silent.hwpx')
+        $script:fixtureHwp = Join-Path $PSScriptRoot 'fixtures/source/native-fixture.hwp'
+        $script:silentCapabilities = Get-HwpCapabilitySnapshot `
+            -ExecutionContext (New-HwpExecutionContext) `
+            -NativeRegistrationProbe { $true } `
+            -PortableBackendProbe { $false } `
+            -IsolatedWorkerProbe { $false }
+        $script:interactiveExecutionContext = New-HwpExecutionContext -Mode interactive -AllowInteractiveWindow
+        $script:interactiveCapabilities = Get-HwpCapabilitySnapshot `
+            -ExecutionContext $script:interactiveExecutionContext `
+            -NativeRegistrationProbe { $true } `
+            -PortableBackendProbe { $false } `
+            -IsolatedWorkerProbe { $false }
+    }
+
     It '확장자와 실제 형식이 다르면 세션을 만들기 전에 BLOCKED로 반환한다' {
         $path = Join-Path $TestDrive 'wrong.hwpx'
         [IO.File]::WriteAllBytes($path, [byte[]](0xD0,0xCF,0x11,0xE0,0xA1,0xB1,0x1A,0xE1))
@@ -229,13 +249,43 @@ Describe 'Get-HwpInspection' {
         $result.DetectedKind | Should Be 'HWP-BINARY'
     }
 
-    It '본문과 필드와 페이지 및 컨트롤 정보를 한 객체로 반환한다' {
+    It 'silent HWPX 검사는 세션 팩터리를 호출하지 않는다' {
+        $calls = [pscustomobject]@{ Value = 0 }
+        $factory = ({ param($executionContext) $calls.Value++; throw '세션 호출 금지' }.GetNewClosure())
+
+        $result = Get-HwpInspection -LiteralPath $script:fixtureHwpx `
+            -ExecutionContext (New-HwpExecutionContext) `
+            -Capabilities $script:silentCapabilities `
+            -SessionFactory $factory
+
+        $result.Status | Should Match '^PASS'
+        $calls.Value | Should Be 0
+    }
+
+    It 'silent HWP 검사는 세션 대신 BLOCKED를 반환한다' {
+        $calls = [pscustomobject]@{ Value = 0 }
+        $factory = ({ param($executionContext) $calls.Value++; throw '세션 호출 금지' }.GetNewClosure())
+
+        $result = Get-HwpInspection -LiteralPath $script:fixtureHwp `
+            -ExecutionContext (New-HwpExecutionContext) `
+            -Capabilities $script:silentCapabilities `
+            -SessionFactory $factory
+
+        $result.Status | Should Be 'BLOCKED'
+        $calls.Value | Should Be 0
+        ($result.Errors -join ' ') | Should Match 'hwp-portable'
+    }
+
+    It '승인된 interactive 시험 더블은 본문과 필드와 페이지 및 컨트롤 정보를 반환한다' {
         $path = Join-Path $TestDrive 'fixture.hwp'
         [IO.File]::WriteAllBytes($path, [byte[]](0xD0,0xCF,0x11,0xE0,0xA1,0xB1,0x1A,0xE1))
         $session = New-FakeInspectionSession
-        $factory = { $session }.GetNewClosure()
+        $factory = { param($executionContext) $session }.GetNewClosure()
 
-        $actual = Get-HwpInspection -LiteralPath $path -SessionFactory $factory -SecurityModuleReader { @('TestModule') }
+        $actual = Get-HwpInspection -LiteralPath $path `
+            -ExecutionContext $script:interactiveExecutionContext `
+            -Capabilities $script:interactiveCapabilities `
+            -SessionFactory $factory -SecurityModuleReader { @('TestModule') }
 
         $actual.Status | Should Be 'PASS'
         $actual.Text | Should Match 'HWP 스킬 통합 시험'
@@ -245,13 +295,16 @@ Describe 'Get-HwpInspection' {
         $session.Hwp.QuitCount | Should Be 1
     }
 
-    It '보안 모듈이 없어도 HWP는 메모리로 읽고 승인 창을 띄우지 않는다' {
+    It '승인된 interactive 시험 더블은 보안 모듈 없이도 HWP를 메모리로 읽는다' {
         $path = Join-Path $TestDrive 'fixture.hwp'
         [IO.File]::WriteAllBytes($path, [byte[]](0xD0,0xCF,0x11,0xE0,0xA1,0xB1,0x1A,0xE1))
         $session = New-FakeInspectionSession
-        $factory = { $session }.GetNewClosure()
+        $factory = { param($executionContext) $session }.GetNewClosure()
 
-        $actual = Get-HwpInspection -LiteralPath $path -SessionFactory $factory -SecurityModuleReader { @() }
+        $actual = Get-HwpInspection -LiteralPath $path `
+            -ExecutionContext $script:interactiveExecutionContext `
+            -Capabilities $script:interactiveCapabilities `
+            -SessionFactory $factory -SecurityModuleReader { @() }
 
         $actual.Status | Should Be 'PASS'
         $session.Hwp.OpenCount | Should Be 0

@@ -101,7 +101,8 @@ try {
         }
         'inspect' {
             Assert-HwpCliValue -Value $LiteralPath -Name 'LiteralPath'
-            Get-HwpInspection -LiteralPath $LiteralPath
+            Get-HwpInspection -LiteralPath $LiteralPath `
+                -ExecutionContext $hwpExecutionContext -Capabilities $capabilities
             break
         }
         'validate-plan' {

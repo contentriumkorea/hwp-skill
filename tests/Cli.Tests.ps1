@@ -44,4 +44,17 @@ Describe 'HWP 공용 CLI 실행 모드' {
         $json.command | Should Be 'preflight'
         ($json.errors -join ' ') | Should Match 'AllowInteractiveWindow'
     }
+
+    It 'silent inspect는 HWP 바이너리를 GUI 없이 BLOCKED로 반환한다' {
+        $fixtureHwp = Join-Path $PSScriptRoot 'fixtures/source/native-fixture.hwp'
+
+        $raw = & $pwsh -NoProfile -File $cli inspect -LiteralPath $fixtureHwp
+        $exitCode = $LASTEXITCODE
+        $json = ($raw -join "`n") | ConvertFrom-Json
+
+        $exitCode | Should Be 2
+        $json.status | Should Be 'BLOCKED'
+        $json.detectedKind | Should Be 'HWP-BINARY'
+        ($json.errors -join ' ') | Should Match 'hwp-portable'
+    }
 }
