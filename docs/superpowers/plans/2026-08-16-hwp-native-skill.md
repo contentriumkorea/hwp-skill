@@ -578,7 +578,7 @@ $script:SafeOperations = @(
   'replace-text','insert-before','insert-after','set-field','set-table-cell',
   'insert-table','insert-image','replace-image','apply-char-style','apply-para-style',
   'insert-page-break','set-header-footer','set-page-number','add-bookmark','add-hyperlink','add-caption',
-  'add-footnote','add-endnote','build-toc','export'
+  'add-footnote','add-endnote','build-toc'
 )
 $script:AdvancedOperations = @(
   'delete-range','add-table-row','set-section','merge-documents'

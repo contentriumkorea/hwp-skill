@@ -76,6 +76,15 @@ Describe 'Test-HwpEditPlan' {
         ($result.Errors -join ' ') | Should Match '지원하지 않는 작업'
     }
 
+    It '독립 export 명령을 편집 계획 작업으로 허용하지 않는다' {
+        $plan = New-ValidPlan -Type 'export'
+
+        $result = Test-HwpEditPlan -Plan $plan
+
+        $result.Status | Should Be 'BLOCKED'
+        ($result.Errors -join ' ') | Should Match '지원하지 않는 작업'
+    }
+
     It '정의된 위험도와 다른 risk 값을 거부한다' {
         $plan = New-ValidPlan -Type 'replace-text' -Risk 'advanced' -ApprovedAdvanced $true
 

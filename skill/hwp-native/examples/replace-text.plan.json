@@ -1,0 +1,28 @@
+{
+  "version": "1.0",
+  "source": {
+    "path": "C:\\문서\\원본.hwp",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "approvedAdvanced": false,
+  "operations": [
+    {
+      "id": "replace-project-name",
+      "type": "replace-text",
+      "risk": "safe",
+      "target": {
+        "anchor": "기존 사업명",
+        "beforeContext": "사업명: ",
+        "afterContext": "\r\n사업 기간"
+      },
+      "expectedMatches": 1,
+      "before": "기존 사업명",
+      "after": "새 사업명",
+      "onFailure": "stop",
+      "verify": {
+        "kind": "text-contains",
+        "expected": "새 사업명"
+      }
+    }
+  ]
+}

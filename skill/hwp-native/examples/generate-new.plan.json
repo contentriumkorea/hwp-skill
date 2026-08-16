@@ -1,0 +1,30 @@
+{
+  "version": "1.0",
+  "content": [
+    {
+      "type": "paragraph",
+      "text": "업무 보고서"
+    },
+    {
+      "type": "paragraph",
+      "text": "아래 내용은 HWP 네이티브 스킬로 생성한 예시입니다."
+    },
+    {
+      "type": "table",
+      "rows": 2,
+      "columns": 2,
+      "cells": [
+        { "row": 1, "column": 1, "text": "항목" },
+        { "row": 1, "column": 2, "text": "내용" },
+        { "row": 2, "column": 1, "text": "상태" },
+        { "row": 2, "column": 2, "text": "검토 중" }
+      ]
+    },
+    {
+      "type": "field",
+      "name": "담당자",
+      "label": "담당자: ",
+      "value": "홍길동"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/hwp-native-skill/schemas/inspection.schema.json",
+  "$id": "https://github.com/gb-consumer/hwp-native-skill/blob/main/skill/hwp-native/schemas/inspection.schema.json",
   "title": "HWP 네이티브 검사 결과",
   "type": "object",
   "additionalProperties": true,

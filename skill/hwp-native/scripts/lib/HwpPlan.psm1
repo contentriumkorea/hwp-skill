@@ -21,8 +21,7 @@ $script:SafeOperations = @(
     'add-caption',
     'add-footnote',
     'add-endnote',
-    'build-toc',
-    'export'
+    'build-toc'
 )
 $script:AdvancedOperations = @(
     'delete-range',
