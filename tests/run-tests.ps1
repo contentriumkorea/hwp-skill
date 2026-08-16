@@ -1,13 +1,22 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Static','Integration','All')]
-    [string]$Suite = 'All'
+    [ValidateSet('Static','Native','All')]
+    [string]$Suite = 'Static',
+    [switch]$AllowInteractiveNative
 )
 
 $allTests = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.Tests.ps1' -File)
+$nativeTests = @($allTests | Where-Object Name -Like '*.Integration.Tests.ps1')
+$staticTests = @($allTests | Where-Object Name -NotLike '*.Integration.Tests.ps1')
+
+if ($Suite -in @('Native', 'All') -and -not $AllowInteractiveNative) {
+    Write-Error '네이티브 시험은 -AllowInteractiveNative의 명시적 승인이 필요합니다.'
+    exit 2
+}
+
 $selected = switch ($Suite) {
-    'Static' { @($allTests | Where-Object Name -NotLike '*.Integration.Tests.ps1') }
-    'Integration' { @($allTests | Where-Object Name -Like '*.Integration.Tests.ps1') }
+    'Static' { $staticTests }
+    'Native' { $nativeTests }
     default { $allTests }
 }
 
