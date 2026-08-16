@@ -119,4 +119,20 @@ Describe 'hwp-skill 저장소 구조' {
         $interface = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../skill/hwp-skill/agents/openai.yaml') -Raw -Encoding UTF8
         $interface | Should Match '\$hwp-skill'
     }
+
+    It '한글 문서 작성 요청과 무창 기본 정책을 메타데이터에 포함한다' {
+        $skill = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../skill/hwp-skill/SKILL.md') -Raw -Encoding UTF8
+        $skill | Should Match '(?m)^description:\s+Use when'
+        $skill | Should Match '한글 문서 파일'
+        $skill | Should Match 'HWPX'
+        $skill | Should Match 'silent'
+        $skill | Should Match '포커스'
+        $skill | Should Match 'GUI로 자동 전환하지 않는다'
+    }
+
+    It 'README가 현재 단계에서 HWP 휴대형 엔진을 완료로 과장하지 않는다' {
+        $readme = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../README.md') -Raw -Encoding UTF8
+        $readme | Should Match 'hwp-portable.*준비되지'
+        $readme | Should Match '현재 사용자 세션.*Hwp.exe.*실행하지'
+    }
 }
