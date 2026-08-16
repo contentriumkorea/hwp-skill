@@ -1,388 +1,390 @@
-# HWP Native Skill Design
+# HWP 네이티브 스킬 설계서
 
-Date: 2026-08-16  
-Status: Approved for implementation planning  
-Repository name: `hwp-native-skill`  
-License: MIT
+작성일: 2026-08-16
+상태: 구현 계획 수립 전 사용자 검토 단계
+저장소 이름: `hwp-native-skill`
+라이선스: MIT
 
-## 1. Purpose
+## 1. 목적
 
-Create and publish a Windows-only Codex skill that uses the locally installed
-Hancom Office application as the native document engine. The skill must read,
-create, edit, batch-process, compare, export, and verify `.hwp`, `.hwt`, and
-`.hwpx` files without uploading document contents to an external service.
+Windows에 설치된 한컴오피스를 실제 문서 처리 엔진으로 사용하는 Codex 스킬을
+제작해 공개한다. 이 스킬은 `.hwp`, `.hwt`, `.hwpx` 파일을 외부 서비스로
+전송하지 않고 로컬에서 읽기, 생성, 수정, 일괄 처리, 비교, 내보내기 및 검증할
+수 있어야 한다.
 
-The skill is intended for Korean public-sector and professional documents where
-preserving the source document, its template, and its layout is more important
-than manipulating the HWP binary format directly.
+HWP 바이너리를 직접 조작하는 것보다 원본 문서와 양식, 서식 및 페이지 배치를
+보존하는 것이 중요한 공공기관·업무용 한글 문서를 주요 대상으로 한다.
 
-## 2. Verified Environment and Assumptions
+## 2. 확인된 환경과 전제
 
-The development machine currently has:
+현재 개발 PC에서 다음 사항을 확인했다.
 
-- Windows with PowerShell.
-- Hancom Office 2024 Edu installed.
-- `HWPFrame.HwpObject` registered and successfully instantiated.
-- A detected automation version of `13, 0, 0, 711`.
+- Windows와 PowerShell을 사용할 수 있다.
+- 한컴오피스 2024 Edu가 설치되어 있다.
+- `HWPFrame.HwpObject`가 등록되어 있으며 실제 객체 생성에 성공했다.
+- 확인된 자동화 엔진 버전은 `13, 0, 0, 711`이다.
 
-This proves that native Hancom automation can be started on the development
-machine. It does not yet prove that every operation in this specification works;
-those operations require integration tests against generated fixtures.
+이는 개발 PC에서 한글 자동화 엔진을 시작할 수 있다는 증거다. 이 설계서의 모든
+편집 기능이 이미 작동한다는 의미는 아니며, 각 기능은 직접 만든 시험 문서를
+사용해 통합 시험을 거쳐야 한다.
 
-Published compatibility will be reported honestly:
+공개 호환성은 실제 검증 수준에 따라 다음과 같이 구분한다.
 
-- Hancom Office 2024: verified only after the full integration suite passes.
-- Hancom Office 2018, 2020, and 2022: compatibility code may be included, but
-  versions not run in the test environment must be labelled unverified.
-- Other operating systems: unsupported for native editing.
+- 한컴오피스 2024: 전체 통합 시험을 통과한 뒤에만 검증 완료로 표시한다.
+- 한컴오피스 2018·2020·2022: 호환 코드를 제공할 수 있으나 실제 시험하지 않은
+  버전은 미검증으로 명시한다.
+- Windows 이외 운영체제: 네이티브 편집을 지원하지 않는다.
 
-## 3. Scope
+## 3. 지원 범위
 
-### 3.1 Supported capability groups
+### 3.1 지원 기능군
 
-The first public release covers capability groups 1 through 8 below.
+첫 공개 버전부터 다음 1~8번 기능군을 지원한다.
 
-1. **Safe editing**
-   - Extract text and document information.
-   - Find and replace exact text.
-   - Insert content before or after an unambiguous anchor.
-   - Fill named fields and placeholders.
-   - Save only to a versioned copy.
+1. **안전 편집**
+   - 본문과 문서 정보를 추출한다.
+   - 정확한 문구를 검색하고 교체한다.
+   - 모호하지 않은 기준 문구의 앞이나 뒤에 내용을 삽입한다.
+   - 이름이 지정된 필드와 누름틀을 채운다.
+   - 결과는 항상 별도의 버전 파일로 저장한다.
 
-2. **Document production**
-   - Create a new HWP document from an HWT or HWP template.
-   - Insert and format headings, paragraphs, tables, and images.
-   - Configure page numbers, headers, and footers.
+2. **문서 제작**
+   - HWT 또는 HWP 양식을 바탕으로 새 HWP 문서를 만든다.
+   - 제목, 본문, 표, 이미지를 삽입하고 서식을 지정한다.
+   - 쪽 번호, 머리말, 꼬리말을 설정한다.
 
-3. **Structural editing**
-   - Edit table cells and add rows.
-   - Insert tables and page breaks.
-   - Insert or replace images.
-   - Change character and paragraph formatting.
-   - Change section paper, margin, and column settings.
-   - Add bookmarks, hyperlinks, captions, footnotes, endnotes, and table of
-     contents operations where the installed automation API supports them.
+3. **문서 구조 편집**
+   - 표 셀을 수정하고 행을 추가한다.
+   - 표와 쪽 나누기를 삽입한다.
+   - 이미지를 삽입하거나 교체한다.
+   - 글자 및 문단 서식을 변경한다.
+   - 구역의 용지, 여백, 단 설정을 변경한다.
+   - 설치된 한글 자동화 API가 지원하는 범위에서 책갈피, 하이퍼링크, 캡션,
+     각주, 미주 및 차례를 처리한다.
 
-4. **Public-document automation**
-   - Fill HWT/HWP templates for official letters, reports, plans, meeting
-     minutes, proposals, and storyboards.
-   - Repeat a template safely over structured input records.
+4. **공공문서 자동화**
+   - HWT/HWP 양식으로 공문, 보고서, 계획서, 회의록, 제안서 및 스토리보드를
+     작성한다.
+   - 구조화된 입력 자료를 이용해 같은 양식의 문서를 안전하게 반복 생성한다.
 
-5. **Natural-language editing**
-   - Translate a user's natural-language request into a deterministic JSON edit
-     plan.
-   - Validate the plan before executing it.
-   - Refuse ambiguous targets rather than guessing.
+5. **자연어 편집**
+   - 사용자의 자연어 요청을 결정적인 JSON 편집 계획으로 변환한다.
+   - 계획을 실제로 적용하기 전에 구조와 안전 조건을 검증한다.
+   - 수정 위치가 모호하면 추측하지 않고 실행을 중단한다.
 
-6. **Review and correction**
-   - Compare source and result text, fields, tables, images, sections, and page
-     counts.
-   - Report intended and unintended differences.
-   - Support rule-based Korean document checks through optional operation sets.
+6. **검토 및 교정**
+   - 원본과 결과의 본문, 필드, 표, 이미지, 구역 및 페이지 수를 비교한다.
+   - 의도된 변경과 의도하지 않은 차이를 구분해 보고한다.
+   - 선택형 작업 세트를 통해 한글 문서 표기 규칙을 검사할 수 있게 한다.
 
-7. **Batch processing**
-   - Inspect, edit, convert, or verify multiple files.
-   - Default to dry-run mode.
-   - Produce one result and one report per input file.
+7. **일괄 처리**
+   - 여러 파일을 검사, 수정, 변환 또는 검증한다.
+   - 기본 실행 모드는 변경 없는 미리보기로 설정한다.
+   - 입력 파일마다 결과 파일과 보고서를 각각 생성한다.
 
-8. **Visual verification**
-   - Export the result to PDF through Hancom Office.
-   - Render PDF pages to images when an available local renderer is detected.
-   - Report empty pages, unexpected page-count changes, and potential clipped
-     content for human review.
+8. **시각 검증**
+   - 한컴오피스를 통해 결과 문서를 PDF로 내보낸다.
+   - 사용 가능한 로컬 렌더러가 있으면 PDF 전체 페이지를 이미지로 변환한다.
+   - 빈 페이지, 예상하지 못한 페이지 수 변화, 내용 잘림 가능성을 사람이
+     검토할 수 있도록 보고한다.
 
-### 3.2 Explicitly excluded
+### 3.2 명시적 제외 범위
 
-- Controlling or modifying a document that the user already has open in an
-  interactive Hancom window.
-- Overwriting the source document automatically.
-- Bypassing passwords, DRM, distribution-document restrictions, or electronic
-  signatures.
-- Running embedded macros.
-- Editing the internals of arbitrary OLE objects, complex formula objects, or
-  unsupported charts.
-- Claiming pixel-identical output without rendered-page review.
-- Sending document contents to a remote AI API or server.
+- 사용자가 한글 프로그램에서 이미 열어 둔 문서를 직접 제어하거나 수정하는 기능
+- 원본 파일 자동 덮어쓰기
+- 암호, DRM, 배포용 문서 제한 또는 전자서명 우회
+- 문서에 포함된 매크로 실행
+- 임의 OLE 개체, 복잡한 수식 개체 또는 지원되지 않는 차트의 내부 편집
+- 렌더링 결과를 확인하지 않은 상태에서 화면이 완전히 동일하다고 주장하는 행위
+- 문서 내용을 외부 AI API나 서버로 전송하는 기능
 
-## 4. Architecture
+## 4. 전체 구조
 
-The skill uses a plan-then-apply pipeline:
+스킬은 다음과 같은 계획 후 적용 방식으로 동작한다.
 
 ```text
-Input HWP/HWT/HWPX
-  -> preflight and signature detection
-  -> read-only inspection snapshot
-  -> deterministic JSON edit plan
-  -> plan validation and ambiguity checks
-  -> versioned working copy
-  -> native Hancom automation edit
-  -> save and close
-  -> reopen result
-  -> extract and compare
-  -> export PDF and render pages
-  -> JSON report plus human-readable summary
+HWP/HWT/HWPX 입력 파일
+  → 사전 점검 및 실제 파일 형식 확인
+  → 읽기 전용 문서 구조 추출
+  → 결정적인 JSON 편집 계획 작성
+  → 계획 구조와 수정 위치의 모호성 검증
+  → 버전이 지정된 작업용 복사본 생성
+  → 한컴오피스 네이티브 자동화로 편집
+  → 저장 및 문서 닫기
+  → 결과 문서 다시 열기
+  → 본문·구조 재추출 및 원본과 비교
+  → PDF 내보내기 및 페이지 이미지 생성
+  → JSON 보고서와 사람이 읽는 요약문 작성
 ```
 
-The core implementation is PowerShell using the registered
-`HWPFrame.HwpObject.2` or `HWPFrame.HwpObject` COM interface. PowerShell avoids
-a mandatory Python or `pywin32` dependency and uses the real installed Hancom
-engine.
+핵심 구현은 PowerShell에서 등록된 `HWPFrame.HwpObject.2` 또는
+`HWPFrame.HwpObject` COM 인터페이스를 사용하는 방식으로 한다. 별도의 Python
+또는 `pywin32` 설치를 필수 조건으로 만들지 않고, 설치된 한컴오피스의 실제
+엔진을 사용한다.
 
-Each document job runs in an isolated worker process. The controller owns the
-job timeout, captures logs, and knows which automation session it created. It
-must not terminate unrelated Hancom processes that predated the job.
+각 문서 작업은 격리된 작업자 프로세스에서 실행한다. 제어 프로세스는 작업 제한
+시간과 로그를 관리하고 자신이 만든 자동화 세션을 구분해야 한다. 작업 시작 전에
+이미 실행 중이던 다른 한글 프로세스를 종료해서는 안 된다.
 
-## 5. Components
+## 5. 구성 요소
 
-### 5.1 Public entry point
+### 5.1 공용 실행 명령
 
-`Invoke-HwpNative.ps1` exposes these commands:
+`Invoke-HwpNative.ps1`은 다음 명령을 제공한다.
 
-- `preflight`
-- `inspect`
-- `validate-plan`
-- `apply`
-- `generate`
-- `batch`
-- `compare`
-- `verify`
-- `export`
+- `preflight`: 환경과 파일의 사전 조건 확인
+- `inspect`: 문서 내용과 구조 추출
+- `validate-plan`: 편집 계획 검증
+- `apply`: 검증된 계획을 복사본에 적용
+- `generate`: 양식 또는 새 문서에서 결과 생성
+- `batch`: 여러 문서 미리보기 및 일괄 처리
+- `compare`: 원본과 결과 비교
+- `verify`: 결과 재열기 및 종합 검증
+- `export`: PDF·HWPX·TXT·HTML 등으로 내보내기
 
-Every command supports machine-readable JSON output. Commands that create files
-also write a short human-readable summary.
+모든 명령은 기계가 읽을 수 있는 JSON 결과를 지원한다. 파일을 생성하는 명령은
+사람이 읽을 수 있는 짧은 요약문도 함께 작성한다.
 
-### 5.2 Session management
+### 5.2 한컴 세션 관리
 
-`HwpSession.psm1` is responsible for:
+`HwpSession.psm1`은 다음을 담당한다.
 
-- Detecting Hancom installation and automation ProgIDs.
-- Creating and closing an owned COM session.
-- Recording the exact application version.
-- Checking whether an approved file-path security module is already registered.
-- Handling timeouts without broadly killing `Hwp.exe` processes.
-- Releasing COM references in `finally` blocks.
+- 한컴오피스 설치 여부와 사용할 수 있는 자동화 ProgID 확인
+- 스킬이 소유하는 COM 세션 생성 및 종료
+- 실제 실행된 한컴오피스 버전 기록
+- 승인된 파일 경로 보안 모듈의 등록 여부 확인
+- 모든 COM 참조를 `finally` 구문에서 해제
+- 사용자가 실행 중이던 한글 프로세스를 일괄 종료하지 않는 제한 시간 처리
 
-The repository will not redistribute an unofficial or third-party security DLL.
-If unattended file opening requires a module that is not configured, preflight
-returns a blocked result and instructions for an explicit user-controlled setup.
+저장소에는 비공식 또는 제3자 보안 DLL을 포함하지 않는다. 무인 파일 열기에 필요한
+보안 모듈이 등록되지 않았다면 사전 점검 단계에서 `BLOCKED`로 처리하고 사용자가
+직접 승인해 설정할 수 있는 안내를 제공한다.
 
-### 5.3 Inspection
+### 5.3 문서 검사
 
-`HwpInspect.psm1` performs read-only extraction of:
+`HwpInspect.psm1`은 파일을 저장하지 않고 다음 정보를 추출한다.
 
-- Actual file signature and declared extension.
-- Text, paragraphs, and contextual anchors.
-- Tables, rows, columns, and cell text.
-- Named fields and placeholders.
-- Image and embedded-object inventory.
-- Sections, headers, footers, and page information available through automation.
-- Document metadata and protection state available through automation.
+- 실제 파일 시그니처와 확장자 일치 여부
+- 본문, 문단 및 앞뒤 문맥을 포함한 기준 문구
+- 표, 행, 열 및 셀 내용
+- 이름이 지정된 필드와 누름틀
+- 이미지와 삽입 개체 목록
+- 자동화 API로 확인 가능한 구역, 머리말, 꼬리말 및 페이지 정보
+- 자동화 API로 확인 가능한 문서 속성과 보호 상태
 
-Inspection output follows `inspection.schema.json`.
+검사 결과는 `inspection.schema.json` 규격을 따른다.
 
-### 5.4 Editing and generation
+### 5.4 편집 및 문서 생성
 
-`HwpEdit.psm1` executes only validated operations. `HwpGenerate.psm1` creates a
-new document from a template or a new blank document. HWT input is always saved
-as a separate HWP output.
+`HwpEdit.psm1`은 검증된 작업만 실행한다. `HwpGenerate.psm1`은 양식이나 빈
+문서를 바탕으로 새 문서를 만든다. HWT 입력은 항상 별도의 HWP 결과 파일로
+저장한다.
 
-Supported operation names are:
+지원하는 작업 이름은 다음과 같다.
 
-- `replace-text`
-- `insert-before`
-- `insert-after`
-- `delete-range`
-- `set-field`
-- `set-table-cell`
-- `add-table-row`
-- `insert-table`
-- `insert-image`
-- `replace-image`
-- `apply-char-style`
-- `apply-para-style`
-- `insert-page-break`
-- `set-section`
-- `set-header-footer`
-- `add-bookmark`
-- `add-hyperlink`
-- `add-caption`
-- `add-footnote`
-- `add-endnote`
-- `build-toc`
-- `merge-documents`
-- `export`
+- `replace-text`: 문구 교체
+- `insert-before`: 기준 문구 앞에 삽입
+- `insert-after`: 기준 문구 뒤에 삽입
+- `delete-range`: 지정 범위 삭제
+- `set-field`: 필드·누름틀 입력
+- `set-table-cell`: 특정 표 셀 변경
+- `add-table-row`: 표 행 추가
+- `insert-table`: 새 표 삽입
+- `insert-image`: 이미지 삽입
+- `replace-image`: 이미지 교체
+- `apply-char-style`: 글자 서식 변경
+- `apply-para-style`: 문단 서식 변경
+- `insert-page-break`: 쪽 나누기 삽입
+- `set-section`: 용지·여백·단 설정
+- `set-header-footer`: 머리말·꼬리말 설정
+- `add-bookmark`: 책갈피 추가
+- `add-hyperlink`: 하이퍼링크 추가
+- `add-caption`: 캡션 추가
+- `add-footnote`: 각주 추가
+- `add-endnote`: 미주 추가
+- `build-toc`: 차례 생성
+- `merge-documents`: 여러 문서 병합
+- `export`: 다른 형식으로 내보내기
 
-Operations that delete ranges, change table structure, change sections, or merge
-documents are marked `advanced` and require explicit approval in the plan.
+범위 삭제, 표 구조 변경, 구역 변경 및 문서 병합 작업은 `advanced` 등급으로
+분류하고 편집 계획에 명시적인 승인이 있어야 실행한다.
 
-### 5.5 Batch processing
+### 5.5 일괄 처리
 
-`HwpBatch.psm1` enumerates only explicit file inputs or files under an explicit
-input directory. It never scans an entire drive or user profile. Dry-run is the
-default. Apply mode creates a separate output directory and never mixes partial
-results with completed results.
+`HwpBatch.psm1`은 사용자가 명시한 파일 또는 명시한 입력 폴더 안의 파일만
+처리한다. 드라이브 전체나 사용자 프로필 전체를 검색하지 않는다. 기본값은
+미리보기이며, 실제 적용 시에는 별도 출력 폴더를 만들어 완료된 결과와 불완전한
+결과가 섞이지 않도록 한다.
 
-### 5.6 Verification
+### 5.6 결과 검증
 
-`HwpVerify.psm1`:
+`HwpVerify.psm1`은 다음 작업을 수행한다.
 
-- Reopens the saved result through Hancom Office.
-- Extracts a second inspection snapshot.
-- Compares expected edit counts and values.
-- Checks for unintended loss of tables, images, fields, or sections.
-- Exports PDF.
-- Uses an available local PDF renderer to create page images.
-- Produces final status and warnings.
+- 저장된 결과를 한컴오피스로 다시 연다.
+- 두 번째 문서 검사 결과를 추출한다.
+- 편집 계획의 예상 적용 횟수와 결과값을 비교한다.
+- 표, 이미지, 필드 또는 구역이 의도하지 않게 사라졌는지 검사한다.
+- 결과를 PDF로 내보낸다.
+- 사용 가능한 로컬 PDF 렌더러로 페이지 이미지를 만든다.
+- 최종 상태와 경고를 작성한다.
 
-If no page renderer is available, PDF creation may pass but the result cannot
-receive a full visual-verification pass. The status must be
-`PASS_WITH_WARNINGS`, not `PASS`.
+페이지 렌더러를 사용할 수 없다면 PDF 생성은 성공할 수 있지만 전체 시각 검증을
+통과한 것으로 처리하지 않는다. 이 경우 상태는 `PASS`가 아니라
+`PASS_WITH_WARNINGS`로 기록한다.
 
-## 6. Edit Plan Contract
+## 6. 편집 계획 규격
 
-Every edit operation records:
+각 편집 작업은 다음 항목을 기록한다.
 
-- Stable operation ID.
-- Operation type.
-- Risk class: `safe` or `advanced`.
-- Target anchor and surrounding text.
-- Table, field, section, or object locator when applicable.
-- Expected match count.
-- Before value.
-- After value or inserted content.
-- Failure policy: stop or skip.
-- Postcondition to verify.
+- 작업을 구분하는 고유 ID
+- 작업 종류
+- 위험 등급: `safe` 또는 `advanced`
+- 대상 기준 문구와 앞뒤 문맥
+- 필요한 경우 표, 필드, 구역 또는 개체 위치 정보
+- 예상 일치 개수
+- 변경 전 값
+- 변경 후 값 또는 삽입할 내용
+- 실패 시 중단 또는 건너뛰기 정책
+- 적용 후 확인해야 하는 조건
 
-Page number alone is not a valid edit locator. Natural-language requests must be
-resolved using content anchors, surrounding context, and structural location.
-When more than one target remains possible, planning returns candidates and does
-not create an executable operation.
+페이지 번호만으로는 수정 위치를 지정할 수 없다. 자연어 요청은 내용 기준 문구,
+앞뒤 문맥 및 문서 구조상의 위치를 함께 사용해 해석한다. 둘 이상의 후보가 남으면
+후보를 보고하되 실행 가능한 편집 작업을 만들지 않는다.
 
-## 7. Source Preservation and File Lifecycle
+## 7. 원본 보존과 파일 처리 순서
 
-1. Resolve and validate the exact source path.
-2. Record source length, timestamp, and SHA-256.
-3. Inspect without saving.
-4. Create a working copy with a versioned name.
-5. Apply changes only to the working copy.
-6. Save to a temporary result path.
-7. Reopen and verify the temporary result.
-8. Promote the temporary result to the final result name only after verification.
-9. Recompute the source SHA-256 and require it to be unchanged.
+1. 입력 파일의 실제 절대 경로를 확정하고 검사한다.
+2. 원본의 크기, 수정 시각 및 SHA-256을 기록한다.
+3. 원본을 저장하지 않는 읽기 전용 검사를 수행한다.
+4. 버전이 표시된 작업용 복사본을 만든다.
+5. 작업용 복사본에만 변경을 적용한다.
+6. 임시 결과 경로에 저장한다.
+7. 임시 결과를 다시 열어 검증한다.
+8. 검증을 통과한 경우에만 최종 결과 파일명으로 승격한다.
+9. 원본 SHA-256을 다시 계산하고 변경되지 않았음을 확인한다.
 
-Failed temporary files are kept outside the completed-results directory and
-labelled as failed artifacts. The report explains whether they are safe to
-delete. No result is described as complete unless it passes the required gates.
+검증에 실패한 임시 파일은 완료 결과 폴더 밖에 실패한 작업물로 표시해 보관한다.
+보고서에는 해당 파일을 삭제해도 되는지 설명한다. 필수 검증을 통과하지 않은
+결과를 완성본이라고 보고하지 않는다.
 
-## 8. Error Handling
+## 8. 오류 처리
 
-The skill blocks before mutation when:
+다음 상황은 문서를 수정하기 전에 `BLOCKED`로 처리한다.
 
-- The extension and actual format disagree unless the user explicitly approves
-  handling the detected format.
-- The file is password-protected, DRM-protected, signed, or distribution-only.
-- The target is missing or ambiguous.
-- A required table, field, image, or section cannot be identified exactly.
-- The source is write-locked.
-- The security module requirement prevents unattended opening.
-- The edit plan fails schema or policy validation.
+- 확장자와 실제 형식이 다르고, 사용자가 감지된 형식으로 처리하는 데 동의하지 않음
+- 암호, DRM, 전자서명 또는 배포용 문서 제한이 확인됨
+- 수정 대상이 없거나 여러 후보로 나뉨
+- 필요한 표, 필드, 이미지 또는 구역을 정확히 식별할 수 없음
+- 원본 파일이 쓰기 잠금 상태임
+- 보안 모듈 문제로 무인 파일 열기를 진행할 수 없음
+- 편집 계획이 JSON 규격 또는 안전 정책을 통과하지 못함
 
-The skill fails the job when:
+다음 상황은 시작된 작업을 `FAILED`로 처리한다.
 
-- Hancom automation cannot start, save, close, or reopen the result.
-- A postcondition does not match the result.
-- An unintended structural loss is detected.
-- The source hash changes.
+- 한컴 자동화 엔진 시작, 저장, 닫기 또는 결과 재열기에 실패함
+- 적용 후 확인 조건이 결과와 일치하지 않음
+- 의도하지 않은 문서 구조 손실이 확인됨
+- 원본 파일의 SHA-256이 변경됨
 
-If an automation call hangs, the controller stops further mutation, releases the
-worker where possible, and reports recovery instructions. It never performs a
-broad process kill against all Hancom sessions.
+자동화 호출이 멈추면 제어 프로세스는 추가 수정을 중단하고 가능한 범위에서 자신이
+만든 작업자 세션을 해제한 뒤 복구 안내를 남긴다. 실행 중인 모든 한글 프로세스를
+일괄 종료해서는 안 된다.
 
-## 9. Result Statuses
+## 9. 결과 상태
 
-- `PASS`: all required text, structural, reopen, PDF, and page-render checks pass.
-- `PASS_WITH_WARNINGS`: required edits pass, but a non-destructive optional
-  check such as page rendering is unavailable or reports a review candidate.
-- `BLOCKED`: the job was not mutated because a precondition or policy stopped it.
-- `FAILED`: execution began but a required operation or verification gate failed.
+- `PASS`: 본문, 구조, 재열기, PDF 및 페이지 렌더링 필수 검사를 모두 통과함
+- `PASS_WITH_WARNINGS`: 필수 편집은 성공했지만 페이지 렌더링을 사용할 수 없거나
+  사람의 확인이 필요한 비파괴적 경고가 있음
+- `BLOCKED`: 사전 조건 또는 안전 정책에 따라 문서를 수정하지 않고 중단함
+- `FAILED`: 작업을 시작했지만 필수 편집이나 검증에 실패함
 
-Every result includes JSON and human-readable reports with input, output,
-application version, operation outcomes, hashes, warnings, and recovery notes.
+모든 결과에는 입력 파일, 출력 파일, 한컴오피스 버전, 작업별 처리 결과, 해시,
+경고 및 복구 정보를 담은 JSON 보고서와 사람이 읽는 요약문을 포함한다.
 
-## 10. Repository and Distribution
+## 10. 저장소와 배포 구조
 
-The public repository is named `hwp-native-skill` and uses the MIT license.
+공개 저장소 이름은 `hwp-native-skill`이며 MIT 라이선스를 적용한다.
 
 ```text
 hwp-native-skill/
-  README.md
-  LICENSE
-  install.ps1
-  skill/hwp-native/
-    SKILL.md
-    agents/openai.yaml
-    scripts/Invoke-HwpNative.ps1
-    scripts/lib/*.psm1
-    schemas/*.json
-    references/*.md
-  tests/
-    fixtures/
-    run-tests.ps1
+├─ README.md
+├─ LICENSE
+├─ install.ps1
+├─ skill/
+│  └─ hwp-native/
+│     ├─ SKILL.md
+│     ├─ agents/
+│     │  └─ openai.yaml
+│     ├─ scripts/
+│     │  ├─ Invoke-HwpNative.ps1
+│     │  └─ lib/
+│     │     ├─ HwpSession.psm1
+│     │     ├─ HwpInspect.psm1
+│     │     ├─ HwpEdit.psm1
+│     │     ├─ HwpGenerate.psm1
+│     │     ├─ HwpBatch.psm1
+│     │     └─ HwpVerify.psm1
+│     ├─ schemas/
+│     │  ├─ edit-plan.schema.json
+│     │  └─ inspection.schema.json
+│     └─ references/
+│        ├─ operations.md
+│        ├─ safety.md
+│        └─ limitations.md
+└─ tests/
+   ├─ fixtures/
+   └─ run-tests.ps1
 ```
 
-The repository README documents requirements, safety behavior, installation,
-examples, compatibility status, limitations, and test evidence. User documents
-and the current Gyeongbuk Office of Education files are never included.
+README에는 요구 환경, 안전 원칙, 설치 방법, 사용 예시, 호환성, 제한 사항 및 실제
+시험 결과를 작성한다. 사용자의 문서와 현재 경북교육청 작업 파일은 시험 자료나
+GitHub 저장소에 포함하지 않는다.
 
-## 11. Testing Strategy
+## 11. 시험 전략
 
-### 11.1 Static and policy tests
+### 11.1 정적 검사 및 안전 정책 시험
 
-- Skill metadata and folder validation.
-- JSON schema validation.
-- Path canonicalization and output containment.
-- Versioned output naming.
-- Source-overwrite refusal.
-- Unsupported format and mismatched-extension detection.
-- Ambiguous locator rejection.
-- Advanced-operation approval enforcement.
+- 스킬 메타데이터와 폴더 구조 검사
+- JSON 스키마 검사
+- 경로 정규화 및 출력 경로 제한 검사
+- 버전 결과 파일명 생성 시험
+- 원본 덮어쓰기 거부 시험
+- 미지원 형식 및 확장자 불일치 탐지 시험
+- 모호한 수정 위치 거부 시험
+- `advanced` 작업의 승인 조건 검사
 
-### 11.2 Native integration fixtures
+### 11.2 네이티브 통합 시험 문서
 
-Create synthetic fixtures owned by this project containing Korean text, repeated
-phrases, fields, tables, sections, headers, footers, page numbers, and a generated
-image. Fixtures cover `.hwp`, `.hwt`, and `.hwpx` without using user documents.
+프로젝트가 직접 소유하는 가상 시험 문서를 만든다. 문서에는 한글 본문, 반복 문구,
+필드, 표, 구역, 머리말, 꼬리말, 쪽 번호 및 직접 만든 이미지를 넣는다. 사용자
+문서를 사용하지 않고 `.hwp`, `.hwt`, `.hwpx` 형식을 모두 시험한다.
 
-### 11.3 Native integration scenarios
+### 11.3 네이티브 통합 시험 항목
 
-- Paths containing Korean text and spaces.
-- Dropbox-synchronized directories.
-- A binary HWP deliberately given an HWPX extension.
-- HWT-to-new-HWP generation.
-- Text, field, table, image, style, page-break, and section operations.
-- Ambiguous repeated text.
-- Document merge.
-- Multi-file dry-run and apply.
-- Save and reopen failure handling.
-- PDF export and page rendering.
-- Source hash preservation.
-- Owned automation-session cleanup.
+- 한글과 공백이 포함된 긴 파일 경로
+- Dropbox 동기화 폴더
+- 실제 형식은 HWP이지만 확장자만 HWPX인 파일
+- HWT를 사용한 새 HWP 생성
+- 본문, 필드, 표, 이미지, 서식, 쪽 나누기 및 구역 변경
+- 같은 문구가 여러 번 나타나는 모호한 수정
+- 여러 문서 병합
+- 여러 파일의 미리보기와 실제 적용
+- 저장 및 재열기 실패 처리
+- PDF 내보내기와 페이지 이미지 생성
+- 원본 해시 보존
+- 스킬이 만든 자동화 세션 종료
 
-## 12. Release Acceptance Criteria
+## 12. 공개 전 완료 조건
 
-The first GitHub release is ready only when:
+다음 조건을 모두 충족해야 첫 GitHub 공개 버전을 완료한 것으로 본다.
 
-1. The skill folder passes the official skill validator.
-2. All static and policy tests pass.
-3. The native integration suite passes on Hancom Office 2024 using synthetic
-   fixtures.
-4. The source file remains byte-identical in every edit test.
-5. Every result is reopened and re-inspected through Hancom Office.
-6. PDF export succeeds for every successful fixture.
-7. Rendered page images are visually reviewed for the representative fixture.
-8. A clean installation from the repository is tested in the Codex skills
-   directory.
-9. README compatibility claims match the evidence actually collected.
-10. The public GitHub URL, installation instructions, and repository contents
-    are checked after publication.
-
+1. 스킬 폴더가 공식 스킬 검증 도구를 통과한다.
+2. 모든 정적 검사와 안전 정책 시험을 통과한다.
+3. 직접 만든 시험 문서로 한컴오피스 2024 네이티브 통합 시험을 통과한다.
+4. 모든 편집 시험에서 원본 파일이 바이트 단위로 동일하게 유지된다.
+5. 모든 결과 파일을 한컴오피스로 다시 열고 내용을 재추출한다.
+6. 성공한 모든 시험 문서에서 PDF 내보내기에 성공한다.
+7. 대표 시험 문서의 전체 페이지 이미지를 실제로 확인한다.
+8. 공개 저장소에서 Codex 스킬 폴더로 새로 설치하는 시험을 통과한다.
+9. README의 호환성 설명이 실제로 수집한 시험 증거와 일치한다.
+10. 공개 후 GitHub 주소, 설치 방법 및 저장소 파일을 다시 확인한다.
