@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory, Position = 0)]
-    [ValidateSet('preflight','inspect','validate-plan','apply','generate','batch','compare','verify','export')]
+    [ValidateSet('capabilities','preflight','inspect','validate-plan','apply','generate','batch','compare','verify','export')]
     [string]$Command,
 
     [string]$LiteralPath,
@@ -18,7 +18,10 @@ param(
     [string]$BeforePath,
     [string]$AfterPath,
     [ValidateSet('pdf','images')][string]$ExportKind = 'pdf',
-    [switch]$RequireUnattendedOpen
+    [switch]$RequireUnattendedOpen,
+    [ValidateSet('silent','isolated-native','interactive')]
+    [string]$ExecutionMode = 'silent',
+    [switch]$AllowInteractiveWindow
 )
 
 Set-StrictMode -Version Latest
@@ -51,6 +54,9 @@ function Assert-HwpCliValue {
 $libraryRoot = Join-Path $PSScriptRoot 'lib'
 $result = $null
 try {
+    Import-Module (Join-Path $libraryRoot 'HwpExecution.psm1') -ErrorAction Stop
+    Import-Module (Join-Path $libraryRoot 'HwpCapabilities.psm1') -ErrorAction Stop
+    Import-Module (Join-Path $libraryRoot 'HwpBackendRouter.psm1') -ErrorAction Stop
     Import-Module (Join-Path $libraryRoot 'HwpCommon.psm1') -ErrorAction Stop
     Import-Module (Join-Path $libraryRoot 'HwpSession.psm1') -ErrorAction Stop
     Import-Module (Join-Path $libraryRoot 'HwpInspect.psm1') -ErrorAction Stop
@@ -60,9 +66,37 @@ try {
     Import-Module (Join-Path $libraryRoot 'HwpVerify.psm1') -ErrorAction Stop
     Import-Module (Join-Path $libraryRoot 'HwpBatch.psm1') -ErrorAction Stop
 
+    $hwpExecutionContext = New-HwpExecutionContext -Mode $ExecutionMode `
+        -AllowInteractiveWindow:([bool]$AllowInteractiveWindow)
+    $capabilities = Get-HwpCapabilitySnapshot -ExecutionContext $hwpExecutionContext
+
     $result = switch ($Command) {
+        'capabilities' {
+            $route = Resolve-HwpBackend -Command capabilities -Capabilities $capabilities `
+                -ExecutionContext $hwpExecutionContext
+            if ($route.Status -ne 'PASS') {
+                New-HwpResult -Status FAILED -Command capabilities -Data $capabilities `
+                    -Warnings @($route.Warnings) -Errors @($route.Errors)
+            }
+            else {
+                New-HwpResult -Status PASS -Command capabilities -Data $capabilities
+            }
+            break
+        }
         'preflight' {
-            Invoke-HwpPreflight -RequireUnattendedOpen:([bool]$RequireUnattendedOpen)
+            $route = Resolve-HwpBackend -Command preflight -Capabilities $capabilities `
+                -ExecutionContext $hwpExecutionContext
+            if ($route.Status -ne 'PASS') {
+                New-HwpResult -Status FAILED -Command preflight -Data $capabilities `
+                    -Warnings @($route.Warnings) -Errors @($route.Errors)
+            }
+            elseif ($ExecutionMode -eq 'interactive') {
+                Invoke-HwpPreflight -ExecutionContext $hwpExecutionContext `
+                    -RequireUnattendedOpen:([bool]$RequireUnattendedOpen)
+            }
+            else {
+                New-HwpResult -Status PASS -Command preflight -Data $capabilities
+            }
             break
         }
         'inspect' {

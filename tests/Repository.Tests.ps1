@@ -68,6 +68,18 @@ Describe 'hwp-skill 저장소 구조' {
         $content | Should Not Match 'Hwp\.exe'
     }
 
+    It '공용 CLI는 silent 실행 모드와 기능 조회 명령을 노출한다' {
+        $cliPath = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/Invoke-HwpSkill.ps1'
+        Test-Path $cliPath | Should Be $true
+
+        $content = Get-Content -LiteralPath $cliPath -Raw -Encoding UTF8
+
+        $content | Should Match '\[ValidateSet\(''capabilities'',''preflight'',''inspect'',''validate-plan'',''apply'',''generate'',''batch'',''compare'',''verify'',''export''\)\]'
+        $content | Should Match '\[ValidateSet\(''silent'',''isolated-native'',''interactive''\)\]\s*\[string\]\$ExecutionMode\s*=\s*''silent'''
+        $content | Should Match '\[switch\]\$AllowInteractiveWindow'
+        $content | Should Match "'capabilities'\s*\{"
+    }
+
     It '공개 편집 스키마가 위험한 계획 조합을 거부한다' {
         $schemaPath = Join-Path $PSScriptRoot '../skill/hwp-skill/schemas/edit-plan.schema.json'
         $valid = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../skill/hwp-skill/examples/replace-text.plan.json') `
