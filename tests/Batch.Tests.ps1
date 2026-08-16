@@ -97,4 +97,34 @@ Describe '통합 CLI JSON 계약' {
         $json.status | Should Be 'PASS'
         $json.command | Should Be 'validate-plan'
     }
+
+    It 'preflight는 실행 컨텍스트 없이도 silent 기본값으로 BLOCKED JSON과 종료 코드 2를 반환한다' {
+        $cli = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/Invoke-HwpSkill.ps1'
+        $pwsh = Join-Path $PSHOME 'pwsh.exe'
+
+        $raw = & $pwsh -NoProfile -File $cli preflight
+        $exitCode = $LASTEXITCODE
+        $json = ($raw -join "`n") | ConvertFrom-Json
+
+        $exitCode | Should Be 2
+        $json.status | Should Be 'BLOCKED'
+        $json.command | Should Be 'preflight'
+        ($json.errors -join ' ') | Should Match 'interactive'
+    }
+
+    It '시험 fixture 생성기는 승인 스위치 없이 BLOCKED와 종료 코드 2를 반환한다' {
+        $generator = Join-Path $PSScriptRoot 'fixtures/New-TestFixtures.ps1'
+        $pwsh = Join-Path $PSHOME 'pwsh.exe'
+        $outputDirectory = Join-Path $TestDrive 'fixture-output'
+
+        $raw = & $pwsh -NoProfile -File $generator -OutputDirectory $outputDirectory
+        $exitCode = $LASTEXITCODE
+        $json = ($raw -join "`n") | ConvertFrom-Json
+
+        $exitCode | Should Be 2
+        $json.status | Should Be 'BLOCKED'
+        $json.command | Should Be 'create-test-fixtures'
+        ($json.errors -join ' ') | Should Match 'AllowInteractiveNative'
+        Test-Path -LiteralPath (Join-Path $outputDirectory 'native-fixture.hwp') | Should Be $false
+    }
 }

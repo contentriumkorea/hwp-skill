@@ -104,11 +104,21 @@ function Get-HwpAutomationInfo {
     }
 }
 
+function Resolve-HwpExecutionContext {
+    [CmdletBinding()]
+    param([AllowNull()][object]$ExecutionContext)
+
+    if ($null -eq $ExecutionContext) {
+        return New-HwpExecutionContext
+    }
+
+    $ExecutionContext
+}
+
 function New-HwpSession {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)]
-        [object]$ExecutionContext,
+        [AllowNull()][object]$ExecutionContext = $null,
         [bool]$Visible = $false,
         [scriptblock]$ComFactory = { param($progId) New-Object -ComObject $progId },
         [scriptblock]$ProcessOwnershipResolver = {
@@ -121,7 +131,8 @@ function New-HwpSession {
         [int]$RetryDelayMilliseconds = 300
     )
 
-    Assert-HwpLocalGuiAllowed -ExecutionContext $ExecutionContext
+    $resolvedExecutionContext = Resolve-HwpExecutionContext -ExecutionContext $ExecutionContext
+    Assert-HwpLocalGuiAllowed -ExecutionContext $resolvedExecutionContext
 
     $lastErrorMessage = '등록된 ProgID를 찾지 못했습니다.'
     for ($attempt = 1; $attempt -le $RetryCount; $attempt++) {
@@ -303,8 +314,7 @@ function Close-HwpSession {
 function Invoke-HwpPreflight {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)]
-        [object]$ExecutionContext,
+        [AllowNull()][object]$ExecutionContext = $null,
         [switch]$RequireUnattendedOpen,
         [bool]$Visible = $false,
         [scriptblock]$ComFactory = { param($progId) New-Object -ComObject $progId },
@@ -323,7 +333,7 @@ function Invoke-HwpPreflight {
 
     $session = $null
     try {
-        $session = New-HwpSession -ExecutionContext $ExecutionContext -Visible $Visible -ComFactory $ComFactory
+        $session = New-HwpSession -ExecutionContext (Resolve-HwpExecutionContext -ExecutionContext $ExecutionContext) -Visible $Visible -ComFactory $ComFactory
     }
     catch {
         return New-HwpResult -Status BLOCKED -Command preflight -Data ([pscustomobject]@{

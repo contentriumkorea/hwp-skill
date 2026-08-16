@@ -146,7 +146,7 @@ Describe 'HWP 메모리 편집 실제 한컴 통합 시험' -Tags Native {
             (New-Operation -Type 'delete-range' -Anchor '쪽 나누기 위치' -Before '쪽 나누기 위치' -After '' -Risk 'advanced')
         )
 
-        $session = New-HwpSession
+        $session = New-HwpSession -ExecutionContext (New-TestInteractiveExecutionContext)
         try {
             $open = Open-HwpDocumentFromMemory -Session $session -LiteralPath $fixtureHwp
             $open.Status | Should Be 'PASS'
@@ -216,7 +216,7 @@ Describe 'HWP 표 구조 편집 실제 한컴 통합 시험' -Tags Native,Struct
             (New-TableCellOperation -TableIndex 2 -Row 3 -Column 1 -After '추가 행')
         )
 
-        $session = New-HwpSession
+        $session = New-HwpSession -ExecutionContext (New-TestInteractiveExecutionContext)
         try {
             (Open-HwpDocumentFromMemory -Session $session -LiteralPath $fixtureHwp).Status | Should Be 'PASS'
             $results = @(
@@ -249,7 +249,7 @@ Describe 'HWP 서식과 문서 구조 편집 실제 한컴 통합 시험' -Tags 
             (New-PageBreakOperation -Anchor '쪽 나누기 위치' -Placement after)
         )
 
-        $session = New-HwpSession
+        $session = New-HwpSession -ExecutionContext (New-TestInteractiveExecutionContext)
         try {
             (Open-HwpDocumentFromMemory -Session $session -LiteralPath $fixtureHwp).Status | Should Be 'PASS'
             $results = @(
@@ -264,7 +264,7 @@ Describe 'HWP 서식과 문서 구조 편집 실제 한컴 통합 시험' -Tags 
             Close-HwpSession -Session $session
         }
 
-        $reopened = New-HwpSession
+        $reopened = New-HwpSession -ExecutionContext (New-TestInteractiveExecutionContext)
         try {
             (Open-HwpDocumentFromMemory -Session $reopened -LiteralPath $output).Status | Should Be 'PASS'
             $snapshot = Get-HwpTextStyleSnapshot -Session $reopened -Operation (New-Operation -Anchor 'HWP 스킬 통합 시험')
@@ -290,7 +290,7 @@ Describe 'HWP 서식과 문서 구조 편집 실제 한컴 통합 시험' -Tags 
             (New-PageNumberOperation -Anchor 'HWP 스킬 통합 시험' -Position bottom-center -StartNumber 1)
         )
 
-        $session = New-HwpSession
+        $session = New-HwpSession -ExecutionContext (New-TestInteractiveExecutionContext)
         try {
             (Open-HwpDocumentFromMemory -Session $session -LiteralPath $fixtureHwp).Status | Should Be 'PASS'
             $results = @(
@@ -305,7 +305,7 @@ Describe 'HWP 서식과 문서 구조 편집 실제 한컴 통합 시험' -Tags 
             Close-HwpSession -Session $session
         }
 
-        $reopened = New-HwpSession
+        $reopened = New-HwpSession -ExecutionContext (New-TestInteractiveExecutionContext)
         try {
             (Open-HwpDocumentFromMemory -Session $reopened -LiteralPath $output).Status | Should Be 'PASS'
             $section = Get-HwpSectionSnapshot -Session $reopened -Operation (New-Operation -Anchor 'HWP 스킬 통합 시험')
@@ -341,7 +341,7 @@ Describe 'HWP 참조 개체 편집 실제 한컴 통합 시험' -Tags Native,Ref
             (New-BookmarkOperation -Anchor 'HWP 스킬 통합 시험' -Name '통합시험_제목')
         )
 
-        $session = New-HwpSession
+        $session = New-HwpSession -ExecutionContext (New-TestInteractiveExecutionContext)
         try {
             (Open-HwpDocumentFromMemory -Session $session -LiteralPath $fixtureHwp).Status | Should Be 'PASS'
             $results = @(
@@ -376,7 +376,7 @@ Describe 'HWP 참조 개체 편집 실제 한컴 통합 시험' -Tags Native,Ref
             (New-MergeOperation -Paths @($fixtureHwp) -PageBreakBetween $true -VerifyText '기존 문구' -VerifyCount 2)
         )
 
-        $session = New-HwpSession
+        $session = New-HwpSession -ExecutionContext (New-TestInteractiveExecutionContext)
         try {
             (Open-HwpDocumentFromMemory -Session $session -LiteralPath $fixtureHwp).Status | Should Be 'PASS'
             $results = @(

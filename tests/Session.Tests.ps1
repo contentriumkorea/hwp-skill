@@ -196,6 +196,21 @@ Describe 'Close-HwpSession' {
 }
 
 Describe 'Invoke-HwpPreflight' {
+    It '실행 컨텍스트를 생략하면 silent 기본값으로 차단하고 COM 팩터리를 호출하지 않는다' {
+        $calls = [pscustomobject]@{ Value = 0 }
+        $factory = {
+            param($progId)
+            $calls.Value++
+            throw 'COM 팩터리를 호출하면 안 됩니다.'
+        }.GetNewClosure()
+
+        $result = Invoke-HwpPreflight -ComFactory $factory
+
+        $result.Status | Should Be 'BLOCKED'
+        ($result.Errors -join ' ') | Should Match 'interactive'
+        $calls.Value | Should Be 0
+    }
+
     It '등록된 COM 객체가 없으면 BLOCKED를 반환한다' {
         $result = Invoke-HwpPreflight -ExecutionContext (New-TestInteractiveExecutionContext) -ComFactory { param($progId) throw 'class not registered' }
 

@@ -1,6 +1,18 @@
 $executionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpExecution.psm1'
 $sessionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpSession.psm1'
 
+function Invoke-TestScriptBlockAndCaptureError {
+    param([Parameter(Mandatory)][scriptblock]$ScriptBlock)
+
+    try {
+        & $ScriptBlock
+        $null
+    }
+    catch {
+        $_.Exception.Message
+    }
+}
+
 Describe 'HWP 실행 컨텍스트' {
     It '기본 모드는 silent이며 대화형 창을 허용하지 않는다' {
         Test-Path -LiteralPath $executionModule | Should Be $true
@@ -22,12 +34,8 @@ Describe 'HWP 실행 컨텍스트' {
             throw 'COM 팩터리를 호출하면 안 됩니다.'
         }.GetNewClosure()
 
-        $errorMessage = $null
-        try {
+        $errorMessage = Invoke-TestScriptBlockAndCaptureError {
             New-HwpSession -ExecutionContext (New-HwpExecutionContext) -ComFactory $factory
-        }
-        catch {
-            $errorMessage = $_.Exception.Message
         }
 
         $errorMessage | Should Match 'interactive'
@@ -37,14 +45,28 @@ Describe 'HWP 실행 컨텍스트' {
     It 'interactive 모드만 지정하고 창 허용을 생략하면 거부한다' {
         Import-Module $executionModule -Force
 
-        $errorMessage = $null
-        try {
+        $errorMessage = Invoke-TestScriptBlockAndCaptureError {
             New-HwpExecutionContext -Mode interactive
-        }
-        catch {
-            $errorMessage = $_.Exception.Message
         }
 
         $errorMessage | Should Match 'AllowInteractiveWindow'
+    }
+
+    It '실행 컨텍스트를 생략해도 silent 기본값으로 해석하고 COM 팩터리를 호출하지 않는다' {
+        Import-Module $executionModule -Force
+        Import-Module $sessionModule -Force
+        $calls = [pscustomobject]@{ Value = 0 }
+        $factory = {
+            param($progId)
+            $calls.Value++
+            throw 'COM 팩터리를 호출하면 안 됩니다.'
+        }.GetNewClosure()
+
+        $errorMessage = Invoke-TestScriptBlockAndCaptureError {
+            New-HwpSession -ComFactory $factory
+        }
+
+        $errorMessage | Should Match 'interactive'
+        $calls.Value | Should Be 0
     }
 }
