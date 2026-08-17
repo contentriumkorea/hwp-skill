@@ -25,6 +25,7 @@ Describe 'HWPX 직접 작성 및 최종 변환 경계' {
             title = '직접 HWPX 시험'
             content = @(
                 [pscustomobject]@{ type = 'paragraph'; text = '직접 작성 문단' }
+                [pscustomobject]@{ type = 'paragraph'; text = "줄바꿈 문단 첫 줄`n줄바꿈 문단 둘째 줄" }
                 [pscustomobject]@{
                     type = 'table'
                     rows = 2
@@ -53,6 +54,8 @@ Describe 'HWPX 직접 작성 및 최종 변환 경계' {
         $sessionCalls.Value | Should Be 0
         Test-Path -LiteralPath $output | Should Be $true
         $result.After.Text | Should Match '직접 작성 문단'
+        $result.After.Text | Should Match '줄바꿈 문단 첫 줄'
+        $result.After.Text | Should Match '줄바꿈 문단 둘째 줄'
         @($result.After.Controls | Where-Object CtrlId -eq 'tbl').Count | Should Be 1
         @($result.After.Controls | Where-Object CtrlId -eq 'pic').Count | Should Be 1
     }

@@ -483,6 +483,19 @@ function Move-HwpGenerateArtifactToFailure {
     }
 }
 
+function Test-HwpGenerateTextContains {
+    param(
+        [AllowNull()][string]$Actual,
+        [AllowNull()][string]$Expected
+    )
+
+    if ($null -eq $Actual -or $null -eq $Expected) { return $false }
+    if ($Actual.Contains($Expected, [StringComparison]::Ordinal)) { return $true }
+    $actualNormalized = [Regex]::Replace($Actual, "\r\n|\r|\n", '')
+    $expectedNormalized = [Regex]::Replace($Expected, "\r\n|\r|\n", '')
+    $actualNormalized.Contains($expectedNormalized, [StringComparison]::Ordinal)
+}
+
 function Invoke-HwpGenerateFromTemplate {
     param(
         [Parameter(Mandatory)][string]$TemplatePath,
@@ -798,7 +811,7 @@ function Invoke-HwpGenerateNewDocument {
         $errors.Add("HWPX XML 검사 후 이미지 수가 계획과 다릅니다: $expectedImageCount / $actualImageCount")
     }
     foreach ($block in @($Plan.content)) {
-        if ([string]$block.type -eq 'paragraph' -and -not ([string]$after.Text).Contains([string]$block.text, [StringComparison]::Ordinal)) {
+        if ([string]$block.type -eq 'paragraph' -and -not (Test-HwpGenerateTextContains -Actual ([string]$after.Text) -Expected ([string]$block.text))) {
             $errors.Add("HWPX XML 검사 후 문단을 찾지 못했습니다: $($block.text)")
         }
         if ([string]$block.type -eq 'field' -and -not ([string]$after.Text).Contains([string]$block.value, [StringComparison]::Ordinal)) {
