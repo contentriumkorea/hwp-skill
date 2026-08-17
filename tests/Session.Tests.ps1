@@ -35,6 +35,44 @@ function New-FakeHwpObject {
     $fake
 }
 
+function New-VisibilityTrackingHwpObject {
+    $steps = [Collections.Generic.List[string]]::new()
+
+    $window = [pscustomobject]@{ Steps = $steps }
+    $window | Add-Member ScriptProperty Visible {
+        $false
+    } {
+        param($value)
+        $this.Steps.Add('visible-set')
+    }
+
+    $windows = [pscustomobject]@{}
+    $windows | Add-Member ScriptMethod Item ({
+        param($index)
+        $window
+    }.GetNewClosure())
+
+    $fake = [pscustomobject]@{
+        Steps = $steps
+        XHwpWindows = $windows
+        QuitCount = 0
+        ClearCount = 0
+    }
+    $fake | Add-Member ScriptProperty Version {
+        $this.Steps.Add('version-read')
+        '13, 0, 0, 711'
+    }
+    $fake | Add-Member ScriptMethod Clear {
+        param($option)
+        $this.ClearCount++
+        $true
+    }
+    $fake | Add-Member ScriptMethod Quit {
+        $this.QuitCount++
+    }
+    $fake
+}
+
 Describe 'Register-HwpSecurityModules' {
     It '등록 정보가 없으면 파일을 열기 전에 BLOCKED로 반환한다' {
         $fake = New-FakeHwpObject
@@ -82,6 +120,38 @@ Describe 'Register-HwpSecurityModules' {
 }
 
 Describe 'New-HwpSession' {
+    It '보이지 않는 세션은 COM 속성 조회 전에 창을 숨긴다' {
+        $fake = New-VisibilityTrackingHwpObject
+        $factory = { param($progId) $fake }.GetNewClosure()
+
+        $session = New-HwpSession -ExecutionContext (New-TestInteractiveExecutionContext) -Visible $false -ComFactory $factory
+
+        $fake.Steps[0] | Should Be 'visible-set'
+        $fake.Steps[1] | Should Be 'version-read'
+        Close-HwpSession -Session $session
+    }
+
+    It '보이지 않는 세션은 창을 숨긴 뒤 기존 포커스를 복원한다' {
+        $fake = New-VisibilityTrackingHwpObject
+        $factory = { param($progId) $fake }.GetNewClosure()
+        $restorer = {
+            param($handle)
+            $fake.Steps.Add('foreground-restored')
+        }.GetNewClosure()
+
+        $session = New-HwpSession `
+            -ExecutionContext (New-TestInteractiveExecutionContext) `
+            -Visible $false `
+            -ComFactory $factory `
+            -ForegroundWindowProvider { [IntPtr]777 } `
+            -ForegroundWindowRestorer $restorer
+
+        $fake.Steps[0] | Should Be 'visible-set'
+        $fake.Steps[1] | Should Be 'foreground-restored'
+        $fake.Steps[2] | Should Be 'version-read'
+        Close-HwpSession -Session $session
+    }
+
     It '첫 ProgID가 실패하면 두 번째 ProgID를 사용한다' {
         $fake = New-FakeHwpObject
         $attempts = [Collections.Generic.List[string]]::new()

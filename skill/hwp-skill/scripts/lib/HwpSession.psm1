@@ -7,6 +7,53 @@ function Test-HwpWindowsPlatform {
     [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 }
 
+function Get-HwpForegroundWindowHandle {
+    [CmdletBinding()]
+    param()
+
+    if (-not (Test-HwpWindowsPlatform)) {
+        return [IntPtr]::Zero
+    }
+
+    if ($null -eq ('HwpNativeWindowFocus' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class HwpNativeWindowFocus
+{
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
+}
+'@
+    }
+
+    [HwpNativeWindowFocus]::GetForegroundWindow()
+}
+
+function Restore-HwpForegroundWindowHandle {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][IntPtr]$Handle
+    )
+
+    if (-not (Test-HwpWindowsPlatform) -or $Handle -eq [IntPtr]::Zero) {
+        return
+    }
+
+    try {
+        $current = [HwpNativeWindowFocus]::GetForegroundWindow()
+        if ($current -ne $Handle) {
+            $null = [HwpNativeWindowFocus]::SetForegroundWindow($Handle)
+        }
+    }
+    catch {
+        # 포커스 복원은 보조 안전장치이며 세션 생성 실패로 승격하지 않는다.
+    }
+}
+
 function Resolve-HwpSessionProcessOwnership {
     [CmdletBinding()]
     param(
@@ -131,6 +178,11 @@ function New-HwpSession {
             param($hwp,$beforeProcessIds,$isComObject)
             Resolve-HwpSessionProcessOwnership -Hwp $hwp -BeforeProcessIds $beforeProcessIds -IsComObject:$isComObject
         },
+        [scriptblock]$ForegroundWindowProvider = { Get-HwpForegroundWindowHandle },
+        [scriptblock]$ForegroundWindowRestorer = {
+            param($handle)
+            Restore-HwpForegroundWindowHandle -Handle ([IntPtr]$handle)
+        },
         [ValidateRange(1, 10)]
         [int]$RetryCount = 3,
         [ValidateRange(0, 5000)]
@@ -146,25 +198,46 @@ function New-HwpSession {
             $hwp = $null
             try {
                 [int[]]$beforeProcessIds = @(& $ProcessIdProvider)
+                [IntPtr]$previousForegroundWindow = [IntPtr]::Zero
+                if (-not $Visible) {
+                    try {
+                        $previousForegroundWindow = [IntPtr](& $ForegroundWindowProvider)
+                    }
+                    catch {
+                        $previousForegroundWindow = [IntPtr]::Zero
+                    }
+                }
                 $hwp = & $ComFactory $progId
                 if ($null -eq $hwp) {
                     throw "$progId 생성 결과가 비어 있습니다."
                 }
 
                 $isComObject = [Runtime.InteropServices.Marshal]::IsComObject($hwp)
+
+                # HWP COM은 첫 속성 조회 전에 창을 만들고 전면으로 가져올 수 있다.
+                # 보이지 않는 세션은 버전·동작 확인보다 먼저 창을 숨겨 시작 UI 노출을 줄인다.
+                try {
+                    $hwp.XHwpWindows.Item(0).Visible = $Visible
+                }
+                catch {
+                    # 창이 만들어지기 전이거나 시험용 객체인 경우에는 아래 검증을 계속한다.
+                }
+
+                if (-not $Visible -and $previousForegroundWindow -ne [IntPtr]::Zero) {
+                    try {
+                        & $ForegroundWindowRestorer $previousForegroundWindow
+                    }
+                    catch {
+                        # 포커스 복원 실패가 문서 작업 자체를 중단시키지는 않는다.
+                    }
+                }
+
                 if ($isComObject) {
                     $version = [string]$hwp.Version
                     $null = $hwp.IsActionEnable('InsertText')
                 }
                 else {
                     $version = try { [string]$hwp.Version } catch { 'unknown' }
-                }
-
-                try {
-                    $hwp.XHwpWindows.Item(0).Visible = $Visible
-                }
-                catch {
-                    # 창이 만들어지기 전이거나 시험용 객체인 경우에도 세션 자체는 유효할 수 있다.
                 }
 
                 $ownership = & $ProcessOwnershipResolver $hwp $beforeProcessIds $isComObject
