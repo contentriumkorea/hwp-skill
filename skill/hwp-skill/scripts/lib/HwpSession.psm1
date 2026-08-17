@@ -54,6 +54,33 @@ function Restore-HwpForegroundWindowHandle {
     }
 }
 
+function Enter-HwpForegroundGuard {
+    [CmdletBinding()]
+    param()
+
+    if (-not (Test-HwpWindowsPlatform)) { return $false }
+    if ($null -eq ('HwpNativeForegroundGuard' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class HwpNativeForegroundGuard
+{
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool LockSetForegroundWindow(uint uLockCode);
+}
+'@
+    }
+    try { return [bool][HwpNativeForegroundGuard]::LockSetForegroundWindow(1) } catch { return $false }
+}
+
+function Exit-HwpForegroundGuard {
+    [CmdletBinding()]
+    param()
+
+    if (-not (Test-HwpWindowsPlatform) -or $null -eq ('HwpNativeForegroundGuard' -as [type])) { return }
+    try { $null = [HwpNativeForegroundGuard]::LockSetForegroundWindow(2) } catch { }
+}
+
 function Resolve-HwpSessionProcessOwnership {
     [CmdletBinding()]
     param(
@@ -196,6 +223,7 @@ function New-HwpSession {
     for ($attempt = 1; $attempt -le $RetryCount; $attempt++) {
         foreach ($progId in 'HWPFrame.HwpObject.2', 'HWPFrame.HwpObject') {
             $hwp = $null
+            $foregroundLocked = $false
             try {
                 [int[]]$beforeProcessIds = @(& $ProcessIdProvider)
                 [IntPtr]$previousForegroundWindow = [IntPtr]::Zero
@@ -206,6 +234,9 @@ function New-HwpSession {
                     catch {
                         $previousForegroundWindow = [IntPtr]::Zero
                     }
+                }
+                if (-not $Visible) {
+                    $foregroundLocked = Enter-HwpForegroundGuard
                 }
                 $hwp = & $ComFactory $progId
                 if ($null -eq $hwp) {
@@ -252,6 +283,10 @@ function New-HwpSession {
                     throw "새 전용 한글 프로세스 소유권을 확인하지 못했습니다: $reason"
                 }
 
+                if ($foregroundLocked) {
+                    Exit-HwpForegroundGuard
+                    $foregroundLocked = $false
+                }
                 return [pscustomobject]@{
                     Hwp = $hwp
                     ProgId = $progId
@@ -264,6 +299,10 @@ function New-HwpSession {
                 }
             }
             catch {
+                if ($foregroundLocked) {
+                    Exit-HwpForegroundGuard
+                    $foregroundLocked = $false
+                }
                 $lastErrorMessage = $_.Exception.Message
                 if ($null -ne $hwp -and [Runtime.InteropServices.Marshal]::IsComObject($hwp)) {
                     try { $null = [Runtime.InteropServices.Marshal]::FinalReleaseComObject($hwp) } catch { }

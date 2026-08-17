@@ -162,17 +162,18 @@ Describe 'HWP silent acceptance gate' {
         Assert-NoHwpActivity -Observation $result
     }
 
-    It 'unsupported silent generate는 차단되고 창이나 포커스를 만들지 않는다' {
+    It 'silent HWPX generate는 직접 작성되고 창이나 포커스를 만들지 않는다' {
         $planPath = Join-Path $TestDrive 'generate.plan.json'
         $outputPath = Join-Path $TestDrive 'generated.hwpx'
         [IO.File]::WriteAllText($planPath, ((New-SilentGeneratePlan) | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
 
         $result = Invoke-SilentCliJson -Arguments @('generate', '-NewDocument', '-PlanPath', $planPath, '-OutputPath', $outputPath)
 
-        $result.ExitCode | Should Be 2
-        $result.Json.status | Should Be 'BLOCKED'
+        $result.ExitCode | Should Be 0
+        $result.Json.status | Should Be 'PASS_WITH_WARNINGS'
+        $result.Json.data.After.detectedKind | Should Be 'HWPX-ZIP'
         Assert-NoHwpActivity -Observation $result
-        Test-Path -LiteralPath $outputPath | Should Be $false
+        Test-Path -LiteralPath $outputPath | Should Be $true
     }
 }
 

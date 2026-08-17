@@ -14,9 +14,8 @@ Windows에서 `.hwp`, `.hwt`, `.hwpx`를 다루기 위한 Codex 스킬 저장소
 
 HWP Skill은 콘텐츠리움(Contentrium)이 공공기관·교육기관 콘텐츠를 제작하며 반복해서
 마주친 한글 문서 작업을 더 안전하고 재현 가능하게 만들기 위해 시작한 오픈소스
-프로젝트입니다. 단순히 글자를 추출하는 데서 끝내지 않고, 실제 한컴오피스 엔진으로
-문서를 읽고 원본을 보존한 채 수정본을 만든 다음 다시 열어 검증하는 업무 흐름을
-담았습니다.
+프로젝트입니다. 본문·표·이미지를 HWPX 직접 엔진으로 만들고 검사하며, HWP 납품이
+필요한 경우에만 마지막 숨김 변환을 사용하는 업무 흐름을 담았습니다.
 
 Contentrium은 영상·디자인·웹·AI 기술을 연결해 공공 콘텐츠의 기획과 제작 과정을
 개선합니다. 이 저장소도 현장에서 얻은 경험을 누구나 검토하고 확장할 수 있는 도구로
@@ -34,29 +33,34 @@ Contentrium은 영상·디자인·웹·AI 기술을 연결해 공공 콘텐츠�
 
 1. 기본 `silent`는 현재 사용자 세션의 `Hwp.exe`를 실행하지 않고, 사용자 포커스를
    바꾸지 않으며, 결과 파일도 자동으로 열지 않습니다.
-2. `silent`는 `.hwpx`를 직접 엔진으로 읽기 전용 검사할 수 있습니다.
-3. HWP/HWT `hwp-portable` 엔진은 아직 준비되지 않아 `silent` 읽기·작성·편집은
-   `BLOCKED`입니다.
-4. `interactive`는 사용자가 현재 요청에서 한컴 창 실행을 명시했을 때만 선택합니다.
-   `승인`이나 `진행`만으로는 interactive 선택을 승인한 것으로 보지 않습니다.
-5. `isolated-native`는 별도 작업자가 구성되지 않았으면 `BLOCKED`입니다.
+2. `silent`는 `.hwpx`를 직접 엔진으로 읽고 새 문서를 작성할 수 있습니다. 문단·표·필드는
+   ZIP/XML에 직접 기록하고, 이미지는 BinData에 넣어 보안모듈 경고 없이 연결합니다.
+3. 최종 확장자가 HWP일 때만 별도 숨김 작업자가 완성된 HWPX를 HWP 바이너리로
+   변환합니다. 변환 전까지는 한컴오피스를 실행하지 않습니다.
+4. HWPX 직접 작성은 한컴 설치 없이도 동작합니다. HWP 최종 변환은 HWP 호환
+   변환 엔진이 필요하며, 사용할 수 없으면 HWPX를 가짜 HWP로 이름만 바꾸지 않고
+   안전하게 중단합니다.
+5. HWP/HWT 기존 양식 편집은 직접 HWPX 가져오기·편집기가 준비될 때까지 자동
+   한컴 실행을 막고 HWPX 양식을 요구합니다.
 6. 준비되지 않은 기능을 만나도 GUI로 자동 전환하지 않습니다.
 
 ## 현재 지원 상태
 
 | 항목 | 상태 | 설명 |
 |---|---|---|
-| `silent` HWPX 읽기·검사 | 지원 | ZIP/XML 직접 엔진 기반 읽기 전용 검사 |
-| `silent` HWP/HWT 읽기·작성·편집 | `BLOCKED` | `hwp-portable`이 준비되지 않음 |
-| `interactive` 네이티브 실행 | 조건부 | 현재 요청에서 한컴 창 실행을 명시한 경우만 |
-| `isolated-native` 실행 | 조건부 | 별도 작업자가 구성된 경우만 |
-| 이미지 삽입·교체 | 조건부 | 실행 모드와 보안 모듈이 모두 준비돼야 함 |
+| `silent` HWPX 읽기·검사 | 지원 | ZIP/XML 직접 엔진 기반 |
+| `silent` 새 문서 HWPX 작성 | 지원 | 문단·표·필드·이미지 직접 패키징 |
+| `silent` 새 문서 HWP 작성 | 조건부 | HWPX 작성 후 마지막 숨김 변환 |
+| HWP/HWT 기존 양식 편집 | 현재 차단 | 한컴을 작업 중 실행하지 않도록 HWPX 양식 요구 |
+| 이미지 삽입 | 지원 | HWPX BinData 직접 삽입, 보안모듈 불필요 |
+| `interactive` 네이티브 실행 | 예외 | 사용자가 창 표시를 명시한 경우만 |
 | PDF·페이지 이미지 | 조건부 | 실행 모드와 로컬 렌더러가 모두 준비돼야 함 |
 | 기존에 열린 한글 문서 제어 | 제외 | 현재 사용자 세션 보호를 위한 의도적 제한 |
 
-Phase 1은 휴대형 HWP 엔진 완성을 주장하지 않습니다. `hwp-portable`은 아직
-준비되지 않았고, 현재 사용자 세션의 `Hwp.exe`도 기본 `silent` 경로에서는 실행하지
-않습니다.
+Phase 1은 HWP 바이너리를 직접 작성한다고 주장하지 않습니다. HWP 결과가 필요할 때는
+HWPX를 먼저 완성·검사한 다음 마지막 변환만 별도 작업자에 맡깁니다. 이때 한컴오피스가
+없는 컴퓨터에서는 HWPX 결과까지 만들 수 있고, HWP가 꼭 필요하면 별도 HWP 변환
+엔진을 설치해야 합니다.
 
 자세한 제한은 [지원 환경과 제한 사항](skill/hwp-skill/references/limitations.md)을
 확인하세요.
@@ -66,14 +70,15 @@ Phase 1은 휴대형 HWP 엔진 완성을 주장하지 않습니다. `hwp-portab
 - Windows
 - Windows PowerShell 5.1 또는 PowerShell 7 이상
 - Codex에서 스킬로 사용할 경우 Codex 데스크톱 또는 CLI
-- `.hwpx` 읽기 전용 검사는 추가 GUI 실행 없이 동작
-- `interactive`나 `isolated-native` 경로를 쓰려면 해당 엔진과 작업자 구성을 별도로
-  준비해야 함
-- 이미지·PDF·페이지 이미지 기능에는 사용자가 공식 절차로 등록한 한컴 파일 경로
-  보안 모듈
+- HWPX 직접 작성·검사는 추가 GUI 실행 없이 동작
+- HWP 최종 변환을 요청하면 한컴 호환 변환 엔진과 숨김 작업자 구성이 필요함
+- 새 HWPX 문서의 이미지 삽입에는 한컴 파일 경로 보안 모듈이 필요하지 않음
+- HWP/HWT 원본의 네이티브 편집·PDF·페이지 이미지 기능에는 사용자가 공식 절차로
+  등록한 한컴 파일 경로 보안 모듈이 필요할 수 있음
 
 저장소는 한컴오피스, 보안 DLL, `hwp-portable`, 모든 경로를 허용하는 예제 모듈을
-포함하거나 자동 설치하지 않습니다.
+포함하거나 자동 설치하지 않습니다. `hwp-portable`이 준비되지 않은 경우에도 HWPX
+작업은 계속할 수 있지만, HWP 최종 결과는 만들지 않고 안전하게 보존합니다.
 
 ## 설치
 
@@ -118,7 +123,7 @@ junction, 심볼릭 링크 같은 재분석 지점이 발견되면 기존 설치
 복잡한 명령을 직접 외우지 않아도 됩니다. 다음처럼 요청하세요.
 
 ```text
-$hwp-skill로 이 HWP 파일이 제대로 읽히는지 확인해 줘.
+$hwp-skill로 이 HWPX 파일이 제대로 읽히는지 확인해 줘.
 ```
 
 ```text
@@ -131,7 +136,8 @@ $hwp-skill로 이 보고서의 "2025년"을 "2026년"으로 바꿔 줘.
 ```
 
 ```text
-$hwp-skill로 이 HWT 양식의 담당자와 사업명을 채워 별도 HWP로 만들어 줘.
+$hwp-skill로 이 HWPX 양식의 담당자와 사업명을 채워 별도 HWP로 만들어 줘.
+작업은 HWPX로 끝낸 뒤 마지막에만 HWP로 변환해 줘.
 ```
 
 ```text
@@ -148,10 +154,11 @@ $hwp-skill로 이 폴더의 HWP들을 먼저 미리보기만 하고, 어떤 파�
 기본 `silent`는 현재 사용자 세션의 `Hwp.exe`를 실행하지 않고 포커스를 가져오지
 않습니다.
 
-이 섹션의 Phase 1 계약은 분명합니다. `silent` HWP/HWT 경로는 현재 `BLOCKED`이며,
-아래 HWP/HWT 네이티브 예시는 미래 구현이 아니라 명시적으로 승인된 `interactive`
-예외일 때만 사용합니다. 이 예외는 한컴을 열 수 있고 사용자 화면에 창이 보일 수
-있습니다.
+이 섹션의 계약은 분명합니다. Codex 작업은 항상 HWPX에서 진행합니다. 새 HWP 결과가
+필요하면 HWPX를 완성하고 검증한 뒤 마지막에만 숨김 변환합니다. HWP/HWT 기존 양식의
+네이티브 편집은 HWPX 양식으로 준비되지 않은 경우 현재 자동 경로에서 차단합니다.
+사용자가 한컴 창을 열어 화면에 보이게 작업하라고 명시한 경우에만 아래 interactive
+예외를 사용할 수 있습니다.
 
 ### 1. 환경 확인
 
@@ -175,29 +182,41 @@ $cli = ".\skill\hwp-skill\scripts\Invoke-HwpSkill.ps1"
 & $cli validate-plan -PlanPath "C:\작업\replace.plan.json"
 ```
 
-### 4. HWP/HWT inspect는 Phase 1 silent에서 BLOCKED
+### 4. HWPX 새 문서 작성
 
 ```powershell
-& $cli inspect -LiteralPath "C:\문서\보고서.hwp"
+& $cli generate -NewDocument `
+  -PlanPath ".\skill\hwp-skill\examples\generate-new.plan.json" `
+  -OutputPath "C:\문서\새문서.hwpx"
 ```
 
-이 호출은 기본 `silent`에서 `BLOCKED`를 반환합니다. `hwp-portable`이 준비되지 않은
-상태에서 GUI로 자동 전환하지 않습니다.
+이 경로는 한컴 창을 열지 않고 HWPX ZIP/XML에 직접 작성합니다. 문단·표·필드·이미지가
+모두 HWPX 작업본에 들어간 뒤 구조 검사를 통과해야 결과를 승격합니다.
 
-### 5. HWP/HWT 네이티브 inspect 예외
+### 5. HWP 최종 결과 만들기
+
+출력 확장자만 HWP로 지정합니다. 내부 작업은 HWPX로 고정되고, 최종 검증이 끝난 뒤
+숨김 변환 작업자가 한 번만 HWP를 만듭니다.
+
+```powershell
+& $cli generate -NewDocument `
+  -PlanPath ".\skill\hwp-skill\examples\generate-new.plan.json" `
+  -OutputPath "C:\문서\새문서.hwp"
+```
+
+변환 엔진을 사용할 수 없으면 HWPX 중간 결과를 보존하고 HWP를 만들지 않습니다. HWPX
+확장자만 HWP로 바꾸는 방식은 사용하지 않습니다.
+
+### 6. HWP/HWT 기존 양식 편집
+
+HWP/HWT 원본을 직접 열어 내용을 채우는 자동 경로는 현재 차단합니다. 한컴 창을
+보이게 열어 작업하라는 명시적 요청이 있거나, 먼저 HWPX 양식으로 변환해 준비된 경우에
+한해 별도 경로를 검토합니다.
+
+### 7. 명시적 interactive 예외
 
 사용자가 현재 요청에서 한컴 창을 열어 화면에 보이게 작업하라고 명시한 경우에만 다음
-예외를 사용합니다. 단순한 `승인`이나 `진행`은 이 예외가 아닙니다. 이 경로는 한컴을
-열 수 있습니다.
-
-```powershell
-& $cli inspect `
-  -LiteralPath "C:\문서\보고서.hwp" `
-  -ExecutionMode interactive `
-  -AllowInteractiveWindow
-```
-
-### 6. HWP/HWT apply 예외
+예외를 사용합니다. 단순한 `승인`이나 `진행`은 이 예외가 아닙니다.
 
 ```powershell
 & $cli apply `
@@ -208,19 +227,9 @@ $cli = ".\skill\hwp-skill\scripts\Invoke-HwpSkill.ps1"
   -AllowInteractiveWindow
 ```
 
-이 예외도 명시적으로 승인된 `interactive`에서만 사용합니다. `OutputPath`를 생략하면
+이 예외는 HWP/HWT 원본을 직접 수정할 때만 사용합니다. `OutputPath`를 생략하면
 원본 폴더에 `_수정본_날짜시간`이 붙은 새 이름을 만듭니다. 원본과 같은 경로는
 거부합니다.
-
-### 7. HWP/HWT generate 예외
-
-```powershell
-& $cli generate -NewDocument `
-  -PlanPath ".\skill\hwp-skill\examples\generate-new.plan.json" `
-  -OutputPath "C:\문서\새문서.hwp" `
-  -ExecutionMode interactive `
-  -AllowInteractiveWindow
-```
 
 ### 8. HWP/HWT batch 예외
 
@@ -268,8 +277,9 @@ PDF·페이지 이미지가 생성되지 않았다는 경고가 반환됩니다.
 ### Phase 1 계약
 
 - 기본 `silent`는 현재 사용자 세션의 `Hwp.exe`를 실행하지 않는다.
-- `silent HWP/HWT` inspect, apply, generate, batch, verify는 현재 `BLOCKED`다.
-- `silent`는 HWPX inspect만 GUI 없이 사용 가능하다.
+- `silent`는 HWPX 읽기·작성·표·이미지·구조 검사를 GUI 없이 수행한다.
+- 새 HWP 결과도 HWPX 작업본을 먼저 완성한 뒤 마지막 숨김 변환으로 만든다.
+- HWP/HWT 기존 양식의 네이티브 편집은 HWPX 양식이 준비되지 않으면 자동 실행하지 않는다.
 - 준비되지 않은 엔진을 만나도 GUI로 자동 전환하지 않는다.
 - 결과 파일 자동 열기와 포커스 탈취를 하지 않는다.
 - HWPX ZIP 경로 탈출, 압축 폭탄, XML 외부 개체를 차단한다.
@@ -280,15 +290,15 @@ PDF·페이지 이미지가 생성되지 않았다는 경고가 반환됩니다.
 
 - 원본 작업 전후 SHA-256 확인
 - 확장자뿐 아니라 실제 파일 시그니처 검사
-- 명시적으로 승인된 interactive에서만 HWP/HWT를 열고 편집하거나 저장
+- 명시적으로 승인된 interactive에서만 HWP/HWT 원본을 열고 편집하거나 저장
 - 임시 파일 저장 → 재열기 검사 → 최종 결과 승격
 - 실패 결과와 완성 결과 분리
 - 고급 작업의 명시적 승인 요구
 - 고급 작업은 계획 기록과 실행 시 `-ApproveAdvanced`를 모두 요구
 - 반복 문구가 둘 이상이면 추측하지 않고 중단
 
-위 native 편집 흐름은 미래 구현 설명이 아니라, 현재 저장소에서 허용되는 경우에도
-명시적으로 승인된 interactive 예외로만 해석해야 합니다.
+위 native 편집 흐름은 HWPX 직접 작업의 기본 경로가 아니라, 사용자가 창 표시를
+명시한 경우에만 허용되는 예외입니다.
 
 세부 정책과 복구 절차는 [안전 및 복구 정책](skill/hwp-skill/references/safety.md)을
 참조하세요.
@@ -303,9 +313,9 @@ PDF·페이지 이미지가 생성되지 않았다는 경고가 반환됩니다.
 .\tests\run-tests.ps1 -Suite Static
 ```
 
-네이티브 통합 시험은 실제 한컴오피스를 시작할 수 있으므로 기본 `silent` 공개 계약과
-분리해서 봐야 합니다. 현재 사용자 세션의 `Hwp.exe`를 실행하지 않는 기본 동작을
-검증할 때는 정적 시험과 `silent` 스모크를 우선 사용합니다. `Native`와 `All`은
+최종 HWP 변환 통합 시험은 실제 한컴오피스를 시작할 수 있으므로 기본 `silent` 공개
+계약과 분리해서 봐야 합니다. HWPX 직접 작업과 현재 사용자 세션의 `Hwp.exe`를
+실행하지 않는 기본 동작을 검증할 때는 정적 시험과 `silent` 스모크를 우선 사용합니다. `Native`와 `All`은
 `-AllowInteractiveNative`가 없으면 시험 수집 전에 종료 코드 2로 차단되며, 승인되지
 않은 네이티브 시험을 단순히 건너뛰는 방식으로 처리하지 않습니다.
 
@@ -344,7 +354,9 @@ skill/hwp-skill/
 ├─ SKILL.md
 ├─ agents/openai.yaml
 ├─ scripts/Invoke-HwpSkill.ps1
+├─ scripts/workers/Convert-HwpxToHwp.ps1
 ├─ scripts/lib/*.psm1
+├─ templates/default.hwpx
 ├─ schemas/*.schema.json
 ├─ examples/*.json
 └─ references/*.md

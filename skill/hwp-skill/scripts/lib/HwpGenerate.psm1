@@ -8,6 +8,8 @@ Import-Module (Join-Path $PSScriptRoot 'HwpSession.psm1') -ErrorAction Stop
 Import-Module (Join-Path $PSScriptRoot 'HwpInspect.psm1') -ErrorAction Stop
 Import-Module (Join-Path $PSScriptRoot 'HwpPlan.psm1') -ErrorAction Stop
 Import-Module (Join-Path $PSScriptRoot 'HwpEdit.psm1') -ErrorAction Stop
+Import-Module (Join-Path $PSScriptRoot 'HwpHwpx.psm1') -ErrorAction Stop
+Import-Module (Join-Path $PSScriptRoot 'HwpConvert.psm1') -ErrorAction Stop
 
 function Test-HwpGenerateProperty {
     param(
@@ -455,6 +457,32 @@ function Move-HwpGenerateStagingToFailure {
     }
 }
 
+function Move-HwpGenerateArtifactToFailure {
+    param(
+        [Parameter(Mandatory)][string]$StagingPath,
+        [Parameter(Mandatory)][string]$OutputPath
+    )
+
+    if (-not (Test-Path -LiteralPath $StagingPath -PathType Leaf)) { return '' }
+    $directory = [IO.Path]::GetDirectoryName($OutputPath)
+    $name = [IO.Path]::GetFileNameWithoutExtension($OutputPath)
+    $extension = [IO.Path]::GetExtension($StagingPath)
+    $stamp = (Get-Date).ToString('yyyyMMdd_HHmmss')
+    $candidate = [IO.Path]::Combine($directory, ('{0}_{1}.failed{2}' -f $name, $stamp, $extension))
+    $sequence = 1
+    while (Test-Path -LiteralPath $candidate) {
+        $candidate = [IO.Path]::Combine($directory, ('{0}_{1}_{2:D2}.failed{3}' -f $name, $stamp, $sequence, $extension))
+        $sequence++
+    }
+    try {
+        [IO.File]::Move($StagingPath, $candidate)
+        return $candidate
+    }
+    catch {
+        return ''
+    }
+}
+
 function Invoke-HwpGenerateFromTemplate {
     param(
         [Parameter(Mandatory)][string]$TemplatePath,
@@ -480,11 +508,12 @@ function Invoke-HwpGenerateFromTemplate {
     if (-not $kind.ExtensionMatches -or $kind.DetectedKind -ne 'HWP-BINARY') {
         return New-HwpGenerateResult -Status BLOCKED -Mode template -TemplatePath $kind.Path `
             -TemplateSha256 $templateHash -Errors @(
-                '현재 안전한 양식 생성은 실제 형식이 HWP 바이너리인 HWP 또는 HWT만 지원합니다.'
+                'HWP/HWT 양식 수정은 한컴을 작업 단계에서 실행하지 않도록 현재 자동 경로를 차단했습니다. HWPX로 변환한 양식을 사용해 주세요.'
             )
     }
     $route = Resolve-HwpBackend -Command generate -DetectedKind $kind.DetectedKind `
         -ExecutionContext $ExecutionContext -Capabilities $Capabilities
+    return New-HwpGenerateResult -Status BLOCKED -Mode template -TemplatePath $kind.Path -TemplateSha256 $templateHash -Errors @('HWP/HWT 양식 수정은 한컴을 작업 단계에서 실행하지 않도록 현재 자동 경로를 차단했습니다. HWPX로 변환한 양식을 사용해 주세요.')
     if ($route.Status -ne 'PASS') {
         return New-HwpGenerateResult -Status $route.Status -Mode template -TemplatePath $kind.Path `
             -TemplateSha256 $templateHash -Warnings @($route.Warnings) -Errors @($route.Errors)
@@ -687,6 +716,149 @@ function Invoke-HwpGenerateNewDocument {
         -OperationResults @($operationResults) -Warnings @($warnings)
 }
 
+function Invoke-HwpGenerateNewDocument {
+    param(
+        [Parameter(Mandatory)][object]$Plan,
+        [Parameter(Mandatory)][string]$OutputPath,
+        [object]$ExecutionContext = (New-HwpExecutionContext),
+        [object]$Capabilities = (Get-HwpCapabilitySnapshot -ExecutionContext $ExecutionContext),
+        [scriptblock]$SessionFactory = { param($executionContext) New-HwpSession -ExecutionContext $executionContext },
+        [scriptblock]$Inspector = {
+            param($path, $executionContext, $capabilities)
+            Get-HwpInspection -LiteralPath $path -ExecutionContext $executionContext -Capabilities $capabilities
+        }
+    )
+
+    $validation = Test-HwpNewDocumentPlan -Plan $Plan
+    if ($validation.Status -ne 'PASS') {
+        return New-HwpGenerateResult -Status BLOCKED -Mode new-document -Errors @($validation.Errors)
+    }
+    $resolvedOutput = [IO.Path]::GetFullPath($OutputPath)
+    try {
+        $requestedFormat = Get-HwpRequestedFormat -OutputPath $resolvedOutput
+    }
+    catch {
+        return New-HwpGenerateResult -Status BLOCKED -Mode new-document -OutputPath $resolvedOutput -Errors @($_.Exception.Message)
+    }
+    if (Test-Path -LiteralPath $resolvedOutput) {
+        return New-HwpGenerateResult -Status BLOCKED -Mode new-document -OutputPath $resolvedOutput -Errors @("기존 결과를 덮어쓰지 않습니다: $resolvedOutput")
+    }
+    $directory = [IO.Path]::GetDirectoryName($resolvedOutput)
+    if (-not (Test-Path -LiteralPath $directory -PathType Container)) {
+        return New-HwpGenerateResult -Status BLOCKED -Mode new-document -OutputPath $resolvedOutput -Errors @("결과 폴더가 없습니다: $directory")
+    }
+
+    # 출력 확장자가 HWP여도 작업 라우팅은 항상 HWPX 직접 작성으로 고정한다.
+    $route = Resolve-HwpBackend -Command generate -DetectedKind NONE -RequestedFormat 'hwpx' -ExecutionContext $ExecutionContext -Capabilities $Capabilities
+    if ($route.Status -ne 'PASS') {
+        return New-HwpGenerateResult -Status $route.Status -Mode new-document -OutputPath $resolvedOutput -Warnings @($route.Warnings) -Errors @($route.Errors)
+    }
+    if ($route.BackendId -ne 'hwpx-direct') {
+        return New-HwpGenerateResult -Status BLOCKED -Mode new-document -OutputPath $resolvedOutput -Errors @("HWPX 직접 작성 백엔드를 선택하지 못했습니다: $($route.BackendId)")
+    }
+
+    $hwpxStaging = [IO.Path]::Combine($directory, ('{0}.{1}.partial.hwpx' -f [IO.Path]::GetFileNameWithoutExtension($resolvedOutput), [guid]::NewGuid().ToString('n')))
+    $operationResults = [Collections.Generic.List[object]]::new()
+    $warnings = [Collections.Generic.List[string]]::new()
+    $errors = [Collections.Generic.List[string]]::new()
+    $direct = Invoke-HwpxGenerateDocument -Plan $Plan -OutputPath $hwpxStaging
+    $operationResults.Add($direct)
+    foreach ($warning in @($direct.Warnings)) { $warnings.Add([string]$warning) }
+    if ($direct.Status -notin 'PASS','PASS_WITH_WARNINGS') {
+        foreach ($message in @($direct.Errors)) { $errors.Add([string]$message) }
+        $failedArtifactPath = Move-HwpGenerateArtifactToFailure -StagingPath $hwpxStaging -OutputPath $resolvedOutput
+        return New-HwpGenerateResult -Status $direct.Status -Mode new-document -OutputPath $resolvedOutput -OperationResults @($operationResults) -FailedArtifactPath $failedArtifactPath -Warnings @($warnings) -Errors @($errors)
+    }
+
+    $after = $null
+    try {
+        $after = & $Inspector $hwpxStaging $ExecutionContext $Capabilities
+    }
+    catch {
+        $errors.Add("직접 생성된 HWPX 검사 중 오류가 발생했습니다: $($_.Exception.Message)")
+    }
+    if ($null -eq $after) {
+        $failedArtifactPath = Move-HwpGenerateArtifactToFailure -StagingPath $hwpxStaging -OutputPath $resolvedOutput
+        return New-HwpGenerateResult -Status FAILED -Mode new-document -OutputPath $resolvedOutput -OperationResults @($operationResults) -FailedArtifactPath $failedArtifactPath -Warnings @($warnings) -Errors @($errors)
+    }
+    foreach ($warning in @($after.Warnings)) { $warnings.Add([string]$warning) }
+    if ($after.Status -notin 'PASS','PASS_WITH_WARNINGS') {
+        $failedArtifactPath = Move-HwpGenerateArtifactToFailure -StagingPath $hwpxStaging -OutputPath $resolvedOutput
+        return New-HwpGenerateResult -Status FAILED -Mode new-document -OutputPath $resolvedOutput -After $after -OperationResults @($operationResults) -FailedArtifactPath $failedArtifactPath -Warnings @($warnings) -Errors @($after.Errors)
+    }
+
+    $actualTableCount = @($after.Controls | Where-Object { $_.CtrlId -eq 'tbl' }).Count
+    $expectedTableCount = @($Plan.content | Where-Object { $_.type -eq 'table' }).Count
+    if ($actualTableCount -ne $expectedTableCount) {
+        $errors.Add("HWPX XML 검사 후 표 수가 계획과 다릅니다: $expectedTableCount / $actualTableCount")
+    }
+    $actualImageCount = @($after.Controls | Where-Object { $_.CtrlId -eq 'pic' }).Count
+    $expectedImageCount = @($Plan.content | Where-Object { $_.type -eq 'image' }).Count
+    if ($actualImageCount -ne $expectedImageCount) {
+        $errors.Add("HWPX XML 검사 후 이미지 수가 계획과 다릅니다: $expectedImageCount / $actualImageCount")
+    }
+    foreach ($block in @($Plan.content)) {
+        if ([string]$block.type -eq 'paragraph' -and -not ([string]$after.Text).Contains([string]$block.text, [StringComparison]::Ordinal)) {
+            $errors.Add("HWPX XML 검사 후 문단을 찾지 못했습니다: $($block.text)")
+        }
+        if ([string]$block.type -eq 'field' -and -not ([string]$after.Text).Contains([string]$block.value, [StringComparison]::Ordinal)) {
+            $errors.Add("HWPX XML 검사 후 필드값을 찾지 못했습니다: $($block.name)")
+        }
+        if ([string]$block.type -eq 'table') {
+            foreach ($cell in @($block.cells)) {
+                if (-not ([string]$after.Text).Contains([string]$cell.text, [StringComparison]::Ordinal)) {
+                    $errors.Add("HWPX XML 검사 후 표 셀 문구를 찾지 못했습니다: $($cell.text)")
+                }
+            }
+        }
+    }
+    if ($errors.Count -gt 0) {
+        $failedArtifactPath = Move-HwpGenerateArtifactToFailure -StagingPath $hwpxStaging -OutputPath $resolvedOutput
+        return New-HwpGenerateResult -Status FAILED -Mode new-document -OutputPath $resolvedOutput -After $after -OperationResults @($operationResults) -FailedArtifactPath $failedArtifactPath -Warnings @($warnings) -Errors @($errors)
+    }
+
+    $conversion = $null
+    $artifactToPromote = $hwpxStaging
+    $hwpStaging = ''
+    if ($requestedFormat -eq 'hwp') {
+        $hwpStaging = [IO.Path]::Combine($directory, ('{0}.{1}.partial.hwp' -f [IO.Path]::GetFileNameWithoutExtension($resolvedOutput), [guid]::NewGuid().ToString('n')))
+        try {
+            $conversion = Invoke-HwpFinalHwpxToHwp -InputPath $hwpxStaging -OutputPath $hwpStaging
+            $operationResults.Add($conversion)
+            $artifactToPromote = $hwpStaging
+        }
+        catch {
+            $errors.Add("최종 HWP 변환에 실패했습니다: $($_.Exception.Message)")
+            $failedArtifactPath = Move-HwpGenerateArtifactToFailure -StagingPath $hwpxStaging -OutputPath $resolvedOutput
+            $failedHwpPath = Move-HwpGenerateArtifactToFailure -StagingPath $hwpStaging -OutputPath $resolvedOutput
+            if (-not [string]::IsNullOrWhiteSpace($failedHwpPath)) { $failedArtifactPath = $failedHwpPath }
+            return New-HwpGenerateResult -Status FAILED -Mode new-document -OutputPath $resolvedOutput -After $after -OperationResults @($operationResults) -FailedArtifactPath $failedArtifactPath -Warnings @($warnings) -Errors @($errors)
+        }
+    }
+
+    try {
+        if (Test-Path -LiteralPath $resolvedOutput) {
+            throw "검증 중 결과 경로가 새로 생성되어 덮어쓰지 않습니다: $resolvedOutput"
+        }
+        [IO.File]::Move($artifactToPromote, $resolvedOutput)
+        if ($requestedFormat -eq 'hwp' -and (Test-Path -LiteralPath $hwpxStaging)) {
+            Remove-Item -LiteralPath $hwpxStaging -Force -ErrorAction SilentlyContinue
+        }
+    }
+    catch {
+        $failedArtifactPath = Move-HwpGenerateArtifactToFailure -StagingPath $artifactToPromote -OutputPath $resolvedOutput
+        return New-HwpGenerateResult -Status FAILED -Mode new-document -OutputPath $resolvedOutput -After $after -OperationResults @($operationResults) -FailedArtifactPath $failedArtifactPath -Warnings @($warnings) -Errors @("검증된 결과를 최종 경로로 승격하지 못했습니다: $($_.Exception.Message)")
+    }
+    if ($after.PSObject.Properties.Name -contains 'path') { $after.path = $resolvedOutput }
+    $status = if ($warnings.Count -gt 0 -or $after.Status -eq 'PASS_WITH_WARNINGS') { 'PASS_WITH_WARNINGS' } else { 'PASS' }
+    $result = New-HwpGenerateResult -Status $status -Mode new-document -OutputPath $resolvedOutput -After $after -OperationResults @($operationResults) -Warnings @($warnings)
+    $result | Add-Member NoteProperty WorkFormat 'HWPX'
+    $result | Add-Member NoteProperty FinalFormat ([IO.Path]::GetExtension($resolvedOutput).TrimStart('.').ToUpperInvariant())
+    $result | Add-Member NoteProperty HancomContentWrite $false
+    $result | Add-Member NoteProperty FinalConversion $conversion
+    $result
+}
+
 function Invoke-HwpGenerate {
     [CmdletBinding(DefaultParameterSetName = 'Template')]
     param(
@@ -719,6 +891,5 @@ function Invoke-HwpGenerate {
 
 Export-ModuleMember -Function @(
     'Test-HwpNewDocumentPlan',
-    'Save-HwpGeneratedMemoryDocument',
     'Invoke-HwpGenerate'
 )

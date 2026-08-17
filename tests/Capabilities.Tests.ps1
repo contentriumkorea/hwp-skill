@@ -32,10 +32,10 @@ Describe 'HWP 엔진 기능 스냅샷' {
                 id = 'hwpx-direct'
                 available = $true
                 formats = @('HWPX-ZIP')
-                operations = @('inspect')
+                operations = @('inspect', 'generate')
                 requiresGui = $false
                 isolation = 'none'
-                reason = 'HWPX ZIP/XML direct inspection is built in.'
+                reason = 'HWPX ZIP/XML direct inspection and generation are built in; Hancom is not used for content writing.'
             },
             [pscustomobject][ordered]@{
                 id = 'hwp-portable'

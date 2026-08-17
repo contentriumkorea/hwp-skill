@@ -146,10 +146,12 @@ Describe 'hwp-skill 저장소 구조' {
         $readme | Should Match '현재 사용자 세션.*Hwp.exe.*실행하지'
     }
 
-    It 'README는 HWP/HWT 네이티브 예시에 explicit interactive 승인만 허용한다' {
+    It 'README는 HWPX 작업과 HWP 마지막 변환을 기본 경로로 설명한다' {
         $readme = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../README.md') -Raw -Encoding UTF8
-        $readme | Should Match 'HWP/HWT.*silent.*BLOCKED'
-        $readme | Should Match 'interactive.*한컴 창'
+        $readme | Should Match '작업은 HWPX로 끝낸 뒤 마지막에만 HWP로 변환'
+        $readme | Should Match '마지막 숨김 변환'
+        $readme | Should Match 'HWP/HWT[\s\S]*현재 자동 경로에서 차단'
+        $readme | Should Match 'interactive[\s\S]*한컴 창'
         $readme | Should Match '\-ExecutionMode interactive'
         $readme | Should Match '\-AllowInteractiveWindow'
         $readme | Should Match '한컴을 열 수 있'
@@ -160,7 +162,8 @@ Describe 'hwp-skill 저장소 구조' {
         $readme | Should Match 'Phase 1 계약'
         $readme | Should Match '미래 구현|향후 구현|future'
         $readme | Should Match '명시적으로 승인된 interactive'
-        $readme | Should Match 'silent HWP/HWT.*BLOCKED'
+        $readme | Should Match 'HWP/HWT.*네이티브 편집.*자동 실행하지 않는다'
+        $readme | Should Match 'HWPX.*숨김 변환'
     }
 
     It 'README는 현재 시험 실행기 승인 계약과 공개 release 용어를 사용한다' {

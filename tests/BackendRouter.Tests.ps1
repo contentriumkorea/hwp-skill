@@ -211,18 +211,18 @@ Describe 'HWP 백엔드 라우터' {
         $route.Isolated | Should Be $false
     }
 
-    It 'silent HWPX generate는 이 단계에서 정확히 차단된다' {
+    It 'silent HWPX generate는 직접 엔진으로 라우팅된다' {
         $capabilities = New-TestRouterInputs $executionModule $capabilityModule $routerModule
         $route = Resolve-HwpBackend -Command generate -DetectedKind NONE -RequestedFormat hwpx `
             -ExecutionContext (New-HwpExecutionContext) -Capabilities $capabilities
 
-        $route.Status | Should Be 'BLOCKED'
-        $route.BackendId | Should Be ''
-        $route.Reason | Should Be 'No silent backend supports generate for requested format hwpx.'
+        $route.Status | Should Be 'PASS'
+        $route.BackendId | Should Be 'hwpx-direct'
+        $route.Reason | Should Match 'direct'
         $route.RequiresGui | Should Be $false
         $route.Isolated | Should Be $false
         @($route.Warnings).Count | Should Be 0
-        @($route.Errors) | Should Be @('hwpx-direct 백엔드는 현재 generate를 선언하지 않았으며 GUI로 자동 전환하지 않습니다.')
+        @($route.Errors).Count | Should Be 0
     }
 
     It '출력 형식 계산은 hwp와 hwpx만 허용한다' {
