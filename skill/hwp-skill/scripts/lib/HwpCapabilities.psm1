@@ -1,4 +1,4 @@
-Set-StrictMode -Version Latest
+﻿Set-StrictMode -Version Latest
 
 $executionModulePath = Join-Path $PSScriptRoot 'HwpExecution.psm1'
 Import-Module $executionModulePath -Force -Global
@@ -63,19 +63,12 @@ function Get-HwpCapabilitySnapshot {
     }
 
     if (-not $PortableBackendProbe) {
-        $portableBackendPath = Join-Path $PSScriptRoot '../../runtime/hwp-portable/backend.json'
+        $portableBackendPath = Join-Path $PSScriptRoot 'HwpPortable.psm1'
+        $compoundReaderPath = Join-Path $PSScriptRoot 'HwpCompoundFile.cs'
         $PortableBackendProbe = {
-            if (-not (Test-Path -LiteralPath $portableBackendPath -PathType Leaf)) {
-                return $false
-            }
-
-            try {
-                $backend = Get-Content -LiteralPath $portableBackendPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
-            } catch {
-                return $false
-            }
-
-            return [string]$backend.id -eq 'hwp-portable'
+            [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT -and
+                (Test-Path -LiteralPath $portableBackendPath -PathType Leaf) -and
+                (Test-Path -LiteralPath $compoundReaderPath -PathType Leaf)
         }.GetNewClosure()
     }
 
@@ -85,7 +78,7 @@ function Get-HwpCapabilitySnapshot {
 
     $backends = @(
         (Get-HwpBackendCapability -Id 'hwpx-direct' -Available $true -Formats @('HWPX-ZIP') -Operations @('inspect', 'generate') -RequiresGui $false -Isolation 'none' -Reason 'HWPX ZIP/XML direct inspection and generation are built in; Hancom is not used for content writing.')
-        (Get-HwpBackendCapability -Id 'hwp-portable' -Available ([bool](& $PortableBackendProbe)) -Formats @('HWP-BINARY') -Operations @('inspect', 'generate', 'apply', 'batch', 'verify') -RequiresGui $false -Isolation 'none' -Reason 'Portable backend availability depends on the packaged runtime manifest.')
+        (Get-HwpBackendCapability -Id 'hwp-portable' -Available ([bool](& $PortableBackendProbe)) -Formats @('HWP-BINARY') -Operations @('inspect') -RequiresGui $false -Isolation 'none' -Reason 'Built-in read-only HWP 5.x inspection uses the Windows OLE compound-file API and does not require Hancom.')
         (Get-HwpBackendCapability -Id 'hancom-isolated' -Available ([bool](& $IsolatedWorkerProbe)) -Formats @('HWP-BINARY') -Operations @('inspect', 'generate', 'apply', 'batch', 'verify', 'export') -RequiresGui $true -Isolation 'separate-session' -Reason 'Isolated native worker support will be wired in without using local COM fallback.')
         (Get-HwpBackendCapability -Id 'hancom-interactive' -Available ([bool](& $NativeRegistrationProbe)) -Formats @('HWP-BINARY') -Operations @('inspect', 'generate', 'apply', 'batch', 'verify', 'export') -RequiresGui $true -Isolation 'current-session' -Reason 'Interactive Hancom automation depends on local COM registration only.')
     )

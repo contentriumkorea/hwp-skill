@@ -41,10 +41,10 @@ Describe 'HWP 엔진 기능 스냅샷' {
                 id = 'hwp-portable'
                 available = $true
                 formats = @('HWP-BINARY')
-                operations = @('inspect', 'generate', 'apply', 'batch', 'verify')
+                operations = @('inspect')
                 requiresGui = $false
                 isolation = 'none'
-                reason = 'Portable backend availability depends on the packaged runtime manifest.'
+                reason = 'Built-in read-only HWP 5.x inspection uses the Windows OLE compound-file API and does not require Hancom.'
             },
             [pscustomobject][ordered]@{
                 id = 'hancom-isolated'
@@ -91,6 +91,7 @@ Describe 'HWP 엔진 기능 스냅샷' {
             $snapshot.schemaVersion | Should Be '1.0'
             $snapshot.executionMode | Should Be 'silent'
             $snapshot.backends.Count | Should Be 4
+            ($snapshot.backends | Where-Object id -eq 'hwp-portable').available | Should Be $true
             $sessionCalls | Should Be 0
             $launchCalls | Should Be 0
         }

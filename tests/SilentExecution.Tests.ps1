@@ -140,14 +140,15 @@ Describe 'HWP silent acceptance gate' {
         Assert-NoHwpActivity -Observation $preflight
     }
 
-    It 'silent HWP 차단 inspect도 결과 파일을 자동으로 열지 않는다' {
+    It 'silent HWP portable inspect는 결과 파일을 열거나 포커스를 바꾸지 않는다' {
         $fixtureHwp = Join-Path $PSScriptRoot 'fixtures/source/native-fixture.hwp'
 
         $result = Invoke-SilentCliJson -Arguments @('inspect', '-LiteralPath', $fixtureHwp)
 
-        $result.ExitCode | Should Be 2
-        $result.Json.status | Should Be 'BLOCKED'
+        $result.ExitCode | Should Be 0
+        $result.Json.status | Should Be 'PASS_WITH_WARNINGS'
         $result.Json.detectedKind | Should Be 'HWP-BINARY'
+        $result.Json.text | Should Match 'HWP 네이티브 통합 시험'
         Assert-NoHwpActivity -Observation $result
     }
 

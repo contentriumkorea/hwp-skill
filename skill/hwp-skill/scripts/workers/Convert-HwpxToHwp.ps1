@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$InputPath,
     [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$OutputPath

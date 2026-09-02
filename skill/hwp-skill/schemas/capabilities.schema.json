@@ -129,24 +129,12 @@
         },
         "operations": {
           "type": "array",
-          "minItems": 5,
-          "maxItems": 5,
+          "minItems": 1,
+          "maxItems": 1,
           "additionalItems": false,
           "items": [
             {
               "const": "inspect"
-            },
-            {
-              "const": "generate"
-            },
-            {
-              "const": "apply"
-            },
-            {
-              "const": "batch"
-            },
-            {
-              "const": "verify"
             }
           ]
         },
@@ -157,7 +145,7 @@
           "const": "none"
         },
         "reason": {
-          "const": "Portable backend availability depends on the packaged runtime manifest."
+          "const": "Built-in read-only HWP 5.x inspection uses the Windows OLE compound-file API and does not require Hancom."
         }
       }
     },

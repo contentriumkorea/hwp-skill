@@ -2,12 +2,14 @@ $commonModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCommo
 $executionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpExecution.psm1'
 $capabilitiesModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCapabilities.psm1'
 $sessionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpSession.psm1'
+$portableModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpPortable.psm1'
 $inspectModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpInspect.psm1'
 $helperModule = Join-Path $PSScriptRoot 'TestHelpers.psm1'
 Import-Module $commonModule -Force
 Import-Module $executionModule -Force
 Import-Module $capabilitiesModule -Force
 Import-Module $sessionModule -Force
+Import-Module $portableModule -Force
 Import-Module $helperModule -Force
 if (Test-Path -LiteralPath $inspectModule) {
     Import-Module $inspectModule -Force
@@ -74,6 +76,40 @@ function New-SyntheticHwpx {
         $stream.Dispose()
     }
 
+    $LiteralPath
+}
+
+function New-ProtectedHwpCopy {
+    param(
+        [Parameter(Mandatory)][string]$SourcePath,
+        [Parameter(Mandatory)][string]$LiteralPath,
+        [Parameter(Mandatory)][ValidateRange(0, 31)][int]$PropertyBit
+    )
+
+    Copy-Item -LiteralPath $SourcePath -Destination $LiteralPath
+    $bytes = [IO.File]::ReadAllBytes($LiteralPath)
+    $signature = [Text.Encoding]::ASCII.GetBytes('HWP Document File')
+    $signatureOffset = -1
+    for ($offset = 0; $offset -le ($bytes.Length - $signature.Length); $offset++) {
+        $matches = $true
+        for ($index = 0; $index -lt $signature.Length; $index++) {
+            if ($bytes[$offset + $index] -ne $signature[$index]) {
+                $matches = $false
+                break
+            }
+        }
+        if ($matches) {
+            $signatureOffset = $offset
+            break
+        }
+    }
+    if ($signatureOffset -lt 0) { throw '시험 HWP에서 FileHeader 시그니처를 찾지 못했습니다.' }
+
+    $propertyOffset = $signatureOffset + 36
+    $properties = [BitConverter]::ToUInt32($bytes, $propertyOffset)
+    $replacement = [BitConverter]::GetBytes([uint32]($properties -bor (1 -shl $PropertyBit)))
+    [Array]::Copy($replacement, 0, $bytes, $propertyOffset, $replacement.Length)
+    [IO.File]::WriteAllBytes($LiteralPath, $bytes)
     $LiteralPath
 }
 
@@ -161,6 +197,78 @@ function New-FakeInspectionSession {
     }
 }
 
+Describe 'HWP 휴대형 읽기 안전 경계' {
+    It '압축 해제 결과를 boxed Object 배열이 아닌 단일 byte 배열로 반환한다' {
+        InModuleScope HwpPortable {
+            [byte[]]$source = 0..255
+            $compressedStream = [IO.MemoryStream]::new()
+            $deflate = [IO.Compression.DeflateStream]::new(
+                $compressedStream,
+                [IO.Compression.CompressionMode]::Compress,
+                $true
+            )
+            try {
+                $deflate.Write($source, 0, $source.Length)
+            }
+            finally {
+                $deflate.Dispose()
+            }
+
+            try {
+                [byte[]]$compressed = $compressedStream.ToArray()
+                $expanded = Expand-HwpPortableDeflate -Bytes $compressed
+
+                $expanded.GetType().FullName | Should Be 'System.Byte[]'
+                [Convert]::ToBase64String($expanded) | Should Be ([Convert]::ToBase64String($source))
+            }
+            finally {
+                $compressedStream.Dispose()
+            }
+        }
+    }
+
+    It '하나의 복합파일 세션이 검사 동안 원본에 대한 쓰기를 차단한다' {
+        $source = Join-Path $PSScriptRoot 'fixtures/source/native-fixture.hwp'
+        $path = Join-Path $TestDrive 'locked-during-inspection.hwp'
+        Copy-Item -LiteralPath $source -Destination $path
+        $session = [Contentrium.HwpSkill.CompoundFileReader]::Open($path)
+        try {
+            $writeOpened = $false
+            try {
+                $writer = [IO.File]::Open($path, [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)
+                $writeOpened = $true
+                $writer.Dispose()
+            }
+            catch {
+                $writeOpened = $false
+            }
+
+            $writeOpened | Should Be $false
+        }
+        finally {
+            $session.Dispose()
+        }
+    }
+
+    It '문서 전체 압축 해제 예산을 넘으면 읽기를 차단한다' {
+        $source = Join-Path $PSScriptRoot 'fixtures/source/native-fixture.hwp'
+
+        $result = Get-HwpPortableInspection -LiteralPath $source -MaximumExpandedBytes 1
+
+        $result.Status | Should Be 'BLOCKED'
+        ($result.Errors -join ' ') | Should Match '문서 전체.*안전 한도'
+    }
+
+    It '512MB보다 큰 허용 문서 예산도 내부 범위 오류 없이 처리한다' {
+        $source = Join-Path $PSScriptRoot 'fixtures/source/native-fixture.hwp'
+
+        $result = Get-HwpPortableInspection -LiteralPath $source -MaximumExpandedBytes 536870913
+
+        $result.Status | Should Be 'PASS_WITH_WARNINGS'
+        @($result.Errors).Count | Should Be 0
+    }
+}
+
 Describe 'HWP 읽기 함수의 가짜 세션 계약' {
     It '본문을 유니코드 텍스트로 추출한다' {
         $session = New-FakeInspectionSession
@@ -228,6 +336,11 @@ Describe 'Get-HwpInspection' {
             -NativeRegistrationProbe { $true } `
             -PortableBackendProbe { $false } `
             -IsolatedWorkerProbe { $false }
+        $script:portableCapabilities = Get-HwpCapabilitySnapshot `
+            -ExecutionContext (New-HwpExecutionContext) `
+            -NativeRegistrationProbe { $false } `
+            -PortableBackendProbe { $true } `
+            -IsolatedWorkerProbe { $false }
         $script:interactiveExecutionContext = New-HwpExecutionContext -Mode interactive -AllowInteractiveWindow
         $script:interactiveCapabilities = Get-HwpCapabilitySnapshot `
             -ExecutionContext $script:interactiveExecutionContext `
@@ -277,6 +390,39 @@ Describe 'Get-HwpInspection' {
         $result.Status | Should Be 'BLOCKED'
         $calls.Value | Should Be 0
         ($result.Errors -join ' ') | Should Match 'hwp-portable'
+    }
+
+    It 'portable HWP 검사는 한컴 세션 없이 실제 HWP 5.x 본문을 읽고 원본을 보존한다' {
+        $beforeHash = Get-HwpSha256 -LiteralPath $script:fixtureHwp
+        $calls = [pscustomobject]@{ Value = 0 }
+        $factory = ({ param($executionContext) $calls.Value++; throw '한컴 세션 호출 금지' }.GetNewClosure())
+
+        $result = Get-HwpInspection -LiteralPath $script:fixtureHwp `
+            -ExecutionContext (New-HwpExecutionContext) `
+            -Capabilities $script:portableCapabilities `
+            -SessionFactory $factory
+
+        $result.Status | Should Be 'PASS_WITH_WARNINGS'
+        $result.Text | Should Match 'HWP 네이티브 통합 시험'
+        $result.PageCount | Should Be 0
+        ($result.Warnings -join ' ') | Should Match '레이아웃'
+        $calls.Value | Should Be 0
+        (Get-HwpSha256 -LiteralPath $script:fixtureHwp) | Should Be $beforeHash
+    }
+
+    It 'portable HWP 검사는 모든 보호·서명 플래그를 우회하지 않는다' {
+        $protectedBits = @(1, 2, 4, 7, 8, 9, 10, 13)
+        foreach ($bit in $protectedBits) {
+            $path = New-ProtectedHwpCopy -SourcePath $script:fixtureHwp `
+                -LiteralPath (Join-Path $TestDrive "protected-bit-$bit.hwp") -PropertyBit $bit
+
+            $result = Get-HwpInspection -LiteralPath $path `
+                -ExecutionContext (New-HwpExecutionContext) `
+                -Capabilities $script:portableCapabilities
+
+            $result.Status | Should Be 'BLOCKED'
+            ($result.Errors -join ' ') | Should Match '보호된 HWP'
+        }
     }
 
     It '승인된 interactive 시험 더블은 본문과 필드와 페이지 및 컨트롤 정보를 반환한다' {

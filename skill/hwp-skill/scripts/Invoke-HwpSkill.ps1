@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory, Position = 0)]
     [ValidateSet('capabilities','preflight','inspect','validate-plan','apply','generate','batch','compare','verify','export')]

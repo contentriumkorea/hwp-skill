@@ -1,4 +1,4 @@
-Set-StrictMode -Version Latest
+﻿Set-StrictMode -Version Latest
 
 $script:SupportedExtensions = @('.hwp', '.hwt', '.hwpx')
 

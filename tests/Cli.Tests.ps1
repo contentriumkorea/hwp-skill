@@ -45,17 +45,37 @@ Describe 'HWP 공용 CLI 실행 모드' {
         ($json.errors -join ' ') | Should Match 'AllowInteractiveWindow'
     }
 
-    It 'silent inspect는 HWP 바이너리를 GUI 없이 BLOCKED로 반환한다' {
+    It 'silent inspect는 HWP 바이너리를 한컴 프로세스 없이 읽는다' {
         $fixtureHwp = Join-Path $PSScriptRoot 'fixtures/source/native-fixture.hwp'
+        $beforeProcessIds = @(Get-Process -Name Hwp -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
 
         $raw = & $pwsh -NoProfile -File $cli inspect -LiteralPath $fixtureHwp
         $exitCode = $LASTEXITCODE
         $json = ($raw -join "`n") | ConvertFrom-Json
+        $afterProcessIds = @(Get-Process -Name Hwp -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
 
-        $exitCode | Should Be 2
-        $json.status | Should Be 'BLOCKED'
+        $exitCode | Should Be 0
+        $json.status | Should Be 'PASS_WITH_WARNINGS'
         $json.detectedKind | Should Be 'HWP-BINARY'
-        ($json.errors -join ' ') | Should Match 'hwp-portable'
+        $json.text | Should Match 'HWP 네이티브 통합 시험'
+        @($afterProcessIds) -join ',' | Should Be (@($beforeProcessIds) -join ',')
+    }
+
+    It 'Windows PowerShell 5.1에서도 HWP 바이너리를 한컴 없이 읽는다' `
+        -Skip:(-not (Test-Path "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe")) {
+        $windowsPowerShell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+        $fixtureHwp = Join-Path $PSScriptRoot 'fixtures/source/native-fixture.hwp'
+        $beforeProcessIds = @(Get-Process -Name Hwp -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
+
+        $raw = & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -File $cli inspect -LiteralPath $fixtureHwp
+        $exitCode = $LASTEXITCODE
+        $json = ($raw -join "`n") | ConvertFrom-Json
+        $afterProcessIds = @(Get-Process -Name Hwp -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
+
+        $exitCode | Should Be 0
+        $json.status | Should Be 'PASS_WITH_WARNINGS'
+        $json.text | Should Match 'HWP 네이티브 통합 시험'
+        @($afterProcessIds) -join ',' | Should Be (@($beforeProcessIds) -join ',')
     }
 
     It 'silent HWPX 생성은 직접 엔진으로 작성한다' {

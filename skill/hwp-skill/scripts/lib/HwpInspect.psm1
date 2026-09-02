@@ -1,10 +1,11 @@
-Set-StrictMode -Version Latest
+﻿Set-StrictMode -Version Latest
 
 Import-Module (Join-Path $PSScriptRoot 'HwpCommon.psm1') -ErrorAction Stop
 Import-Module (Join-Path $PSScriptRoot 'HwpExecution.psm1') -ErrorAction Stop
 Import-Module (Join-Path $PSScriptRoot 'HwpCapabilities.psm1') -ErrorAction Stop
 Import-Module (Join-Path $PSScriptRoot 'HwpBackendRouter.psm1') -ErrorAction Stop
 Import-Module (Join-Path $PSScriptRoot 'HwpSession.psm1') -ErrorAction Stop
+Import-Module (Join-Path $PSScriptRoot 'HwpPortable.psm1') -ErrorAction Stop
 
 function New-HwpInspectionRecord {
     [CmdletBinding()]
@@ -647,6 +648,18 @@ function Get-HwpInspection {
         return New-HwpInspectionRecord -Status $route.Status -Path $resolvedPath `
             -Sha256 $sha256 -DetectedKind $detectedKind `
             -Warnings @($route.Warnings) -Errors @($route.Errors)
+    }
+    if ($route.BackendId -eq 'hwp-portable') {
+        $portable = Get-HwpPortableInspection -LiteralPath $resolvedPath -ExpectedSha256 $sha256
+        if ($portable.Status -eq 'BLOCKED' -or $portable.Status -eq 'FAILED') {
+            return New-HwpInspectionRecord -Status $portable.Status -Path $resolvedPath -Sha256 $sha256 `
+                -DetectedKind $detectedKind -Warnings @($portable.Warnings) -Errors @($portable.Errors)
+        }
+
+        return New-HwpInspectionRecord -Status $portable.Status -Path $resolvedPath -Sha256 $sha256 `
+            -DetectedKind $detectedKind -Text ([string]$portable.Data.Text) `
+            -Fields $portable.Data.Fields -Controls @($portable.Data.Controls) `
+            -PageCount ([int]$portable.Data.PageCount) -Warnings @($portable.Warnings)
     }
     if ($route.BackendId -ne 'hancom-interactive') {
         return New-HwpInspectionRecord -Status BLOCKED -Path $resolvedPath `

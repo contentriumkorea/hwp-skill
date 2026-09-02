@@ -1,4 +1,4 @@
-Set-StrictMode -Version Latest
+﻿Set-StrictMode -Version Latest
 
 $executionModulePath = Join-Path $PSScriptRoot 'HwpExecution.psm1'
 Import-Module $executionModulePath -Force -Global
@@ -114,6 +114,7 @@ function Test-HwpBackendCandidate {
         }
         'interactive' {
             if ([string]$Backend.id -eq 'hancom-isolated') { return $false }
+            if ([string]$Backend.id -eq 'hwp-portable') { return $false }
             if ([string]$Backend.id -eq 'hancom-interactive' -and $ExecutionContext.AllowInteractiveWindow -ne $true) {
                 return $false
             }

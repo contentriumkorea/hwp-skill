@@ -189,6 +189,18 @@ Describe 'HWP 백엔드 라우터' {
         $route.Isolated | Should Be $false
     }
 
+    It '승인된 interactive HWP 검사는 portable이 가능해도 native를 선택한다' {
+        $capabilities = New-CapabilitiesWithBackends -PortableAvailable $true -InteractiveAvailable $true
+        $route = Resolve-HwpBackend -Command inspect -DetectedKind HWP-BINARY `
+            -ExecutionContext (New-HwpExecutionContext -Mode interactive -AllowInteractiveWindow) `
+            -Capabilities $capabilities
+
+        $route.Status | Should Be 'PASS'
+        $route.BackendId | Should Be 'hancom-interactive'
+        $route.RequiresGui | Should Be $true
+        $route.Isolated | Should Be $false
+    }
+
     It 'isolated-native 라우팅은 portable이 가능해도 isolated만 선택한다' {
         $capabilities = New-CapabilitiesWithBackends -PortableAvailable $true -IsolatedAvailable $true -InteractiveAvailable $true
         $route = Resolve-HwpBackend -Command verify -DetectedKind HWP-BINARY `

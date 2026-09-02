@@ -145,7 +145,7 @@ Describe 'Invoke-HwpGenerate 사전 차단' {
             -ExecutionContext $hwpExecutionContext -Capabilities $capabilities -SessionFactory $factory
 
         $result.Status | Should Be 'BLOCKED'
-        ($result.Errors -join ' ') | Should Match 'silent'
+        ($result.Errors -join ' ') | Should Match 'GUI로 자동 전환'
         $calls.Value | Should Be 0
     }
 }

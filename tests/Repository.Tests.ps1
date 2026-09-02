@@ -11,6 +11,8 @@ Describe 'hwp-skill 저장소 구조' {
         Test-Path "$PSScriptRoot/../skill/hwp-skill/SKILL.md" | Should Be $true
         Test-Path "$PSScriptRoot/../skill/hwp-skill/agents/openai.yaml" | Should Be $true
         Test-Path "$PSScriptRoot/../skill/hwp-skill/scripts/Invoke-HwpSkill.ps1" | Should Be $true
+        Test-Path "$PSScriptRoot/../skill/hwp-skill/scripts/lib/HwpPortable.psm1" | Should Be $true
+        Test-Path "$PSScriptRoot/../skill/hwp-skill/scripts/lib/HwpCompoundFile.cs" | Should Be $true
         Test-Path "$PSScriptRoot/../skill/hwp-native" | Should Be $false
     }
 
@@ -140,9 +142,12 @@ Describe 'hwp-skill 저장소 구조' {
         $skill | Should Match 'GUI로 자동 전환하지 않는다'
     }
 
-    It 'README가 현재 단계에서 HWP 휴대형 엔진을 완료로 과장하지 않는다' {
+    It 'README가 HWP 휴대형 읽기와 네이티브 편집의 경계를 정확히 설명한다' {
         $readme = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../README.md') -Raw -Encoding UTF8
-        $readme | Should Match 'hwp-portable.*준비되지'
+        $readme | Should Match 'hwp-portable.*Windows 기본 OLE'
+        $readme | Should Match 'HWP 5\.x.*한컴.*필요하지'
+        $readme | Should Match 'HWP/HWT 기존 양식 편집.*현재 차단'
+        $readme | Should Match '한글 문서 파일 형식 5\.0 공개 문서'
         $readme | Should Match '현재 사용자 세션.*Hwp.exe.*실행하지'
     }
 
