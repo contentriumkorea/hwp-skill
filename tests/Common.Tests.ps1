@@ -114,7 +114,8 @@ Describe '공개 JSON 스키마' {
         $path = Join-Path $PSScriptRoot '../skill/hwp-skill/schemas/inspection.schema.json'
         $schema = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json
 
-        foreach ($name in 'status','path','sha256','detectedKind','text','fields','controls','pageCount','warnings') {
+        foreach ($name in 'status','path','sha256','detectedKind','text','fields','controls','tables',
+            'resources','paragraphs','sections','layout','pageCount','warnings') {
             ($schema.required -contains $name) | Should Be $true
         }
     }

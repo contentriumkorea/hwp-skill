@@ -227,6 +227,11 @@ PDF 또는 쪽 이미지 내보내기에는 등록된 보안 모듈이 필요하
 - `image`: `path`, 선택형 `widthMm`, `heightMm`
 - `page-break`: 추가 필드 없음
 
+최상위 `document`에는 `page`, `textStyle`, `paragraphStyle`, `tableStyle`을 지정할 수
+있다. 문단과 표·셀은 각각 `textStyle`, `paragraphStyle`, `style`로 기본값을 덮어쓴다.
+글꼴명·포인트 크기·굵게·기울임·글자색, 문단 정렬·줄 간격·여백, 표 선 종류·굵기·색·
+배경색·셀 안 여백, 용지 크기·방향·여백을 HWPX에 직접 기록한다.
+
 새 문서는 HWPX 작업본으로 직접 저장한다. 출력 확장자가 HWP이면 HWPX 전체 검증이
 끝난 뒤 마지막 단계에서만 숨김 변환한다. 이미지 블록도 경로 기반 한컴 파일 열기
 없이 HWPX `BinData`에 직접 저장한다.

@@ -6,7 +6,8 @@
   "additionalProperties": true,
   "required": [
     "status", "path", "sha256", "detectedKind", "text",
-    "fields", "controls", "tables", "pageCount", "warnings"
+    "fields", "controls", "tables", "resources", "paragraphs", "sections",
+    "layout", "pageCount", "warnings"
   ],
   "properties": {
     "status": {
@@ -34,6 +35,16 @@
       "type": "array",
       "items": { "$ref": "#/$defs/table" }
     },
+    "resources": { "$ref": "#/$defs/resources" },
+    "paragraphs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/paragraph" }
+    },
+    "sections": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/section" }
+    },
+    "layout": { "$ref": "#/$defs/layout" },
     "pageCount": { "type": "integer", "minimum": 0 },
     "warnings": {
       "type": "array",
@@ -41,6 +52,136 @@
     }
   },
   "$defs": {
+    "measurement": {
+      "type": "object",
+      "required": ["raw", "point", "millimeter"],
+      "properties": {
+        "raw": { "type": "integer" },
+        "point": { "type": "number" },
+        "millimeter": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "resources": {
+      "type": "object",
+      "required": ["fonts", "borderFills", "charShapes", "paraShapes"],
+      "properties": {
+        "fonts": { "type": "array", "items": { "type": "object", "required": ["id", "language", "name"], "additionalProperties": true } },
+        "borderFills": { "type": "array", "items": { "type": "object", "required": ["id", "borders", "fill"], "additionalProperties": true } },
+        "charShapes": { "type": "array", "items": { "type": "object", "required": ["id", "fontSizePt", "attributes", "resolvedFontNames"], "additionalProperties": true } },
+        "paraShapes": { "type": "array", "items": { "type": "object", "required": ["id", "alignment", "margins", "indent", "lineSpacing"], "additionalProperties": true } }
+      },
+      "additionalProperties": true
+    },
+    "charShapeRun": {
+      "type": "object",
+      "required": ["start", "charShapeId"],
+      "properties": {
+        "start": { "type": "integer", "minimum": 0 },
+        "charShapeId": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "lineSegment": {
+      "type": "object",
+      "required": [
+        "index", "textStart", "verticalPosition", "lineHeight", "textHeight",
+        "baseline", "lineSpacing", "columnStart", "segmentWidth", "flagsRaw",
+        "isPageFirst", "isColumnFirst", "isEmpty", "isLineFirst", "isLineLast", "text"
+      ],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0 },
+        "textStart": { "type": "integer", "minimum": 0 },
+        "verticalPosition": { "$ref": "#/$defs/measurement" },
+        "lineHeight": { "$ref": "#/$defs/measurement" },
+        "textHeight": { "$ref": "#/$defs/measurement" },
+        "baseline": { "$ref": "#/$defs/measurement" },
+        "lineSpacing": { "$ref": "#/$defs/measurement" },
+        "columnStart": { "$ref": "#/$defs/measurement" },
+        "segmentWidth": { "$ref": "#/$defs/measurement" },
+        "flagsRaw": { "type": "integer", "minimum": 0 },
+        "isPageFirst": { "type": "boolean" },
+        "isColumnFirst": { "type": "boolean" },
+        "isEmpty": { "type": "boolean" },
+        "isLineFirst": { "type": "boolean" },
+        "isLineLast": { "type": "boolean" },
+        "text": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "storedLine": {
+      "type": "object",
+      "required": ["index", "textStart", "textEnd", "text"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0 },
+        "textStart": { "type": "integer", "minimum": 0 },
+        "textEnd": { "type": "integer", "minimum": 0 },
+        "text": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "paragraph": {
+      "type": "object",
+      "required": [
+        "index", "section", "text", "rawCharacterCount", "declaredCharacterCount",
+        "paraShapeId", "styleId", "charShapeRuns", "lineSegments", "storedLines"
+      ],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0 },
+        "section": { "type": "string", "minLength": 1 },
+        "recordLevel": { "type": ["integer", "null"], "minimum": 0 },
+        "text": { "type": "string" },
+        "rawCharacterCount": { "type": "integer", "minimum": 0 },
+        "declaredCharacterCount": { "type": "integer", "minimum": 0 },
+        "paraShapeId": { "type": "integer", "minimum": 0 },
+        "styleId": { "type": "integer", "minimum": 0 },
+        "charShapeRuns": { "type": "array", "items": { "$ref": "#/$defs/charShapeRun" } },
+        "lineSegments": { "type": "array", "items": { "$ref": "#/$defs/lineSegment" } },
+        "storedLines": { "type": "array", "items": { "$ref": "#/$defs/storedLine" } }
+      },
+      "additionalProperties": true
+    },
+    "pageDefinition": {
+      "type": "object",
+      "required": ["index", "orientation", "width", "height", "margins"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0 },
+        "orientation": { "enum": ["PORTRAIT", "LANDSCAPE"] },
+        "width": { "$ref": "#/$defs/measurement" },
+        "height": { "$ref": "#/$defs/measurement" },
+        "margins": {
+          "type": "object",
+          "required": ["left", "right", "top", "bottom", "header", "footer", "gutter"],
+          "additionalProperties": { "$ref": "#/$defs/measurement" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "section": {
+      "type": "object",
+      "required": ["index", "name", "paragraphStartIndex", "paragraphCount", "pageDefinitions", "storedPageFirstLineCount"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0 },
+        "name": { "type": "string", "minLength": 1 },
+        "paragraphStartIndex": { "type": "integer", "minimum": 0 },
+        "paragraphCount": { "type": "integer", "minimum": 0 },
+        "pageDefinitions": { "type": "array", "items": { "$ref": "#/$defs/pageDefinition" } },
+        "storedPageFirstLineCount": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "layout": {
+      "type": "object",
+      "required": ["source", "storedLineLayoutAvailable", "lineSegmentCount", "pageCountSource", "exactRenderingVerified"],
+      "properties": {
+        "source": { "type": "string", "minLength": 1 },
+        "storedLineLayoutAvailable": { "type": "boolean" },
+        "lineSegmentCount": { "type": "integer", "minimum": 0 },
+        "pageCountSource": { "type": "string", "minLength": 1 },
+        "exactRenderingVerified": { "const": false }
+      },
+      "additionalProperties": true
+    },
     "margins": {
       "type": "object",
       "required": ["left", "right", "top", "bottom"],

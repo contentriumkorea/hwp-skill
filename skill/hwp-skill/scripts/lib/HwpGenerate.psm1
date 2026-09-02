@@ -20,6 +20,14 @@ function Test-HwpGenerateProperty {
     $null -ne $InputObject -and $InputObject.PSObject.Properties.Name -contains $Name
 }
 
+function Test-HwpGenerateOrdinalContains {
+    param(
+        [AllowEmptyString()][string]$Actual,
+        [AllowEmptyString()][string]$Expected
+    )
+    $Actual.IndexOf($Expected, [StringComparison]::Ordinal) -ge 0
+}
+
 function New-HwpGenerateResult {
     param(
         [ValidateSet('PASS','PASS_WITH_WARNINGS','BLOCKED','FAILED')][string]$Status,
@@ -69,6 +77,22 @@ function Test-HwpNewDocumentPlan {
         $content = @()
     }
 
+    $documentStyle = if (Test-HwpGenerateProperty -InputObject $Plan -Name 'document') { $Plan.document } else { $null }
+    if ($null -ne $documentStyle) {
+        if (Test-HwpGenerateProperty -InputObject $documentStyle -Name 'page') {
+            Test-HwpGeneratePageStyle -Page $documentStyle.page -Prefix 'document.page' -Errors $errors
+        }
+        if (Test-HwpGenerateProperty -InputObject $documentStyle -Name 'textStyle') {
+            Test-HwpGenerateTextStyle -Style $documentStyle.textStyle -Prefix 'document.textStyle' -Errors $errors
+        }
+        if (Test-HwpGenerateProperty -InputObject $documentStyle -Name 'paragraphStyle') {
+            Test-HwpGenerateParagraphStyle -Style $documentStyle.paragraphStyle -Prefix 'document.paragraphStyle' -Errors $errors
+        }
+        if (Test-HwpGenerateProperty -InputObject $documentStyle -Name 'tableStyle') {
+            Test-HwpGenerateTableStyle -Style $documentStyle.tableStyle -Prefix 'document.tableStyle' -Errors $errors
+        }
+    }
+
     $tableCount = 0
     $imageCount = 0
     $fieldNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -80,6 +104,12 @@ function Test-HwpNewDocumentPlan {
             continue
         }
         $type = [string]$block.type
+        if (Test-HwpGenerateProperty -InputObject $block -Name 'textStyle') {
+            Test-HwpGenerateTextStyle -Style $block.textStyle -Prefix "$prefix.textStyle" -Errors $errors
+        }
+        if (Test-HwpGenerateProperty -InputObject $block -Name 'paragraphStyle') {
+            Test-HwpGenerateParagraphStyle -Style $block.paragraphStyle -Prefix "$prefix.paragraphStyle" -Errors $errors
+        }
         switch ($type) {
             'paragraph' {
                 if (-not (Test-HwpGenerateProperty -InputObject $block -Name 'text')) {
@@ -92,6 +122,9 @@ function Test-HwpNewDocumentPlan {
             }
             'table' {
                 $tableCount++
+                if (Test-HwpGenerateProperty -InputObject $block -Name 'style') {
+                    Test-HwpGenerateTableStyle -Style $block.style -Prefix "$prefix.style" -Errors $errors
+                }
                 $rows = if (Test-HwpGenerateProperty -InputObject $block -Name 'rows') { [int]$block.rows } else { 0 }
                 $columns = if (Test-HwpGenerateProperty -InputObject $block -Name 'columns') { [int]$block.columns } else { 0 }
                 if ($rows -lt 1 -or $rows -gt 100 -or $columns -lt 1 -or $columns -gt 100) {
@@ -108,6 +141,15 @@ function Test-HwpNewDocumentPlan {
                     if ([int]$cell.row -lt 1 -or [int]$cell.row -gt $rows -or
                         [int]$cell.column -lt 1 -or [int]$cell.column -gt $columns) {
                         $errors.Add("$prefix.cells 좌표가 표 범위를 벗어났습니다.")
+                    }
+                    if (Test-HwpGenerateProperty -InputObject $cell -Name 'textStyle') {
+                        Test-HwpGenerateTextStyle -Style $cell.textStyle -Prefix "$prefix.cells.textStyle" -Errors $errors
+                    }
+                    if (Test-HwpGenerateProperty -InputObject $cell -Name 'paragraphStyle') {
+                        Test-HwpGenerateParagraphStyle -Style $cell.paragraphStyle -Prefix "$prefix.cells.paragraphStyle" -Errors $errors
+                    }
+                    if (Test-HwpGenerateProperty -InputObject $cell -Name 'style') {
+                        Test-HwpGenerateTableStyle -Style $cell.style -Prefix "$prefix.cells.style" -Errors $errors
                     }
                 }
                 break
@@ -457,6 +499,124 @@ function Move-HwpGenerateStagingToFailure {
     }
 }
 
+function Test-HwpGenerateColorValue {
+    param([AllowNull()][object]$Value, [switch]$AllowNone)
+    $text = [string]$Value
+    if ($AllowNone -and $text -ieq 'none') { return $true }
+    $text -match '^#[0-9A-Fa-f]{6}$'
+}
+
+function Test-HwpGenerateTextStyle {
+    param(
+        [AllowNull()][object]$Style,
+        [Parameter(Mandatory)][string]$Prefix,
+        [Parameter(Mandatory)][AllowEmptyCollection()][Collections.Generic.List[string]]$Errors
+    )
+    if ($null -eq $Style) { return }
+    if (Test-HwpGenerateProperty -InputObject $Style -Name 'fontFamily') {
+        $font = [string]$Style.fontFamily
+        if ([string]::IsNullOrWhiteSpace($font) -or $font.Length -gt 256 -or $font -match '[\x00\r\n]') {
+            $Errors.Add("$Prefix.fontFamily이 올바르지 않습니다.")
+        }
+    }
+    if (Test-HwpGenerateProperty -InputObject $Style -Name 'fontSizePt') {
+        $size = [double]$Style.fontSizePt
+        if ($size -lt 1 -or $size -gt 409.6) { $Errors.Add("$Prefix.fontSizePt는 1~409.6이어야 합니다.") }
+    }
+    if (Test-HwpGenerateProperty -InputObject $Style -Name 'textColor') {
+        if (-not (Test-HwpGenerateColorValue -Value $Style.textColor)) {
+            $Errors.Add("$Prefix.textColor는 #RRGGBB 형식이어야 합니다.")
+        }
+    }
+}
+
+function Test-HwpGenerateParagraphStyle {
+    param(
+        [AllowNull()][object]$Style,
+        [Parameter(Mandatory)][string]$Prefix,
+        [Parameter(Mandatory)][AllowEmptyCollection()][Collections.Generic.List[string]]$Errors
+    )
+    if ($null -eq $Style) { return }
+    if (Test-HwpGenerateProperty -InputObject $Style -Name 'alignment') {
+        $alignment = ([string]$Style.alignment).ToUpperInvariant()
+        if ($alignment -notin @('JUSTIFY','LEFT','RIGHT','CENTER','DISTRIBUTE','DISTRIBUTE_SPACE')) {
+            $Errors.Add("$Prefix.alignment가 올바르지 않습니다.")
+        }
+    }
+    if (Test-HwpGenerateProperty -InputObject $Style -Name 'lineSpacingPercent') {
+        $spacing = [int]$Style.lineSpacingPercent
+        if ($spacing -lt 50 -or $spacing -gt 500) { $Errors.Add("$Prefix.lineSpacingPercent는 50~500이어야 합니다.") }
+    }
+    foreach ($name in @('marginBeforeMm','marginAfterMm','leftMarginMm','rightMarginMm')) {
+        if (Test-HwpGenerateProperty -InputObject $Style -Name $name) {
+            $value = [double]$Style.$name
+            if ($value -lt 0 -or $value -gt 1000) { $Errors.Add("$Prefix.$name 값이 올바르지 않습니다.") }
+        }
+    }
+    if (Test-HwpGenerateProperty -InputObject $Style -Name 'indentMm') {
+        $value = [double]$Style.indentMm
+        if ($value -lt -1000 -or $value -gt 1000) { $Errors.Add("$Prefix.indentMm 값이 올바르지 않습니다.") }
+    }
+}
+
+function Test-HwpGenerateTableStyle {
+    param(
+        [AllowNull()][object]$Style,
+        [Parameter(Mandatory)][string]$Prefix,
+        [Parameter(Mandatory)][AllowEmptyCollection()][Collections.Generic.List[string]]$Errors
+    )
+    if ($null -eq $Style) { return }
+    if (Test-HwpGenerateProperty -InputObject $Style -Name 'borderType') {
+        $type = ([string]$Style.borderType).ToUpperInvariant()
+        if ($type -notin @('NONE','SOLID','DASH','DOT','DASH_DOT','DASH_DOT_DOT','LONG_DASH','CIRCLE','DOUBLE','THIN_THICK','THICK_THIN','THIN_THICK_THIN','WAVE','DOUBLE_WAVE')) {
+            $Errors.Add("$Prefix.borderType이 올바르지 않습니다.")
+        }
+    }
+    if (Test-HwpGenerateProperty -InputObject $Style -Name 'borderWidthMm') {
+        $width = [double]$Style.borderWidthMm
+        if ($width -lt 0.05 -or $width -gt 10) { $Errors.Add("$Prefix.borderWidthMm는 0.05~10이어야 합니다.") }
+    }
+    foreach ($name in @('borderColor','fillColor')) {
+        if (Test-HwpGenerateProperty -InputObject $Style -Name $name) {
+            $allowNone = $name -eq 'fillColor'
+            if (-not (Test-HwpGenerateColorValue -Value $Style.$name -AllowNone:$allowNone)) {
+                $Errors.Add("$Prefix.$name 값이 올바르지 않습니다.")
+            }
+        }
+    }
+    if (Test-HwpGenerateProperty -InputObject $Style -Name 'cellPaddingMm') {
+        $padding = [double]$Style.cellPaddingMm
+        if ($padding -lt 0 -or $padding -gt 50) { $Errors.Add("$Prefix.cellPaddingMm는 0~50이어야 합니다.") }
+    }
+}
+
+function Test-HwpGeneratePageStyle {
+    param(
+        [AllowNull()][object]$Page,
+        [Parameter(Mandatory)][string]$Prefix,
+        [Parameter(Mandatory)][AllowEmptyCollection()][Collections.Generic.List[string]]$Errors
+    )
+    if ($null -eq $Page) { return }
+    if (Test-HwpGenerateProperty -InputObject $Page -Name 'orientation') {
+        $orientation = ([string]$Page.orientation).ToUpperInvariant()
+        if ($orientation -notin @('PORTRAIT','LANDSCAPE')) { $Errors.Add("$Prefix.orientation은 PORTRAIT 또는 LANDSCAPE여야 합니다.") }
+    }
+    foreach ($name in @('widthMm','heightMm')) {
+        if (Test-HwpGenerateProperty -InputObject $Page -Name $name) {
+            $value = [double]$Page.$name
+            if ($value -lt 10 -or $value -gt 2000) { $Errors.Add("$Prefix.$name 값이 올바르지 않습니다.") }
+        }
+    }
+    if (Test-HwpGenerateProperty -InputObject $Page -Name 'margins') {
+        foreach ($name in @('leftMm','rightMm','topMm','bottomMm','headerMm','footerMm','gutterMm')) {
+            if (Test-HwpGenerateProperty -InputObject $Page.margins -Name $name) {
+                $value = [double]$Page.margins.$name
+                if ($value -lt 0 -or $value -gt 500) { $Errors.Add("$Prefix.margins.$name 값이 올바르지 않습니다.") }
+            }
+        }
+    }
+}
+
 function Move-HwpGenerateArtifactToFailure {
     param(
         [Parameter(Mandatory)][string]$StagingPath,
@@ -490,10 +650,10 @@ function Test-HwpGenerateTextContains {
     )
 
     if ($null -eq $Actual -or $null -eq $Expected) { return $false }
-    if ($Actual.Contains($Expected, [StringComparison]::Ordinal)) { return $true }
+    if (Test-HwpGenerateOrdinalContains -Actual $Actual -Expected $Expected) { return $true }
     $actualNormalized = [Regex]::Replace($Actual, "\r\n|\r|\n", '')
     $expectedNormalized = [Regex]::Replace($Expected, "\r\n|\r|\n", '')
-    $actualNormalized.Contains($expectedNormalized, [StringComparison]::Ordinal)
+    Test-HwpGenerateOrdinalContains -Actual $actualNormalized -Expected $expectedNormalized
 }
 
 function Invoke-HwpGenerateFromTemplate {
@@ -683,7 +843,7 @@ function Invoke-HwpGenerateNewDocument {
     }
     foreach ($block in @($Plan.content)) {
         if ([string]$block.type -eq 'paragraph' -and
-            -not ([string]$after.Text).Contains([string]$block.text, [StringComparison]::Ordinal)) {
+            -not (Test-HwpGenerateOrdinalContains -Actual ([string]$after.Text) -Expected ([string]$block.text))) {
             $errors.Add("재열기 후 문단을 찾지 못했습니다: $($block.text)")
         }
         if ([string]$block.type -eq 'field') {
@@ -694,7 +854,7 @@ function Invoke-HwpGenerateNewDocument {
         }
         if ([string]$block.type -eq 'table') {
             foreach ($cell in @($block.cells)) {
-                if (-not ([string]$after.Text).Contains([string]$cell.text, [StringComparison]::Ordinal)) {
+                if (-not (Test-HwpGenerateOrdinalContains -Actual ([string]$after.Text) -Expected ([string]$cell.text))) {
                     $errors.Add("재열기 후 표 셀 문구를 찾지 못했습니다: $($cell.text)")
                 }
             }
@@ -814,12 +974,12 @@ function Invoke-HwpGenerateNewDocument {
         if ([string]$block.type -eq 'paragraph' -and -not (Test-HwpGenerateTextContains -Actual ([string]$after.Text) -Expected ([string]$block.text))) {
             $errors.Add("HWPX XML 검사 후 문단을 찾지 못했습니다: $($block.text)")
         }
-        if ([string]$block.type -eq 'field' -and -not ([string]$after.Text).Contains([string]$block.value, [StringComparison]::Ordinal)) {
+        if ([string]$block.type -eq 'field' -and -not (Test-HwpGenerateOrdinalContains -Actual ([string]$after.Text) -Expected ([string]$block.value))) {
             $errors.Add("HWPX XML 검사 후 필드값을 찾지 못했습니다: $($block.name)")
         }
         if ([string]$block.type -eq 'table') {
             foreach ($cell in @($block.cells)) {
-                if (-not ([string]$after.Text).Contains([string]$cell.text, [StringComparison]::Ordinal)) {
+                if (-not (Test-HwpGenerateOrdinalContains -Actual ([string]$after.Text) -Expected ([string]$cell.text))) {
                     $errors.Add("HWPX XML 검사 후 표 셀 문구를 찾지 못했습니다: $($cell.text)")
                 }
             }

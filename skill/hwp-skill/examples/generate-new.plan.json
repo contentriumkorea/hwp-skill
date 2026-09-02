@@ -1,13 +1,56 @@
 {
   "version": "1.0",
+  "title": "업무 보고서",
+  "document": {
+    "page": {
+      "orientation": "PORTRAIT",
+      "widthMm": 210,
+      "heightMm": 297,
+      "margins": {
+        "leftMm": 20,
+        "rightMm": 20,
+        "topMm": 18,
+        "bottomMm": 18,
+        "headerMm": 12,
+        "footerMm": 12,
+        "gutterMm": 0
+      }
+    },
+    "textStyle": {
+      "fontFamily": "함초롬돋움",
+      "fontSizePt": 10,
+      "textColor": "#222222"
+    },
+    "paragraphStyle": {
+      "alignment": "JUSTIFY",
+      "lineSpacingPercent": 160
+    },
+    "tableStyle": {
+      "borderType": "SOLID",
+      "borderWidthMm": 0.12,
+      "borderColor": "#4A5568",
+      "fillColor": "none",
+      "cellPaddingMm": 1.8
+    }
+  },
   "content": [
     {
       "type": "paragraph",
-      "text": "업무 보고서"
+      "text": "업무 보고서",
+      "textStyle": {
+        "fontSizePt": 18,
+        "bold": true,
+        "textColor": "#1F4E79"
+      },
+      "paragraphStyle": {
+        "alignment": "CENTER",
+        "lineSpacingPercent": 145,
+        "marginAfterMm": 5
+      }
     },
     {
       "type": "paragraph",
-      "text": "아래 내용은 HWP 스킬 스킬로 생성한 예시입니다."
+      "text": "아래 내용은 HWP 스킬로 생성한 예시입니다."
     },
     {
       "type": "table",

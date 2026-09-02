@@ -2,6 +2,7 @@
 
 Import-Module (Join-Path $PSScriptRoot 'HwpCommon.psm1') -ErrorAction Stop
 Import-Module (Join-Path $PSScriptRoot 'HwpTables.psm1') -ErrorAction Stop
+Import-Module (Join-Path $PSScriptRoot 'HwpDocumentModel.psm1') -ErrorAction Stop
 
 $compoundReaderType = 'Contentrium.HwpSkill.CompoundFileReader' -as [type]
 if ($null -eq $compoundReaderType) {
@@ -356,8 +357,12 @@ function Get-HwpPortableSectionData {
     )
 
     $paragraphs = [Collections.Generic.List[string]]::new()
+    $layoutParagraphs = [Collections.Generic.List[object]]::new()
+    $pageDefinitions = [Collections.Generic.List[object]]::new()
     $sectionTables = [Collections.Generic.List[object]]::new()
     $tableStack = [Collections.Generic.List[object]]::new()
+    $activeLayoutParagraph = $null
+    $storedPageFirstLineCount = 0
     $tableCellCount = 0
     [long]$textCharacterCount = 0
     $offset = 0
@@ -414,6 +419,27 @@ function Get-HwpPortableSectionData {
             $tableStack.Add($tableContext)
         }
 
+        if ($tagId -eq 0x42) {
+            if ($null -ne $activeLayoutParagraph) {
+                $completedParagraph = Complete-HwpPortableParagraphModel -Context $activeLayoutParagraph
+                $layoutParagraphs.Add($completedParagraph)
+                $storedPageFirstLineCount += @($completedParagraph.LineSegments | Where-Object IsPageFirst).Count
+            }
+            $activeLayoutParagraph = [pscustomobject]@{
+                Index = $layoutParagraphs.Count
+                Section = $SectionName
+                RecordLevel = $level
+                Header = ConvertFrom-HwpPortableParagraphHeaderPayload -Bytes $payload
+                TextDetail = $null
+                CharShapeRuns = [Collections.Generic.List[object]]::new()
+                LineSegments = [Collections.Generic.List[object]]::new()
+            }
+        }
+
+        if ($tagId -eq 0x49) {
+            $pageDefinitions.Add((ConvertFrom-HwpPortablePageDefinitionPayload -Bytes $payload -Index $pageDefinitions.Count))
+        }
+
         if ($tagId -eq 0x43) {
             $paragraph = ConvertFrom-HwpPortableParagraphText -Bytes $payload
             if (($textCharacterCount + $paragraph.Length) -gt $MaximumTextCharacters) {
@@ -421,6 +447,9 @@ function Get-HwpPortableSectionData {
             }
             $paragraphs.Add($paragraph)
             $textCharacterCount += $paragraph.Length
+            if ($null -ne $activeLayoutParagraph -and $level -gt $activeLayoutParagraph.RecordLevel) {
+                $activeLayoutParagraph.TextDetail = ConvertFrom-HwpPortableParagraphTextDetail -Bytes $payload
+            }
             if ($tableStack.Count -gt 0) {
                 $activeTable = $tableStack[$tableStack.Count - 1]
                 if ($null -ne $activeTable.ActiveCell -and $level -gt $activeTable.RecordLevel) {
@@ -430,6 +459,18 @@ function Get-HwpPortableSectionData {
                     }
                     $null = $activeTable.ActiveParagraph.Append($paragraph)
                 }
+            }
+        }
+        elseif ($tagId -eq 0x44 -and $null -ne $activeLayoutParagraph -and
+                $level -gt $activeLayoutParagraph.RecordLevel) {
+            foreach ($run in @(ConvertFrom-HwpPortableCharShapeRuns -Bytes $payload)) {
+                $activeLayoutParagraph.CharShapeRuns.Add($run)
+            }
+        }
+        elseif ($tagId -eq 0x45 -and $null -ne $activeLayoutParagraph -and
+                $level -gt $activeLayoutParagraph.RecordLevel) {
+            foreach ($segment in @(ConvertFrom-HwpPortableLineSegments -Bytes $payload)) {
+                $activeLayoutParagraph.LineSegments.Add($segment)
             }
         }
         elseif ($tagId -eq 0x48 -and $tableStack.Count -gt 0 -and
@@ -477,6 +518,12 @@ function Get-HwpPortableSectionData {
         $recordCount++
     }
 
+    if ($null -ne $activeLayoutParagraph) {
+        $completedParagraph = Complete-HwpPortableParagraphModel -Context $activeLayoutParagraph
+        $layoutParagraphs.Add($completedParagraph)
+        $storedPageFirstLineCount += @($completedParagraph.LineSegments | Where-Object IsPageFirst).Count
+    }
+
     while ($tableStack.Count -gt 0) {
         $completedContext = $tableStack[$tableStack.Count - 1]
         $null = Complete-HwpPortableTableContext -TableContext $completedContext `
@@ -489,6 +536,9 @@ function Get-HwpPortableSectionData {
 
     [pscustomobject]@{
         Paragraphs = @($paragraphs)
+        LayoutParagraphs = @($layoutParagraphs)
+        PageDefinitions = @($pageDefinitions)
+        StoredPageFirstLineCount = $storedPageFirstLineCount
         RecordCount = $recordCount
         TextCharacterCount = $textCharacterCount
         TableCount = $sectionTables.Count
@@ -584,6 +634,17 @@ function Get-HwpPortableInspection {
             )
         }
 
+        [long]$expandedByteCount = 0
+        [byte[]]$docInfoBytes = $compoundSession.ReadStream('', 'DocInfo', $MaximumStreamBytes)
+        if ($compressed) {
+            [byte[]]$docInfoBytes = Expand-HwpPortableDeflate -Bytes $docInfoBytes -MaximumBytes $MaximumExpandedBytes
+        }
+        $expandedByteCount += $docInfoBytes.Length
+        if ($expandedByteCount -gt $MaximumExpandedBytes) {
+            throw [IO.InvalidDataException]::new('HWP 문서 정보 압축 해제 크기가 안전 한도를 초과했습니다.')
+        }
+        $docInfo = Get-HwpPortableDocInfoData -Bytes $docInfoBytes
+
         $sectionElements = @(
             $compoundSession.ListElements('BodyText') |
                 Where-Object { $_.Type -eq 2 -and $_.Name -match '^Section(?<number>\d+)$' } |
@@ -601,12 +662,14 @@ function Get-HwpPortableInspection {
         }
 
         $paragraphs = [Collections.Generic.List[string]]::new()
+        $layoutParagraphs = [Collections.Generic.List[object]]::new()
+        $sections = [Collections.Generic.List[object]]::new()
         $controls = [Collections.Generic.List[object]]::new()
         $tables = [Collections.Generic.List[object]]::new()
         $structureWarnings = [Collections.Generic.List[string]]::new()
         $recordCount = 0
-        [long]$expandedByteCount = 0
         [long]$textCharacterCount = 0
+        $storedPageCount = 0
         foreach ($element in $sectionElements) {
             [byte[]]$sectionBytes = $compoundSession.ReadStream(
                 'BodyText', [string]$element.Name, $MaximumStreamBytes
@@ -648,6 +711,20 @@ function Get-HwpPortableInspection {
             foreach ($paragraph in @($section.Paragraphs)) {
                 $paragraphs.Add([string]$paragraph)
             }
+            $paragraphStartIndex = $layoutParagraphs.Count
+            foreach ($layoutParagraph in @($section.LayoutParagraphs)) {
+                $layoutParagraph.index = $layoutParagraphs.Count
+                $layoutParagraphs.Add($layoutParagraph)
+            }
+            $sections.Add([pscustomobject][ordered]@{
+                index = $sections.Count
+                name = [string]$element.Name
+                paragraphStartIndex = $paragraphStartIndex
+                paragraphCount = @($section.LayoutParagraphs).Count
+                pageDefinitions = @($section.PageDefinitions)
+                storedPageFirstLineCount = [int]$section.StoredPageFirstLineCount
+            })
+            $storedPageCount += [int]$section.StoredPageFirstLineCount
             $recordCount += [int]$section.RecordCount
             $textCharacterCount += [long]$section.TextCharacterCount
         }
@@ -661,7 +738,8 @@ function Get-HwpPortableInspection {
 
         $warnings = @(
             'HWP 5.x를 Windows 기본 OLE 복합파일 API로 읽었으며 한컴오피스는 실행하지 않았습니다.',
-            '본문 텍스트와 표의 행·열·병합·셀 문단 및 그림·수식 개체를 구조적으로 읽었습니다. 페이지 수와 최종 레이아웃은 별도 렌더러로 확인해야 합니다.'
+            '글꼴·글자 모양·문단 모양·테두리/배경·저장된 줄 좌표·용지 설정과 표 구조를 읽었습니다.',
+            '줄 배치와 페이지 수는 HWP에 저장된 레이아웃 캐시 기준이며, 설치 글꼴 대체까지 반영한 최종 픽셀 렌더링은 별도 렌더러로 확인해야 합니다.'
         )
         $warnings += @($structureWarnings)
         New-HwpResult -Status PASS_WITH_WARNINGS -Command inspect-hwp-portable -Data ([pscustomobject]@{
@@ -672,7 +750,17 @@ function Get-HwpPortableInspection {
             Fields = [pscustomobject]@{}
             Controls = @($controls)
             Tables = @($tables)
-            PageCount = 0
+            Resources = $docInfo.Resources
+            Paragraphs = @($layoutParagraphs)
+            Sections = @($sections)
+            Layout = [pscustomobject][ordered]@{
+                source = 'HWP_STORED_LAYOUT_CACHE'
+                storedLineLayoutAvailable = @($layoutParagraphs | Where-Object { $_.LineSegments.Count -gt 0 }).Count -gt 0
+                lineSegmentCount = @($layoutParagraphs | ForEach-Object { $_.LineSegments }).Count
+                pageCountSource = if ($storedPageCount -gt 0) { 'PAGE_FIRST_LINE_FLAGS' } else { 'UNAVAILABLE' }
+                exactRenderingVerified = $false
+            }
+            PageCount = $storedPageCount
             SectionCount = $sectionElements.Count
             RecordCount = $recordCount
             ExpandedBytes = $expandedByteCount

@@ -23,6 +23,16 @@ function Add-TestUInt32 {
     $Buffer.AddRange([byte[]][BitConverter]::GetBytes($Value))
 }
 
+function Add-TestInt16 {
+    param([Collections.Generic.List[byte]]$Buffer, [int16]$Value)
+    $Buffer.AddRange([byte[]][BitConverter]::GetBytes($Value))
+}
+
+function Add-TestInt32 {
+    param([Collections.Generic.List[byte]]$Buffer, [int32]$Value)
+    $Buffer.AddRange([byte[]][BitConverter]::GetBytes($Value))
+}
+
 function New-TestHwpRecord {
     param(
         [int]$TagId,
@@ -99,6 +109,138 @@ function New-TestHwpParagraphHeaderPayload {
 function New-TestHwpParagraphTextPayload {
     param([string]$Text)
     ,[Text.Encoding]::Unicode.GetBytes($Text + [char]13)
+}
+
+function New-TestHwpFaceNamePayload {
+    param([Parameter(Mandatory)][string]$Name)
+
+    $bytes = [Collections.Generic.List[byte]]::new()
+    $bytes.Add(0)
+    Add-TestUInt16 -Buffer $bytes -Value ([uint16]$Name.Length)
+    $bytes.AddRange([Text.Encoding]::Unicode.GetBytes($Name))
+    ,$bytes.ToArray()
+}
+
+function New-TestHwpBorderFillPayload {
+    $bytes = [Collections.Generic.List[byte]]::new()
+    Add-TestUInt16 -Buffer $bytes -Value 0
+    $bytes.AddRange([byte[]](0, 1, 2, 3))
+    $bytes.AddRange([byte[]](1, 2, 3, 4))
+    foreach ($color in @([uint32]0x000000FF, [uint32]0x0000FF00, [uint32]0x00FF0000, [uint32]0x00112233)) {
+        Add-TestUInt32 -Buffer $bytes -Value $color
+    }
+    $bytes.Add(0)
+    $bytes.Add(1)
+    Add-TestUInt32 -Buffer $bytes -Value ([uint32]0x00665544)
+    Add-TestUInt32 -Buffer $bytes -Value 1
+    Add-TestUInt32 -Buffer $bytes -Value ([uint32]0x00CCBBAA)
+    Add-TestUInt32 -Buffer $bytes -Value ([uint32]0x00030201)
+    Add-TestInt32 -Buffer $bytes -Value 5
+    ,$bytes.ToArray()
+}
+
+function New-TestHwpCharShapePayload {
+    $bytes = [Collections.Generic.List[byte]]::new()
+    foreach ($unused in 1..7) { Add-TestUInt16 -Buffer $bytes -Value 0 }
+    $bytes.AddRange([byte[]](100, 100, 100, 100, 100, 100, 100))
+    $bytes.AddRange([byte[]](0, 0, 0, 0, 0, 0, 0))
+    $bytes.AddRange([byte[]](100, 100, 100, 100, 100, 100, 100))
+    $bytes.AddRange([byte[]](0, 0, 0, 0, 0, 0, 0))
+    Add-TestInt32 -Buffer $bytes -Value 1200
+    Add-TestUInt32 -Buffer $bytes -Value ([uint32]0x40000003)
+    $bytes.AddRange([byte[]](10, 20))
+    foreach ($color in @([uint32]0x00332211, [uint32]0x00665544, [uint32]0x00998877, [uint32]0x00CCBBAA)) {
+        Add-TestUInt32 -Buffer $bytes -Value $color
+    }
+    Add-TestUInt16 -Buffer $bytes -Value 0
+    Add-TestUInt32 -Buffer $bytes -Value ([uint32]0x00FFEEDD)
+    ,$bytes.ToArray()
+}
+
+function New-TestHwpParaShapePayload {
+    $bytes = [Collections.Generic.List[byte]]::new()
+    Add-TestUInt32 -Buffer $bytes -Value 12
+    foreach ($value in @(1000, 200, -300, 100, 200, 160)) {
+        Add-TestInt32 -Buffer $bytes -Value $value
+    }
+    foreach ($value in @(0, 0, 0)) { Add-TestUInt16 -Buffer $bytes -Value $value }
+    foreach ($value in @(10, 20, 30, 40)) { Add-TestInt16 -Buffer $bytes -Value $value }
+    Add-TestUInt32 -Buffer $bytes -Value 48
+    Add-TestUInt32 -Buffer $bytes -Value 0
+    Add-TestUInt32 -Buffer $bytes -Value 150
+    ,$bytes.ToArray()
+}
+
+function New-TestHwpDocInfoStream {
+    $stream = [Collections.Generic.List[byte]]::new()
+    $mapping = [Collections.Generic.List[byte]]::new()
+    foreach ($count in @(0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0)) {
+        Add-TestInt32 -Buffer $mapping -Value $count
+    }
+    $stream.AddRange((New-TestHwpRecord -TagId 0x11 -Level 0 -Payload $mapping.ToArray()))
+    foreach ($font in @('한글시험체', 'Latin Test', '漢字試験', '日本語試験', 'Other Test', 'Symbol Test', 'User Test')) {
+        $stream.AddRange((New-TestHwpRecord -TagId 0x13 -Level 0 -Payload (New-TestHwpFaceNamePayload -Name $font)))
+    }
+    $stream.AddRange((New-TestHwpRecord -TagId 0x14 -Level 0 -Payload (New-TestHwpBorderFillPayload)))
+    $stream.AddRange((New-TestHwpRecord -TagId 0x15 -Level 0 -Payload (New-TestHwpCharShapePayload)))
+    $stream.AddRange((New-TestHwpRecord -TagId 0x19 -Level 0 -Payload (New-TestHwpParaShapePayload)))
+    ,$stream.ToArray()
+}
+
+function New-TestHwpDetailedParagraphHeaderPayload {
+    $bytes = [Collections.Generic.List[byte]]::new()
+    Add-TestUInt32 -Buffer $bytes -Value 7
+    Add-TestUInt32 -Buffer $bytes -Value 0
+    Add-TestUInt16 -Buffer $bytes -Value 0
+    $bytes.Add(2)
+    $bytes.Add(5)
+    Add-TestUInt16 -Buffer $bytes -Value 1
+    Add-TestUInt16 -Buffer $bytes -Value 0
+    Add-TestUInt16 -Buffer $bytes -Value 2
+    Add-TestUInt32 -Buffer $bytes -Value 77
+    Add-TestUInt16 -Buffer $bytes -Value 0
+    ,$bytes.ToArray()
+}
+
+function New-TestHwpLineSegmentPayload {
+    param(
+        [uint32]$TextStart,
+        [int32]$VerticalPosition,
+        [uint32]$Flags
+    )
+
+    $bytes = [Collections.Generic.List[byte]]::new()
+    Add-TestUInt32 -Buffer $bytes -Value $TextStart
+    foreach ($value in @($VerticalPosition, 1200, 1000, 850, 600, 100, 5000)) {
+        Add-TestInt32 -Buffer $bytes -Value $value
+    }
+    Add-TestUInt32 -Buffer $bytes -Value $Flags
+    ,$bytes.ToArray()
+}
+
+function New-TestHwpPageDefinitionPayload {
+    $bytes = [Collections.Generic.List[byte]]::new()
+    foreach ($value in @(59528, 84186, 4252, 4252, 2835, 2835, 1417, 1417, 0)) {
+        Add-TestInt32 -Buffer $bytes -Value $value
+    }
+    Add-TestUInt32 -Buffer $bytes -Value 0
+    ,$bytes.ToArray()
+}
+
+function New-TestHwpLayoutSection {
+    $section = [Collections.Generic.List[byte]]::new()
+    $section.AddRange((New-TestHwpRecord -TagId 0x42 -Level 0 -Payload (New-TestHwpDetailedParagraphHeaderPayload)))
+    $section.AddRange((New-TestHwpRecord -TagId 0x43 -Level 1 -Payload (New-TestHwpParagraphTextPayload -Text '첫줄둘째줄')))
+    $charRuns = [Collections.Generic.List[byte]]::new()
+    Add-TestUInt32 -Buffer $charRuns -Value 0
+    Add-TestUInt32 -Buffer $charRuns -Value 0
+    $section.AddRange((New-TestHwpRecord -TagId 0x44 -Level 1 -Payload $charRuns.ToArray()))
+    $lineSegments = [Collections.Generic.List[byte]]::new()
+    $lineSegments.AddRange((New-TestHwpLineSegmentPayload -TextStart 0 -VerticalPosition 1000 -Flags 393219))
+    $lineSegments.AddRange((New-TestHwpLineSegmentPayload -TextStart 2 -VerticalPosition 2200 -Flags 393216))
+    $section.AddRange((New-TestHwpRecord -TagId 0x45 -Level 1 -Payload $lineSegments.ToArray()))
+    $section.AddRange((New-TestHwpRecord -TagId 0x49 -Level 1 -Payload (New-TestHwpPageDefinitionPayload)))
+    ,$section.ToArray()
 }
 
 function New-TestHwpTableSection {
@@ -184,6 +326,69 @@ function New-TestTableHwpx {
     }
     finally { $stream.Dispose() }
     $LiteralPath
+}
+
+Describe 'HWP 서식 리소스와 저장 레이아웃 복원' {
+    It 'DocInfo의 언어별 글꼴·테두리·글자 모양·문단 모양을 원시 참조와 함께 읽는다' {
+        $docInfo = New-TestHwpDocInfoStream
+
+        $result = & $script:portableModuleInfo {
+            param($Bytes)
+            Get-HwpPortableDocInfoData -Bytes $Bytes
+        } $docInfo
+
+        $result.Resources.Fonts.Count | Should Be 7
+        $result.Resources.Fonts[0].Language | Should Be 'HANGUL'
+        $result.Resources.Fonts[0].Name | Should Be '한글시험체'
+        $result.Resources.Fonts[1].Language | Should Be 'LATIN'
+        $result.Resources.BorderFills.Count | Should Be 1
+        $result.Resources.BorderFills[0].Id | Should Be 1
+        $result.Resources.BorderFills[0].Borders.Left.Type | Should Be 'SOLID'
+        $result.Resources.BorderFills[0].Borders.Left.WidthMm | Should Be 0.12
+        $result.Resources.BorderFills[0].Borders.Left.Color | Should Be '#FF0000'
+        $result.Resources.BorderFills[0].Fill.Solid.BackgroundColor | Should Be '#AABBCC'
+        $result.Resources.CharShapes.Count | Should Be 1
+        $result.Resources.CharShapes[0].FontSizePt | Should Be 12
+        $result.Resources.CharShapes[0].Attributes.Bold | Should Be $true
+        $result.Resources.CharShapes[0].Attributes.Italic | Should Be $true
+        $result.Resources.CharShapes[0].ResolvedFontNames.Hangul | Should Be '한글시험체'
+        $result.Resources.ParaShapes.Count | Should Be 1
+        $result.Resources.ParaShapes[0].Alignment | Should Be 'CENTER'
+        $result.Resources.ParaShapes[0].Margins.Left.Raw | Should Be 1000
+        $result.Resources.ParaShapes[0].Indent.Raw | Should Be -300
+        $result.Resources.ParaShapes[0].LineSpacing.Value | Should Be 150
+    }
+
+    It '문단 헤더·글자 모양 구간·저장된 줄 구간과 용지 배치를 복원한다' {
+        [byte[]]$sectionBytes = New-TestHwpLayoutSection
+        $controls = [Collections.Generic.List[object]]::new()
+        $tables = [Collections.Generic.List[object]]::new()
+        $warnings = [Collections.Generic.List[string]]::new()
+
+        $result = & $script:portableModuleInfo {
+            param($Bytes, $Controls, $Tables, $Warnings)
+            Get-HwpPortableSectionData -Bytes $Bytes -SectionName 'Section0' -Controls $Controls `
+                -Tables $Tables -StructureWarnings $Warnings
+        } $sectionBytes $controls $tables $warnings
+
+        $result.LayoutParagraphs.Count | Should Be 1
+        $paragraph = $result.LayoutParagraphs[0]
+        $paragraph.Text | Should Be '첫줄둘째줄'
+        $paragraph.ParaShapeId | Should Be 0
+        $paragraph.StyleId | Should Be 2
+        $paragraph.BreakTypeRaw | Should Be 5
+        $paragraph.CharShapeRuns.Count | Should Be 1
+        $paragraph.CharShapeRuns[0].CharShapeId | Should Be 0
+        $paragraph.LineSegments.Count | Should Be 2
+        $paragraph.LineSegments[0].IsPageFirst | Should Be $true
+        $paragraph.StoredLines.Count | Should Be 2
+        $paragraph.StoredLines[0].Text | Should Be '첫줄'
+        $paragraph.StoredLines[1].Text | Should Be '둘째줄'
+        $result.PageDefinitions.Count | Should Be 1
+        $result.PageDefinitions[0].Orientation | Should Be 'PORTRAIT'
+        $result.PageDefinitions[0].Width.Raw | Should Be 59528
+        $result.StoredPageFirstLineCount | Should Be 1
+    }
 }
 
 Describe 'HWP 표 구조 복원' {

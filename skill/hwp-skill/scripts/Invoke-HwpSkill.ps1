@@ -39,7 +39,11 @@ function Read-HwpCliJson {
     $length = (Get-Item -LiteralPath $resolved).Length
     if ($length -gt 10485760) { throw 'JSON 파일이 10MB 안전 한도를 초과했습니다.' }
     $text = [IO.File]::ReadAllText($resolved, [Text.UTF8Encoding]::new($false, $true))
-    $text | ConvertFrom-Json -Depth 100 -ErrorAction Stop
+    $convertFromJson = Get-Command ConvertFrom-Json -ErrorAction Stop
+    if ($convertFromJson.Parameters.ContainsKey('Depth')) {
+        return $text | ConvertFrom-Json -Depth 100 -ErrorAction Stop
+    }
+    $text | ConvertFrom-Json -ErrorAction Stop
 }
 
 function Assert-HwpCliValue {

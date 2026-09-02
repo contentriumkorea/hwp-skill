@@ -1,4 +1,4 @@
-$commonModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCommon.psm1'
+﻿$commonModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCommon.psm1'
 $executionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpExecution.psm1'
 $capabilityModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCapabilities.psm1'
 $inspectModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpInspect.psm1'
@@ -58,6 +58,125 @@ Describe 'HWPX 직접 작성 및 최종 변환 경계' {
         $result.After.Text | Should Match '줄바꿈 문단 둘째 줄'
         @($result.After.Controls | Where-Object CtrlId -eq 'tbl').Count | Should Be 1
         @($result.After.Controls | Where-Object CtrlId -eq 'pic').Count | Should Be 1
+    }
+
+    It '글꼴·문단·표 테두리·용지 설정을 HWPX에 직접 기록하고 다시 구조 검사한다' {
+        $output = Join-Path $TestDrive 'styled.hwpx'
+        $plan = [pscustomobject]@{
+            version = '1.0'
+            title = '서식 HWPX 시험'
+            document = [pscustomobject]@{
+                page = [pscustomobject]@{
+                    orientation = 'LANDSCAPE'
+                    widthMm = 297
+                    heightMm = 210
+                    margins = [pscustomobject]@{
+                        leftMm = 18
+                        rightMm = 19
+                        topMm = 20
+                        bottomMm = 21
+                        headerMm = 12
+                        footerMm = 13
+                        gutterMm = 2
+                    }
+                }
+                textStyle = [pscustomobject]@{
+                    fontFamily = 'Noto Sans KR'
+                    fontSizePt = 11
+                    textColor = '#123456'
+                }
+                paragraphStyle = [pscustomobject]@{
+                    alignment = 'JUSTIFY'
+                    lineSpacingPercent = 170
+                }
+                tableStyle = [pscustomobject]@{
+                    borderType = 'DASH'
+                    borderWidthMm = 0.3
+                    borderColor = '#445566'
+                    fillColor = '#F0F1F2'
+                    cellPaddingMm = 2
+                }
+            }
+            content = @(
+                [pscustomobject]@{
+                    type = 'paragraph'
+                    text = '서식 있는 제목'
+                    textStyle = [pscustomobject]@{
+                        fontFamily = 'Pretendard'
+                        fontSizePt = 18
+                        bold = $true
+                        italic = $true
+                        textColor = '#112233'
+                    }
+                    paragraphStyle = [pscustomobject]@{
+                        alignment = 'CENTER'
+                        lineSpacingPercent = 145
+                        marginAfterMm = 3
+                    }
+                }
+                [pscustomobject]@{
+                    type = 'table'
+                    rows = 1
+                    columns = 1
+                    cells = @(
+                        [pscustomobject]@{
+                            row = 1
+                            column = 1
+                            text = '서식 셀'
+                            style = [pscustomobject]@{ cellPaddingMm = 4 }
+                        }
+                    )
+                }
+            )
+        }
+        $context = New-HwpExecutionContext
+        $capabilities = Get-HwpCapabilitySnapshot -ExecutionContext $context -NativeRegistrationProbe { $false } -PortableBackendProbe { $false } -IsolatedWorkerProbe { $false }
+        $sessionCalls = [pscustomobject]@{ Value = 0 }
+        $sessionFactory = ({ param($ignored) $sessionCalls.Value++; throw '세션 호출 금지' }.GetNewClosure())
+
+        $result = Invoke-HwpGenerate -NewDocument -Plan $plan -OutputPath $output -ExecutionContext $context -Capabilities $capabilities -SessionFactory $sessionFactory
+
+        $result.Status | Should Be 'PASS_WITH_WARNINGS'
+        $sessionCalls.Value | Should Be 0
+        (@($result.After.Resources.Fonts.Name) -contains 'Pretendard') | Should Be $true
+        $titleParagraph = @($result.After.Paragraphs | Where-Object Text -eq '서식 있는 제목')[0]
+        $titleCharShape = @($result.After.Resources.CharShapes | Where-Object Id -eq $titleParagraph.CharShapeRuns[0].CharShapeId)[0]
+        $titleCharShape.ResolvedFontNames.Hangul | Should Be 'Pretendard'
+        $titleCharShape.FontSizePt | Should Be 18
+        $titleCharShape.Attributes.Bold | Should Be $true
+        $titleCharShape.Attributes.Italic | Should Be $true
+        $titleCharShape.TextColor | Should Be '#112233'
+        $titleParaShape = @($result.After.Resources.ParaShapes | Where-Object Id -eq $titleParagraph.ParaShapeId)[0]
+        $titleParaShape.Alignment | Should Be 'CENTER'
+        $titleParaShape.LineSpacing.Value | Should Be 145
+        $result.After.Sections[0].PageDefinitions[0].Orientation | Should Be 'LANDSCAPE'
+        [Math]::Round($result.After.Sections[0].PageDefinitions[0].Width.Millimeter, 1) | Should Be 297
+        [Math]::Round($result.After.Sections[0].PageDefinitions[0].Margins.Left.Millimeter, 1) | Should Be 18
+        $table = $result.After.Tables[0]
+        $tableBorder = @($result.After.Resources.BorderFills | Where-Object Id -eq $table.BorderFillId)[0]
+        $tableBorder.Borders.Left.Type | Should Be 'DASH'
+        $tableBorder.Borders.Left.WidthMm | Should Be 0.3
+        $tableBorder.Borders.Left.Color | Should Be '#445566'
+        $tableBorder.Fill.Solid.BackgroundColor | Should Be '#F0F1F2'
+        $table.Cells[0].Margins.Left | Should Be 1134
+        $table.Cells[0].Margins.Right | Should Be 1134
+    }
+
+    It '잘못된 색상과 용지 방향을 작성 전에 거부한다' {
+        $plan = [pscustomobject]@{
+            version = '1.0'
+            document = [pscustomobject]@{
+                page = [pscustomobject]@{ orientation = 'SIDEWAYS' }
+                textStyle = [pscustomobject]@{ textColor = 'red' }
+            }
+            content = @([pscustomobject]@{ type = 'paragraph'; text = '거부 시험' })
+        }
+
+        $validation = Test-HwpNewDocumentPlan -Plan $plan
+
+        $validation.Status | Should Be 'BLOCKED'
+        ($validation.Errors -join ' ') | Should Match 'orientation'
+        ($validation.Errors -join ' ') | Should Match 'textColor'
     }
 
     It '최종 HWP 변환은 별도 작업자 계약으로만 결과를 승격한다' {

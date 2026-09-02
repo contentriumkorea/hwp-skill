@@ -1,6 +1,7 @@
 ﻿Set-StrictMode -Version Latest
 
 Import-Module (Join-Path $PSScriptRoot 'HwpCommon.psm1') -ErrorAction Stop
+Import-Module (Join-Path $PSScriptRoot 'HwpHwpxStyles.psm1') -ErrorAction Stop
 
 $script:HwpxNamespaceBlock = 'xmlns:ha="http://www.hancom.co.kr/hwpml/2011/app" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hp10="http://www.hancom.co.kr/hwpml/2016/paragraph" xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core" xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" xmlns:hhs="http://www.hancom.co.kr/hwpml/2011/history" xmlns:hm="http://www.hancom.co.kr/hwpml/2011/master-page" xmlns:hpf="http://www.hancom.co.kr/schema/2011/hpf" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf/" xmlns:ooxmlchart="http://www.hancom.co.kr/hwpml/2016/ooxmlchart" xmlns:hwpunitchar="http://www.hancom.co.kr/hwpml/2016/HwpUnitChar" xmlns:epub="http://www.idpf.org/2007/ops" xmlns:config="urn:oasis:names:tc:opendocument:xmlns:config:1.0"'
 
@@ -54,9 +55,18 @@ function New-HwpxLineSegmentXml {
 }
 
 function New-HwpxSectionPropertiesXml {
+    param([AllowNull()][object]$PageSettings = $null)
     $value = @'
 <hp:secPr id="" textDirection="HORIZONTAL" spaceColumns="1134" tabStop="8000" tabStopVal="4000" tabStopUnit="HWPUNIT" outlineShapeIDRef="1" memoShapeIDRef="1" textVerticalWidthHead="0" masterPageCnt="0"><hp:grid lineGrid="0" charGrid="0" wonggojiFormat="0"/><hp:startNum pageStartsOn="BOTH" page="0" pic="0" tbl="0" equation="0"/><hp:visibility hideFirstHeader="0" hideFirstFooter="0" hideFirstMasterPage="0" border="SHOW_ALL" fill="SHOW_ALL" hideFirstPageNum="0" hideFirstEmptyLine="0" showLineNumber="0"/><hp:lineNumberShape restartType="0" countBy="0" distance="0" startNumber="0"/><hp:pagePr landscape="WIDELY" width="59528" height="84186" gutterType="LEFT_ONLY"><hp:margin header="4252" footer="4252" gutter="0" left="4251" right="4251" top="2834" bottom="2834"/></hp:pagePr><hp:footNotePr><hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/><hp:noteLine length="-1" type="SOLID" width="0.12 mm" color="#000000"/><hp:noteSpacing betweenNotes="283" belowLine="567" aboveLine="850"/><hp:numbering type="CONTINUOUS" newNum="1"/><hp:placement place="EACH_COLUMN" beneathText="0"/></hp:footNotePr><hp:endNotePr><hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/><hp:noteLine length="14692344" type="SOLID" width="0.12 mm" color="#000000"/><hp:noteSpacing betweenNotes="0" belowLine="567" aboveLine="850"/><hp:numbering type="CONTINUOUS" newNum="1"/><hp:placement place="END_OF_DOCUMENT" beneathText="0"/></hp:endNotePr><hp:pageBorderFill type="BOTH" borderFillIDRef="1" textBorder="PAPER" headerInside="0" footerInside="0" fillArea="PAPER"><hp:offset left="1417" right="1417" top="1417" bottom="1417"/></hp:pageBorderFill><hp:pageBorderFill type="EVEN" borderFillIDRef="1" textBorder="PAPER" headerInside="0" footerInside="0" fillArea="PAPER"><hp:offset left="1417" right="1417" top="1417" bottom="1417"/></hp:pageBorderFill><hp:pageBorderFill type="ODD" borderFillIDRef="1" textBorder="PAPER" headerInside="0" footerInside="0" fillArea="PAPER"><hp:offset left="1417" right="1417" top="1417" bottom="1417"/></hp:pageBorderFill>
 '@
+    if ($null -ne $PageSettings) {
+        $landscape = if ([string]$PageSettings.orientation -eq 'LANDSCAPE') { 'WIDELY' } else { 'NARROWLY' }
+        $pageXml = '<hp:pagePr landscape="{0}" width="{1}" height="{2}" gutterType="LEFT_ONLY"><hp:margin header="{3}" footer="{4}" gutter="{5}" left="{6}" right="{7}" top="{8}" bottom="{9}"/></hp:pagePr>' -f `
+            $landscape, $PageSettings.width, $PageSettings.height, $PageSettings.margins.header,
+            $PageSettings.margins.footer, $PageSettings.margins.gutter, $PageSettings.margins.left,
+            $PageSettings.margins.right, $PageSettings.margins.top, $PageSettings.margins.bottom
+        $value = [regex]::Replace($value, '<hp:pagePr\b.*?</hp:pagePr>', $pageXml)
+    }
     $value + '</hp:secPr>'
 }
 
@@ -65,21 +75,24 @@ function New-HwpxParagraphXml {
         [Parameter(Mandatory)][int]$Id,
         [AllowEmptyString()][string]$Text = '',
         [switch]$IncludeSectionProperties,
+        [AllowNull()][object]$PageSettings = $null,
+        [int]$CharPrId = 0,
+        [int]$ParaPrId = 0,
         [int]$PageBreak = 0,
         [int]$HorizontalSize = 51024,
         [AllowEmptyString()][string]$InlineXml = ''
     )
 
     $builder = [Text.StringBuilder]::new()
-    $null = $builder.Append('<hp:p id="').Append($Id).Append('" paraPrIDRef="0" styleIDRef="0" pageBreak="').Append($PageBreak).Append('" columnBreak="0" merged="0">')
+    $null = $builder.Append('<hp:p id="').Append($Id).Append('" paraPrIDRef="').Append($ParaPrId).Append('" styleIDRef="0" pageBreak="').Append($PageBreak).Append('" columnBreak="0" merged="0">')
     if ($IncludeSectionProperties) {
-        $null = $builder.Append('<hp:run charPrIDRef="0">').Append((New-HwpxSectionPropertiesXml)).Append('<hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="1" sameSz="1" sameGap="0"/></hp:ctrl></hp:run>')
+        $null = $builder.Append('<hp:run charPrIDRef="0">').Append((New-HwpxSectionPropertiesXml -PageSettings $PageSettings)).Append('<hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="1" sameSz="1" sameGap="0"/></hp:ctrl></hp:run>')
     }
     if ($InlineXml.Length -gt 0) {
-        $null = $builder.Append('<hp:run charPrIDRef="0">').Append($InlineXml).Append('</hp:run>')
+        $null = $builder.Append('<hp:run charPrIDRef="').Append($CharPrId).Append('">').Append($InlineXml).Append('</hp:run>')
     }
     else {
-        $null = $builder.Append('<hp:run charPrIDRef="0">')
+        $null = $builder.Append('<hp:run charPrIDRef="').Append($CharPrId).Append('">')
         Add-HwpxInlineText -Builder $builder -Text $Text
         $null = $builder.Append('</hp:run>')
     }
@@ -102,6 +115,18 @@ function Get-HwpxTableCellText {
     ''
 }
 
+function Get-HwpxTableCell {
+    param(
+        [Parameter(Mandatory)][object]$Block,
+        [Parameter(Mandatory)][int]$Row,
+        [Parameter(Mandatory)][int]$Column
+    )
+    foreach ($cell in @(if ($Block.PSObject.Properties.Name -contains 'cells') { $Block.cells } else { @() })) {
+        if ([int]$cell.row -eq $Row -and [int]$cell.column -eq $Column) { return $cell }
+    }
+    $null
+}
+
 function New-HwpxTableXml {
     param(
         [Parameter(Mandatory)][object]$Block,
@@ -114,20 +139,27 @@ function New-HwpxTableXml {
     $cellWidth = [int][Math]::Floor($tableWidth / $columns)
     $cellHeight = 1800
     $tableHeight = [int][Math]::Max($cellHeight, $cellHeight * $rows)
+    $tableBorderFillId = if ($Block.PSObject.Properties.Name -contains '__borderFillId') { [int]$Block.__borderFillId } else { 3 }
+    $cellPadding = if ($Block.PSObject.Properties.Name -contains '__cellPadding') { [int]$Block.__cellPadding } else { 510 }
     $builder = [Text.StringBuilder]::new()
-    $null = $builder.Append('<hp:tbl id="').Append($Id).Append('" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="CELL" repeatHeader="0" rowCnt="').Append($rows).Append('" colCnt="').Append($columns).Append('" cellSpacing="0" borderFillIDRef="3" noAdjust="0">')
+    $null = $builder.Append('<hp:tbl id="').Append($Id).Append('" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="CELL" repeatHeader="0" rowCnt="').Append($rows).Append('" colCnt="').Append($columns).Append('" cellSpacing="0" borderFillIDRef="').Append($tableBorderFillId).Append('" noAdjust="0">')
     $null = $builder.Append('<hp:sz width="').Append($tableWidth).Append('" widthRelTo="ABSOLUTE" height="').Append($tableHeight).Append('" heightRelTo="ABSOLUTE" protect="0"/>')
     $null = $builder.Append('<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="COLUMN" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>')
-    $null = $builder.Append('<hp:outMargin left="283" right="283" top="283" bottom="283"/><hp:inMargin left="510" right="510" top="141" bottom="141"/>')
+    $null = $builder.Append('<hp:outMargin left="283" right="283" top="283" bottom="283"/><hp:inMargin left="').Append($cellPadding).Append('" right="').Append($cellPadding).Append('" top="').Append($cellPadding).Append('" bottom="').Append($cellPadding).Append('"/>')
     for ($row = 1; $row -le $rows; $row++) {
         $null = $builder.Append('<hp:tr>')
         for ($column = 1; $column -le $columns; $column++) {
-            $cellText = Get-HwpxTableCellText -Block $Block -Row $row -Column $column
+            $cell = Get-HwpxTableCell -Block $Block -Row $row -Column $column
+            $cellText = if ($null -eq $cell) { '' } else { [string]$cell.text }
+            $cellCharPrId = if ($null -ne $cell -and $cell.PSObject.Properties.Name -contains '__charPrId') { [int]$cell.__charPrId } elseif ($Block.PSObject.Properties.Name -contains '__charPrId') { [int]$Block.__charPrId } else { 0 }
+            $cellParaPrId = if ($null -ne $cell -and $cell.PSObject.Properties.Name -contains '__paraPrId') { [int]$cell.__paraPrId } elseif ($Block.PSObject.Properties.Name -contains '__paraPrId') { [int]$Block.__paraPrId } else { 0 }
+            $cellBorderFillId = if ($null -ne $cell -and $cell.PSObject.Properties.Name -contains '__borderFillId') { [int]$cell.__borderFillId } else { $tableBorderFillId }
+            $cellPaddingValue = if ($null -ne $cell -and $cell.PSObject.Properties.Name -contains '__cellPadding') { [int]$cell.__cellPadding } else { $cellPadding }
             $cellParagraph = [Text.StringBuilder]::new()
-            $null = $cellParagraph.Append('<hp:p id="0" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="0">')
+            $null = $cellParagraph.Append('<hp:p id="0" paraPrIDRef="').Append($cellParaPrId).Append('" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="').Append($cellCharPrId).Append('">')
             Add-HwpxInlineText -Builder $cellParagraph -Text $cellText
-            $null = $cellParagraph.Append('</hp:run>').Append((New-HwpxLineSegmentXml -HorizontalSize ([Math]::Max(1000, $cellWidth - 1020)))).Append('</hp:p>')
-            $null = $builder.Append('<hp:tc name="" header="0" hasMargin="0" protect="0" editable="0" dirty="0" borderFillIDRef="3"><hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">').Append($cellParagraph.ToString()).Append('</hp:subList><hp:cellAddr colAddr="').Append($column - 1).Append('" rowAddr="').Append($row - 1).Append('"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="').Append($cellWidth).Append('" height="').Append($cellHeight).Append('"/><hp:cellMargin left="510" right="510" top="141" bottom="141"/></hp:tc>')
+            $null = $cellParagraph.Append('</hp:run>').Append((New-HwpxLineSegmentXml -HorizontalSize ([Math]::Max(1000, $cellWidth - (2 * $cellPaddingValue))))).Append('</hp:p>')
+            $null = $builder.Append('<hp:tc name="" header="0" hasMargin="1" protect="0" editable="0" dirty="0" borderFillIDRef="').Append($cellBorderFillId).Append('"><hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">').Append($cellParagraph.ToString()).Append('</hp:subList><hp:cellAddr colAddr="').Append($column - 1).Append('" rowAddr="').Append($row - 1).Append('"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="').Append($cellWidth).Append('" height="').Append($cellHeight).Append('"/><hp:cellMargin left="').Append($cellPaddingValue).Append('" right="').Append($cellPaddingValue).Append('" top="').Append($cellPaddingValue).Append('" bottom="').Append($cellPaddingValue).Append('"/></hp:tc>')
         }
         $null = $builder.Append('</hp:tr>')
     }
@@ -212,28 +244,34 @@ function New-HwpxPictureXml {
 }
 
 function New-HwpxSectionXml {
-    param([Parameter(Mandatory)][object[]]$Blocks)
+    param(
+        [Parameter(Mandatory)][object[]]$Blocks,
+        [AllowNull()][object]$PageSettings = $null
+    )
 
     $builder = [Text.StringBuilder]::new()
     $null = $builder.Append('<?xml version="1.0" encoding="UTF-8" standalone="yes" ?><hs:sec ').Append($script:HwpxNamespaceBlock).Append('>')
     $paragraphId = 1
     $controlId = 1000
-    $null = $builder.Append((New-HwpxParagraphXml -Id $paragraphId -IncludeSectionProperties))
+    $null = $builder.Append((New-HwpxParagraphXml -Id $paragraphId -IncludeSectionProperties -PageSettings $PageSettings))
     $paragraphId++
     foreach ($block in $Blocks) {
         switch ([string]$block.type) {
             'paragraph' {
-                $null = $builder.Append((New-HwpxParagraphXml -Id $paragraphId -Text ([string]$block.text)))
+                $null = $builder.Append((New-HwpxParagraphXml -Id $paragraphId -Text ([string]$block.text) `
+                    -CharPrId ([int]$block.__charPrId) -ParaPrId ([int]$block.__paraPrId)))
             }
             'field' {
                 $label = if ($block.PSObject.Properties.Name -contains 'label') { [string]$block.label } else { '' }
                 $fieldText = $label + [string]$block.value
-                $null = $builder.Append((New-HwpxParagraphXml -Id $paragraphId -Text $fieldText))
+                $null = $builder.Append((New-HwpxParagraphXml -Id $paragraphId -Text $fieldText `
+                    -CharPrId ([int]$block.__charPrId) -ParaPrId ([int]$block.__paraPrId)))
             }
             'table' {
                 $tableXml = New-HwpxTableXml -Block $block -Id $controlId
                 $controlId++
-                $null = $builder.Append((New-HwpxParagraphXml -Id $paragraphId -InlineXml $tableXml))
+                $null = $builder.Append((New-HwpxParagraphXml -Id $paragraphId -InlineXml $tableXml `
+                    -CharPrId ([int]$block.__charPrId) -ParaPrId ([int]$block.__paraPrId)))
             }
             'image' {
                 $imageNumber = [int]$block.__hwpxImageNumber
@@ -242,7 +280,8 @@ function New-HwpxSectionXml {
                 $heightMm = if ($block.PSObject.Properties.Name -contains 'heightMm') { [double]$block.heightMm } else { 30 }
                 $pictureXml = New-HwpxPictureXml -Id $controlId -ImageId $imageId -OriginalPath ([string]$block.path) -WidthMm $widthMm -HeightMm $heightMm
                 $controlId++
-                $null = $builder.Append((New-HwpxParagraphXml -Id $paragraphId -InlineXml $pictureXml))
+                $null = $builder.Append((New-HwpxParagraphXml -Id $paragraphId -InlineXml $pictureXml `
+                    -CharPrId ([int]$block.__charPrId) -ParaPrId ([int]$block.__paraPrId)))
             }
             'page-break' {
                 $null = $builder.Append((New-HwpxParagraphXml -Id $paragraphId -PageBreak 1))
@@ -374,14 +413,14 @@ function Invoke-HwpxGenerateDocument {
     $generationFailed = $false
     try {
         $imageCursor = 0
-        $normalizedBlocks = foreach ($block in @($Plan.content)) {
+        $selectedBlocks = foreach ($block in @($Plan.content)) {
             if ([string]$block.type -eq 'image') {
                 $imageCursor++
                 $imageBlocks[$imageCursor - 1]
             }
             else { $block }
         }
-        $sectionXml = New-HwpxSectionXml -Blocks @($normalizedBlocks)
+        $normalizedBlocks = @(Copy-HwpxStyledBlocks -Blocks @($selectedBlocks))
         $title = [IO.Path]::GetFileNameWithoutExtension($resolvedOutput)
         if ($Plan.PSObject.Properties.Name -contains 'title' -and -not [string]::IsNullOrWhiteSpace([string]$Plan.title)) { $title = [string]$Plan.title }
         $contentXml = New-HwpxContentPackageXml -Title $title -ImageCount $imageExtensions.Count
@@ -400,7 +439,10 @@ function Invoke-HwpxGenerateDocument {
         $headerEntry = $sourceMap['Contents/header.xml']
         $headerReader = [IO.StreamReader]::new($headerEntry.Open(), [Text.Encoding]::UTF8, $true)
         try { $headerXml = $headerReader.ReadToEnd() } finally { $headerReader.Dispose() }
-        Write-HwpxZipTextEntry -Archive $targetArchive -Name 'Contents/header.xml' -Text (Add-HwpxGridBorderFill -HeaderXml $headerXml)
+        $styleContext = Initialize-HwpxStyleContext -Plan $Plan -Blocks $normalizedBlocks -HeaderXml $headerXml
+        $normalizedBlocks = @($styleContext.Blocks)
+        $sectionXml = New-HwpxSectionXml -Blocks $normalizedBlocks -PageSettings $styleContext.Page
+        Write-HwpxZipTextEntry -Archive $targetArchive -Name 'Contents/header.xml' -Text (Add-HwpxGridBorderFill -HeaderXml $styleContext.HeaderXml)
         Write-HwpxZipTextEntry -Archive $targetArchive -Name 'Contents/content.hpf' -Text $contentXml
         Write-HwpxZipTextEntry -Archive $targetArchive -Name 'Contents/section0.xml' -Text $sectionXml
         $previewText = (($normalizedBlocks | ForEach-Object {

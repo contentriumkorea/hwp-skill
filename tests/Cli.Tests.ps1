@@ -78,6 +78,24 @@ Describe 'HWP 공용 CLI 실행 모드' {
         @($afterProcessIds) -join ',' | Should Be (@($beforeProcessIds) -join ',')
     }
 
+    It 'Windows PowerShell 5.1에서도 서식 계획으로 HWPX를 직접 작성한다' `
+        -Skip:(-not (Test-Path "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe")) {
+        $windowsPowerShell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+        $planPath = Join-Path $PSScriptRoot '../skill/hwp-skill/examples/generate-new.plan.json'
+        $outputPath = Join-Path $TestDrive 'styled-ps51.hwpx'
+
+        $raw = & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -File $cli generate `
+            -NewDocument -PlanPath $planPath -OutputPath $outputPath
+        $exitCode = $LASTEXITCODE
+        $json = ($raw -join "`n") | ConvertFrom-Json
+
+        $exitCode | Should Be 0
+        $json.status | Should Be 'PASS_WITH_WARNINGS'
+        $json.data.After.sections[0].pageDefinitions[0].orientation | Should Be 'PORTRAIT'
+        (@($json.data.After.resources.fonts.name) -contains '함초롬돋움') | Should Be $true
+        Test-Path -LiteralPath $outputPath | Should Be $true
+    }
+
     It 'silent HWPX 생성은 직접 엔진으로 작성한다' {
         $planPath = Join-Path $TestDrive 'generate.plan.json'
         $outputPath = Join-Path $TestDrive 'generated.hwpx'

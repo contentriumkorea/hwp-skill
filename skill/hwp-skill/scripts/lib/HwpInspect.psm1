@@ -20,6 +20,16 @@ function New-HwpInspectionRecord {
         [object]$Fields = ([pscustomobject]@{}),
         [object[]]$Controls = @(),
         [object[]]$Tables = @(),
+        [object]$Resources = ([pscustomobject]@{ fonts = @(); borderFills = @(); charShapes = @(); paraShapes = @() }),
+        [object[]]$Paragraphs = @(),
+        [object[]]$Sections = @(),
+        [object]$Layout = ([pscustomobject]@{
+            source = 'UNAVAILABLE'
+            storedLineLayoutAvailable = $false
+            lineSegmentCount = 0
+            pageCountSource = 'UNAVAILABLE'
+            exactRenderingVerified = $false
+        }),
         [int]$PageCount = 0,
         [string[]]$Warnings = @(),
         [string[]]$Errors = @(),
@@ -35,6 +45,10 @@ function New-HwpInspectionRecord {
         fields = $Fields
         controls = @($Controls)
         tables = @($Tables)
+        resources = $Resources
+        paragraphs = @($Paragraphs)
+        sections = @($Sections)
+        layout = $Layout
         pageCount = $PageCount
         warnings = @($Warnings)
         errors = @($Errors)
@@ -367,16 +381,328 @@ function Get-HwpxParagraphText {
     param([Parameter(Mandatory)][Xml.XmlNode]$Paragraph)
 
     $parts = [Collections.Generic.List[string]]::new()
-    foreach ($textNode in @($Paragraph.SelectNodes(".//*[local-name()='t']"))) {
+    foreach ($textNode in @($Paragraph.SelectNodes(".//*[local-name()='t' or local-name()='lineBreak' or local-name()='tab']"))) {
         $nearestParagraph = $textNode.ParentNode
         while ($null -ne $nearestParagraph -and $nearestParagraph.LocalName -ne 'p') {
             $nearestParagraph = $nearestParagraph.ParentNode
         }
         if ([object]::ReferenceEquals($nearestParagraph, $Paragraph)) {
-            $parts.Add([string]$textNode.InnerText)
+            switch ($textNode.LocalName) {
+                'lineBreak' { $parts.Add("`n") }
+                'tab' { $parts.Add("`t") }
+                default { $parts.Add([string]$textNode.InnerText) }
+            }
         }
     }
     $parts -join ''
+}
+
+function New-HwpxMeasurement {
+    param([Parameter(Mandatory)][long]$Raw)
+    [pscustomobject][ordered]@{
+        raw = $Raw
+        point = [Math]::Round($Raw / 100.0, 4)
+        millimeter = [Math]::Round($Raw / 283.4645669, 4)
+    }
+}
+
+function Get-HwpxBorderWidthMillimeter {
+    param([Parameter(Mandatory)][string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $null }
+    $match = [regex]::Match($Value, '^\s*(?<number>[0-9]+(?:\.[0-9]+)?)\s*mm\s*$', [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if (-not $match.Success) { return $null }
+    [double]::Parse($match.Groups['number'].Value, [Globalization.CultureInfo]::InvariantCulture)
+}
+
+function Get-HwpxHeaderResources {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][Xml.XmlDocument]$Document)
+
+    $fonts = [Collections.Generic.List[object]]::new()
+    $fontNameMap = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($fontFace in @($Document.SelectNodes("//*[local-name()='fontface']"))) {
+        $language = Get-HwpxNodeAttribute -Node $fontFace -LocalName 'lang'
+        foreach ($fontNode in @($fontFace.SelectNodes("./*[local-name()='font']"))) {
+            $fontId = Get-HwpxNodeIntegerAttribute -Node $fontNode -LocalName 'id'
+            $fontName = Get-HwpxNodeAttribute -Node $fontNode -LocalName 'face'
+            $typeInfoNode = $fontNode.SelectSingleNode("./*[local-name()='typeInfo']")
+            $font = [pscustomobject][ordered]@{
+                index = $fonts.Count
+                id = $fontId
+                language = $language
+                name = $fontName
+                type = Get-HwpxNodeAttribute -Node $fontNode -LocalName 'type'
+                isEmbedded = Get-HwpxNodeBooleanAttribute -Node $fontNode -LocalName 'isEmbedded'
+                alternateFont = $null
+                defaultFont = ''
+                typeInfo = if ($null -eq $typeInfoNode) { $null } else {
+                    [pscustomobject][ordered]@{
+                        family = Get-HwpxNodeAttribute -Node $typeInfoNode -LocalName 'familyType'
+                        weight = Get-HwpxNodeIntegerAttribute -Node $typeInfoNode -LocalName 'weight'
+                        proportion = Get-HwpxNodeIntegerAttribute -Node $typeInfoNode -LocalName 'proportion'
+                        contrast = Get-HwpxNodeIntegerAttribute -Node $typeInfoNode -LocalName 'contrast'
+                        strokeVariation = Get-HwpxNodeIntegerAttribute -Node $typeInfoNode -LocalName 'strokeVariation'
+                        armStyle = Get-HwpxNodeIntegerAttribute -Node $typeInfoNode -LocalName 'armStyle'
+                        letterform = Get-HwpxNodeIntegerAttribute -Node $typeInfoNode -LocalName 'letterform'
+                        midline = Get-HwpxNodeIntegerAttribute -Node $typeInfoNode -LocalName 'midline'
+                        xHeight = Get-HwpxNodeIntegerAttribute -Node $typeInfoNode -LocalName 'xHeight'
+                    }
+                }
+            }
+            $fonts.Add($font)
+            $fontNameMap['{0}:{1}' -f $language, $fontId] = $fontName
+        }
+    }
+
+    $borderFills = [Collections.Generic.List[object]]::new()
+    foreach ($fillNode in @($Document.SelectNodes("//*[local-name()='borderFill']"))) {
+        $borders = [ordered]@{}
+        foreach ($side in @('Left', 'Right', 'Top', 'Bottom')) {
+            $sideNode = $fillNode.SelectSingleNode("./*[local-name()='$($side.ToLowerInvariant())Border']")
+            $borders[$side] = if ($null -eq $sideNode) { $null } else {
+                $widthText = Get-HwpxNodeAttribute -Node $sideNode -LocalName 'width'
+                [pscustomobject][ordered]@{
+                    typeCode = $null
+                    type = Get-HwpxNodeAttribute -Node $sideNode -LocalName 'type'
+                    widthCode = $null
+                    widthMm = Get-HwpxBorderWidthMillimeter -Value $widthText
+                    widthRaw = $widthText
+                    colorRaw = $null
+                    color = Get-HwpxNodeAttribute -Node $sideNode -LocalName 'color'
+                }
+            }
+        }
+        $brushNode = $fillNode.SelectSingleNode(".//*[local-name()='winBrush']")
+        $faceColor = if ($null -eq $brushNode) { '' } else { Get-HwpxNodeAttribute -Node $brushNode -LocalName 'faceColor' }
+        $borderFills.Add([pscustomobject][ordered]@{
+            index = $borderFills.Count
+            id = Get-HwpxNodeIntegerAttribute -Node $fillNode -LocalName 'id'
+            attributesRaw = $null
+            threeD = Get-HwpxNodeBooleanAttribute -Node $fillNode -LocalName 'threeD'
+            shadow = Get-HwpxNodeBooleanAttribute -Node $fillNode -LocalName 'shadow'
+            centerLine = (Get-HwpxNodeAttribute -Node $fillNode -LocalName 'centerLine') -ne 'NONE'
+            borders = [pscustomobject]$borders
+            fill = [pscustomobject][ordered]@{
+                typeRaw = $null
+                types = if ([string]::IsNullOrWhiteSpace($faceColor) -or $faceColor -eq 'none') { @() } else { @('SOLID') }
+                solid = if ([string]::IsNullOrWhiteSpace($faceColor) -or $faceColor -eq 'none') { $null } else {
+                    [pscustomobject][ordered]@{
+                        backgroundColorRaw = $null
+                        backgroundColor = $faceColor
+                        patternColorRaw = $null
+                        patternColor = if ($null -eq $brushNode) { '' } else { Get-HwpxNodeAttribute -Node $brushNode -LocalName 'hatchColor' }
+                        patternType = $null
+                    }
+                }
+                gradient = $null
+                image = $null
+            }
+        })
+    }
+
+    $charShapes = [Collections.Generic.List[object]]::new()
+    foreach ($shapeNode in @($Document.SelectNodes("//*[local-name()='charPr']"))) {
+        $fontRefNode = $shapeNode.SelectSingleNode("./*[local-name()='fontRef']")
+        $fontIds = [ordered]@{}
+        $resolvedNames = [ordered]@{}
+        $languageMap = [ordered]@{ Hangul='HANGUL'; Latin='LATIN'; Hanja='HANJA'; Japanese='JAPANESE'; Other='OTHER'; Symbol='SYMBOL'; User='USER' }
+        foreach ($property in $languageMap.Keys) {
+            $fontId = if ($null -eq $fontRefNode) { 0 } else { Get-HwpxNodeIntegerAttribute -Node $fontRefNode -LocalName $property }
+            $fontIds[$property] = $fontId
+            $key = '{0}:{1}' -f $languageMap[$property], $fontId
+            $resolvedNames[$property] = if ($fontNameMap.ContainsKey($key)) { $fontNameMap[$key] } else { '' }
+        }
+        $fontSizeRaw = Get-HwpxNodeIntegerAttribute -Node $shapeNode -LocalName 'height'
+        $charShapes.Add([pscustomobject][ordered]@{
+            index = $charShapes.Count
+            id = Get-HwpxNodeIntegerAttribute -Node $shapeNode -LocalName 'id'
+            fontIds = [pscustomobject]$fontIds
+            resolvedFontNames = [pscustomobject]$resolvedNames
+            fontSizeRaw = $fontSizeRaw
+            fontSizePt = [Math]::Round($fontSizeRaw / 100.0, 4)
+            attributesRaw = $null
+            attributes = [pscustomobject][ordered]@{
+                italic = $null -ne $shapeNode.SelectSingleNode("./*[local-name()='italic']")
+                bold = $null -ne $shapeNode.SelectSingleNode("./*[local-name()='bold']")
+                underlineTypeCode = $null
+                underlineShapeCode = $null
+                outlineCode = $null
+                shadowCode = $null
+                emboss = $null -ne $shapeNode.SelectSingleNode("./*[local-name()='emboss']")
+                engrave = $null -ne $shapeNode.SelectSingleNode("./*[local-name()='engrave']")
+                superscript = $null -ne $shapeNode.SelectSingleNode("./*[local-name()='supscript']")
+                subscript = $null -ne $shapeNode.SelectSingleNode("./*[local-name()='subscript']")
+                useFontSpace = Get-HwpxNodeBooleanAttribute -Node $shapeNode -LocalName 'useFontSpace'
+                kerning = Get-HwpxNodeBooleanAttribute -Node $shapeNode -LocalName 'useKerning'
+            }
+            textColorRaw = $null
+            textColor = Get-HwpxNodeAttribute -Node $shapeNode -LocalName 'textColor'
+            shadeColorRaw = $null
+            shadeColor = Get-HwpxNodeAttribute -Node $shapeNode -LocalName 'shadeColor'
+            borderFillId = Get-HwpxNodeIntegerAttribute -Node $shapeNode -LocalName 'borderFillIDRef'
+        })
+    }
+
+    $paraShapes = [Collections.Generic.List[object]]::new()
+    foreach ($shapeNode in @($Document.SelectNodes("//*[local-name()='paraPr']"))) {
+        $alignNode = $shapeNode.SelectSingleNode("./*[local-name()='align']")
+        $marginNode = $shapeNode.SelectSingleNode(".//*[local-name()='margin']")
+        $lineSpacingNode = $shapeNode.SelectSingleNode(".//*[local-name()='lineSpacing']")
+        $borderNode = $shapeNode.SelectSingleNode("./*[local-name()='border']")
+        $marginValues = [ordered]@{ left=0; right=0; before=0; after=0; indent=0 }
+        if ($null -ne $marginNode) {
+            foreach ($pair in @(@('left','left'), @('right','right'), @('prev','before'), @('next','after'), @('intent','indent'))) {
+                $valueNode = $marginNode.SelectSingleNode("./*[local-name()='$($pair[0])']")
+                if ($null -ne $valueNode) { $marginValues[$pair[1]] = Get-HwpxNodeIntegerAttribute -Node $valueNode -LocalName 'value' }
+            }
+        }
+        $lineValue = if ($null -eq $lineSpacingNode) { 0 } else { Get-HwpxNodeIntegerAttribute -Node $lineSpacingNode -LocalName 'value' }
+        $lineType = if ($null -eq $lineSpacingNode) { '' } else { Get-HwpxNodeAttribute -Node $lineSpacingNode -LocalName 'type' }
+        $paraShapes.Add([pscustomobject][ordered]@{
+            index = $paraShapes.Count
+            id = Get-HwpxNodeIntegerAttribute -Node $shapeNode -LocalName 'id'
+            attributes1Raw = $null
+            attributes2Raw = $null
+            attributes3Raw = $null
+            alignmentCode = $null
+            alignment = if ($null -eq $alignNode) { '' } else { Get-HwpxNodeAttribute -Node $alignNode -LocalName 'horizontal' }
+            margins = [pscustomobject][ordered]@{
+                left = New-HwpxMeasurement -Raw $marginValues.left
+                right = New-HwpxMeasurement -Raw $marginValues.right
+                before = New-HwpxMeasurement -Raw $marginValues.before
+                after = New-HwpxMeasurement -Raw $marginValues.after
+            }
+            indent = New-HwpxMeasurement -Raw $marginValues.indent
+            tabDefinitionId = Get-HwpxNodeIntegerAttribute -Node $shapeNode -LocalName 'tabPrIDRef'
+            borderFillId = if ($null -eq $borderNode) { 0 } else { Get-HwpxNodeIntegerAttribute -Node $borderNode -LocalName 'borderFillIDRef' }
+            lineSpacing = [pscustomobject][ordered]@{ typeCode = $null; type = $lineType; value = $lineValue }
+        })
+    }
+
+    [pscustomobject][ordered]@{
+        fonts = @($fonts)
+        borderFills = @($borderFills)
+        charShapes = @($charShapes)
+        paraShapes = @($paraShapes)
+    }
+}
+
+function Get-HwpxRunText {
+    param(
+        [Parameter(Mandatory)][Xml.XmlNode]$Run,
+        [Parameter(Mandatory)][Xml.XmlNode]$Paragraph
+    )
+    $parts = [Collections.Generic.List[string]]::new()
+    foreach ($node in @($Run.SelectNodes(".//*[local-name()='t' or local-name()='lineBreak' or local-name()='tab']"))) {
+        $nearestParagraph = $node.ParentNode
+        while ($null -ne $nearestParagraph -and $nearestParagraph.LocalName -ne 'p') { $nearestParagraph = $nearestParagraph.ParentNode }
+        if (-not [object]::ReferenceEquals($nearestParagraph, $Paragraph)) { continue }
+        switch ($node.LocalName) { 'lineBreak' { $parts.Add("`n") } 'tab' { $parts.Add("`t") } default { $parts.Add([string]$node.InnerText) } }
+    }
+    $parts -join ''
+}
+
+function Get-HwpxSectionLayoutData {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][Xml.XmlDocument]$Document,
+        [Parameter(Mandatory)][string]$SectionName,
+        [Parameter(Mandatory)][int]$ParagraphStartIndex
+    )
+
+    $paragraphModels = [Collections.Generic.List[object]]::new()
+    foreach ($paragraph in @($Document.SelectNodes("//*[local-name()='p']"))) {
+        $text = Get-HwpxParagraphText -Paragraph $paragraph
+        $charRuns = [Collections.Generic.List[object]]::new()
+        $runTextPosition = 0
+        foreach ($run in @($paragraph.SelectNodes("./*[local-name()='run']"))) {
+            $charRuns.Add([pscustomobject][ordered]@{
+                start = $runTextPosition
+                charShapeId = Get-HwpxNodeIntegerAttribute -Node $run -LocalName 'charPrIDRef'
+            })
+            $runTextPosition += (Get-HwpxRunText -Run $run -Paragraph $paragraph).Length
+        }
+        $lineSegments = [Collections.Generic.List[object]]::new()
+        foreach ($segment in @($paragraph.SelectNodes("./*[local-name()='linesegarray']/*[local-name()='lineseg']"))) {
+            $flags = [uint32](Get-HwpxNodeIntegerAttribute -Node $segment -LocalName 'flags')
+            $lineSegments.Add([pscustomobject][ordered]@{
+                index = $lineSegments.Count
+                textStart = Get-HwpxNodeIntegerAttribute -Node $segment -LocalName 'textpos'
+                verticalPosition = New-HwpxMeasurement -Raw (Get-HwpxNodeIntegerAttribute -Node $segment -LocalName 'vertpos')
+                lineHeight = New-HwpxMeasurement -Raw (Get-HwpxNodeIntegerAttribute -Node $segment -LocalName 'vertsize')
+                textHeight = New-HwpxMeasurement -Raw (Get-HwpxNodeIntegerAttribute -Node $segment -LocalName 'textheight')
+                baseline = New-HwpxMeasurement -Raw (Get-HwpxNodeIntegerAttribute -Node $segment -LocalName 'baseline')
+                lineSpacing = New-HwpxMeasurement -Raw (Get-HwpxNodeIntegerAttribute -Node $segment -LocalName 'spacing')
+                columnStart = New-HwpxMeasurement -Raw (Get-HwpxNodeIntegerAttribute -Node $segment -LocalName 'horzpos')
+                segmentWidth = New-HwpxMeasurement -Raw (Get-HwpxNodeIntegerAttribute -Node $segment -LocalName 'horzsize')
+                flagsRaw = $flags
+                isPageFirst = ($flags -band 0x1) -ne 0
+                isColumnFirst = ($flags -band 0x2) -ne 0
+                isEmpty = ($flags -band 0x10000) -ne 0
+                isLineFirst = ($flags -band 0x20000) -ne 0
+                isLineLast = ($flags -band 0x40000) -ne 0
+                text = ''
+            })
+        }
+        $storedLines = [Collections.Generic.List[object]]::new()
+        $lineStarts = @($lineSegments | Where-Object { $_.Index -eq 0 -or $_.IsLineFirst })
+        for ($lineIndex = 0; $lineIndex -lt $lineStarts.Count; $lineIndex++) {
+            $start = [Math]::Min($text.Length, [int]$lineStarts[$lineIndex].TextStart)
+            $end = if ($lineIndex -lt ($lineStarts.Count - 1)) { [Math]::Min($text.Length, [int]$lineStarts[$lineIndex + 1].TextStart) } else { $text.Length }
+            $storedLines.Add([pscustomobject][ordered]@{ index=$lineIndex; textStart=$start; textEnd=$end; text=$text.Substring($start, $end - $start) })
+        }
+        $paragraphModels.Add([pscustomobject][ordered]@{
+            index = $ParagraphStartIndex + $paragraphModels.Count
+            section = $SectionName
+            recordLevel = $null
+            text = $text
+            rawCharacterCount = $text.Length
+            declaredCharacterCount = $text.Length
+            paraShapeId = Get-HwpxNodeIntegerAttribute -Node $paragraph -LocalName 'paraPrIDRef'
+            styleId = Get-HwpxNodeIntegerAttribute -Node $paragraph -LocalName 'styleIDRef'
+            breakTypeRaw = $null
+            controlMask = $null
+            instanceId = Get-HwpxNodeAttribute -Node $paragraph -LocalName 'id'
+            charShapeRuns = @($charRuns)
+            lineSegments = @($lineSegments)
+            storedLines = @($storedLines)
+        })
+    }
+
+    $pageDefinitions = [Collections.Generic.List[object]]::new()
+    foreach ($pageNode in @($Document.SelectNodes("//*[local-name()='pagePr']"))) {
+        $width = Get-HwpxNodeIntegerAttribute -Node $pageNode -LocalName 'width'
+        $height = Get-HwpxNodeIntegerAttribute -Node $pageNode -LocalName 'height'
+        $marginNode = $pageNode.SelectSingleNode("./*[local-name()='margin']")
+        $getMargin = {
+            param($Name)
+            if ($null -eq $marginNode) { return 0 }
+            Get-HwpxNodeIntegerAttribute -Node $marginNode -LocalName $Name
+        }
+        $pageDefinitions.Add([pscustomobject][ordered]@{
+            index = $pageDefinitions.Count
+            orientation = if ($width -gt $height) { 'LANDSCAPE' } else { 'PORTRAIT' }
+            landscapeRaw = Get-HwpxNodeAttribute -Node $pageNode -LocalName 'landscape'
+            width = New-HwpxMeasurement -Raw $width
+            height = New-HwpxMeasurement -Raw $height
+            margins = [pscustomobject][ordered]@{
+                left = New-HwpxMeasurement -Raw (& $getMargin 'left')
+                right = New-HwpxMeasurement -Raw (& $getMargin 'right')
+                top = New-HwpxMeasurement -Raw (& $getMargin 'top')
+                bottom = New-HwpxMeasurement -Raw (& $getMargin 'bottom')
+                header = New-HwpxMeasurement -Raw (& $getMargin 'header')
+                footer = New-HwpxMeasurement -Raw (& $getMargin 'footer')
+                gutter = New-HwpxMeasurement -Raw (& $getMargin 'gutter')
+            }
+            gutterType = Get-HwpxNodeAttribute -Node $pageNode -LocalName 'gutterType'
+            attributesRaw = $null
+        })
+    }
+    [pscustomobject][ordered]@{
+        paragraphs = @($paragraphModels)
+        pageDefinitions = @($pageDefinitions)
+        lineSegmentCount = @($paragraphModels | ForEach-Object { $_.LineSegments }).Count
+    }
 }
 
 function Get-HwpxTableStructures {
@@ -569,17 +895,7 @@ function Get-HwpxSectionData {
 
     $paragraphs = [Collections.Generic.List[string]]::new()
     foreach ($paragraph in @($Document.SelectNodes("//*[local-name()='p']"))) {
-        $parts = [Collections.Generic.List[string]]::new()
-        foreach ($textNode in @($paragraph.SelectNodes(".//*[local-name()='t']"))) {
-            $nearestParagraph = $textNode.ParentNode
-            while ($null -ne $nearestParagraph -and $nearestParagraph.LocalName -ne 'p') {
-                $nearestParagraph = $nearestParagraph.ParentNode
-            }
-            if ([object]::ReferenceEquals($nearestParagraph, $paragraph)) {
-                $parts.Add([string]$textNode.InnerText)
-            }
-        }
-        $paragraphs.Add(($parts -join ''))
+        $paragraphs.Add((Get-HwpxParagraphText -Paragraph $paragraph))
     }
 
     $controlMap = @{
@@ -769,19 +1085,39 @@ function Get-HwpxPackageInspection {
             }
 
             $paragraphs = [Collections.Generic.List[string]]::new()
+            $layoutParagraphs = [Collections.Generic.List[object]]::new()
+            $sections = [Collections.Generic.List[object]]::new()
             $controls = [Collections.Generic.List[object]]::new()
             $tables = [Collections.Generic.List[object]]::new()
             $structureWarnings = [Collections.Generic.List[string]]::new()
             $fields = [Collections.Specialized.OrderedDictionary]::new([StringComparer]::Ordinal)
+            $resources = [pscustomobject]@{ fonts = @(); borderFills = @(); charShapes = @(); paraShapes = @() }
+            if ($entryMap.ContainsKey('Contents/header.xml')) {
+                $headerDocument = Read-HwpxXmlEntry -Entry $entryMap['Contents/header.xml'] -MaximumCharacters $MaximumXmlCharacters
+                $resources = Get-HwpxHeaderResources -Document $headerDocument
+            }
+            $lineSegmentCount = 0
             foreach ($sectionEntry in $sectionEntries) {
                 $document = Read-HwpxXmlEntry -Entry $sectionEntry -MaximumCharacters $MaximumXmlCharacters
                 foreach ($paragraph in @(Get-HwpxSectionData -Document $document -SectionName $sectionEntry.FullName `
                     -Controls $controls -FieldMap $fields -Tables $tables -StructureWarnings $structureWarnings)) {
                     $paragraphs.Add([string]$paragraph)
                 }
+                $layoutData = Get-HwpxSectionLayoutData -Document $document -SectionName $sectionEntry.FullName `
+                    -ParagraphStartIndex $layoutParagraphs.Count
+                foreach ($layoutParagraph in @($layoutData.Paragraphs)) { $layoutParagraphs.Add($layoutParagraph) }
+                $sections.Add([pscustomobject][ordered]@{
+                    index = $sections.Count
+                    name = $sectionEntry.FullName
+                    paragraphStartIndex = $layoutParagraphs.Count - @($layoutData.Paragraphs).Count
+                    paragraphCount = @($layoutData.Paragraphs).Count
+                    pageDefinitions = @($layoutData.PageDefinitions)
+                    storedPageFirstLineCount = 0
+                })
+                $lineSegmentCount += [int]$layoutData.LineSegmentCount
             }
 
-            $warnings.Add('HWPX를 ZIP/XML 구조로 읽었습니다. 페이지 수와 최종 레이아웃은 한컴오피스에서 별도 확인해야 합니다.')
+            $warnings.Add('HWPX를 ZIP/XML 구조로 읽고 글꼴·문단·테두리·용지 설정을 함께 검사했습니다. 최종 페이지 수와 픽셀 레이아웃은 별도 렌더러로 확인해야 합니다.')
             foreach ($structureWarning in $structureWarnings) { $warnings.Add($structureWarning) }
             New-HwpResult -Status PASS_WITH_WARNINGS -Command inspect-hwpx-package -Data ([pscustomobject]@{
                 Path = $resolvedPath
@@ -789,6 +1125,16 @@ function Get-HwpxPackageInspection {
                 Fields = [pscustomobject]$fields
                 Controls = @($controls)
                 Tables = @($tables)
+                Resources = $resources
+                Paragraphs = @($layoutParagraphs)
+                Sections = @($sections)
+                Layout = [pscustomobject][ordered]@{
+                    source = 'HWPX_XML'
+                    storedLineLayoutAvailable = $lineSegmentCount -gt 0
+                    lineSegmentCount = $lineSegmentCount
+                    pageCountSource = 'UNAVAILABLE_WITHOUT_RENDERER'
+                    exactRenderingVerified = $false
+                }
                 PageCount = 0
                 SectionCount = $sectionEntries.Count
                 EntryCount = $archive.Entries.Count
@@ -867,6 +1213,8 @@ function Get-HwpInspection {
         return New-HwpInspectionRecord -Status $package.Status -Path $resolvedPath -Sha256 $sha256 `
             -DetectedKind $detectedKind -Text ([string]$package.Data.Text) -Fields $package.Data.Fields `
             -Controls @($package.Data.Controls) -Tables @($package.Data.Tables) `
+            -Resources $package.Data.Resources -Paragraphs @($package.Data.Paragraphs) `
+            -Sections @($package.Data.Sections) -Layout $package.Data.Layout `
             -PageCount ([int]$package.Data.PageCount) `
             -Warnings @($package.Warnings)
     }
@@ -888,7 +1236,9 @@ function Get-HwpInspection {
         return New-HwpInspectionRecord -Status $portable.Status -Path $resolvedPath -Sha256 $sha256 `
             -DetectedKind $detectedKind -Text ([string]$portable.Data.Text) `
             -Fields $portable.Data.Fields -Controls @($portable.Data.Controls) `
-            -Tables @($portable.Data.Tables) -PageCount ([int]$portable.Data.PageCount) `
+            -Tables @($portable.Data.Tables) -Resources $portable.Data.Resources `
+            -Paragraphs @($portable.Data.Paragraphs) -Sections @($portable.Data.Sections) `
+            -Layout $portable.Data.Layout -PageCount ([int]$portable.Data.PageCount) `
             -Warnings @($portable.Warnings)
     }
     if ($route.BackendId -ne 'hancom-interactive') {
