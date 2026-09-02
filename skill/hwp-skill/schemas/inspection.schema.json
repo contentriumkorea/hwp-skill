@@ -6,7 +6,7 @@
   "additionalProperties": true,
   "required": [
     "status", "path", "sha256", "detectedKind", "text",
-    "fields", "controls", "pageCount", "warnings"
+    "fields", "controls", "tables", "pageCount", "warnings"
   ],
   "properties": {
     "status": {
@@ -30,10 +30,167 @@
         "additionalProperties": true
       }
     },
+    "tables": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/table" }
+    },
     "pageCount": { "type": "integer", "minimum": 0 },
     "warnings": {
       "type": "array",
       "items": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "margins": {
+      "type": "object",
+      "required": ["left", "right", "top", "bottom"],
+      "properties": {
+        "left": { "type": "integer", "minimum": 0 },
+        "right": { "type": "integer", "minimum": 0 },
+        "top": { "type": "integer", "minimum": 0 },
+        "bottom": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "address": {
+      "type": "object",
+      "required": ["rowAddress", "columnAddress"],
+      "properties": {
+        "rowAddress": { "type": "integer", "minimum": 0 },
+        "columnAddress": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "gridSlot": {
+      "type": "object",
+      "required": ["cellIndex", "isAnchor", "mergedInto"],
+      "properties": {
+        "cellIndex": { "type": "integer", "minimum": 0 },
+        "isAnchor": { "type": "boolean" },
+        "mergedInto": {
+          "anyOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/address" }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "cell": {
+      "type": "object",
+      "required": [
+        "index", "id", "name", "rowAddress", "columnAddress", "rowSpan", "columnSpan",
+        "width", "height", "margins", "borderFillId", "paragraphCountDeclared",
+        "paragraphs", "text", "textDirectionCode", "textDirection",
+        "lineWrapCode", "lineWrap", "verticalAlignmentCode", "verticalAlignment", "dirty"
+      ],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0 },
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "rowAddress": { "type": "integer", "minimum": 0 },
+        "columnAddress": { "type": "integer", "minimum": 0 },
+        "rowSpan": { "type": "integer", "minimum": 1 },
+        "columnSpan": { "type": "integer", "minimum": 1 },
+        "width": { "type": "integer", "minimum": 0 },
+        "height": { "type": "integer", "minimum": 0 },
+        "margins": { "$ref": "#/$defs/margins" },
+        "borderFillId": { "type": "integer", "minimum": 0 },
+        "paragraphCountDeclared": { "type": "integer", "minimum": 0 },
+        "paragraphs": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "text": { "type": "string" },
+        "cellFlagsRaw": { "type": ["integer", "null"], "minimum": 0 },
+        "listPropertiesRaw": { "type": ["integer", "null"], "minimum": 0 },
+        "textDirectionCode": { "type": ["integer", "null"], "minimum": 0 },
+        "textDirection": { "type": "string" },
+        "lineWrapCode": { "type": ["integer", "null"], "minimum": 0 },
+        "lineWrap": { "type": "string" },
+        "verticalAlignmentCode": { "type": ["integer", "null"], "minimum": 0 },
+        "verticalAlignment": { "type": "string" },
+        "dirty": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "validZone": {
+      "type": "object",
+      "required": [
+        "index", "startColumnAddress", "startRowAddress",
+        "endColumnAddress", "endRowAddress", "borderFillId"
+      ],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0 },
+        "startColumnAddress": { "type": "integer", "minimum": 0 },
+        "startRowAddress": { "type": "integer", "minimum": 0 },
+        "endColumnAddress": { "type": "integer", "minimum": 0 },
+        "endRowAddress": { "type": "integer", "minimum": 0 },
+        "borderFillId": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "tableProperties": {
+      "type": "object",
+      "required": ["raw", "pageBreakCode", "pageBreak", "repeatHeader", "noAdjust"],
+      "properties": {
+        "raw": { "type": ["integer", "null"], "minimum": 0 },
+        "pageBreakCode": { "type": ["integer", "null"], "minimum": 0 },
+        "pageBreak": { "type": "string" },
+        "repeatHeader": { "type": "boolean" },
+        "noAdjust": { "type": ["boolean", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "table": {
+      "type": "object",
+      "required": [
+        "index", "section", "source", "recordLevel", "rowCount", "columnCount",
+        "cellSpacing", "innerMargins", "rowSizes", "borderFillId", "properties",
+        "validZones", "cells", "grid"
+      ],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0 },
+        "section": { "type": "string", "minLength": 1 },
+        "source": { "enum": ["hwp-portable", "hwpx-package"] },
+        "recordLevel": { "type": ["integer", "null"], "minimum": 0 },
+        "rowCount": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "columnCount": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "cellSpacing": { "type": "integer", "minimum": 0 },
+        "innerMargins": { "$ref": "#/$defs/margins" },
+        "rowSizes": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              { "type": "integer", "minimum": 0 },
+              { "type": "null" }
+            ]
+          }
+        },
+        "borderFillId": { "type": "integer", "minimum": 0 },
+        "properties": { "$ref": "#/$defs/tableProperties" },
+        "validZones": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/validZone" }
+        },
+        "cells": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/cell" }
+        },
+        "grid": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                { "type": "null" },
+                { "$ref": "#/$defs/gridSlot" }
+              ]
+            }
+          }
+        }
+      },
+      "additionalProperties": true
     }
   }
 }

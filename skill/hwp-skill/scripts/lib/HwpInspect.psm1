@@ -6,6 +6,7 @@ Import-Module (Join-Path $PSScriptRoot 'HwpCapabilities.psm1') -ErrorAction Stop
 Import-Module (Join-Path $PSScriptRoot 'HwpBackendRouter.psm1') -ErrorAction Stop
 Import-Module (Join-Path $PSScriptRoot 'HwpSession.psm1') -ErrorAction Stop
 Import-Module (Join-Path $PSScriptRoot 'HwpPortable.psm1') -ErrorAction Stop
+Import-Module (Join-Path $PSScriptRoot 'HwpTables.psm1') -ErrorAction Stop
 
 function New-HwpInspectionRecord {
     [CmdletBinding()]
@@ -18,6 +19,7 @@ function New-HwpInspectionRecord {
         [string]$Text = '',
         [object]$Fields = ([pscustomobject]@{}),
         [object[]]$Controls = @(),
+        [object[]]$Tables = @(),
         [int]$PageCount = 0,
         [string[]]$Warnings = @(),
         [string[]]$Errors = @(),
@@ -32,6 +34,7 @@ function New-HwpInspectionRecord {
         text = $Text
         fields = $Fields
         controls = @($Controls)
+        tables = @($Tables)
         pageCount = $PageCount
         warnings = @($Warnings)
         errors = @($Errors)
@@ -324,6 +327,217 @@ function Get-HwpxNodeAttribute {
     ''
 }
 
+function Get-HwpxNodeIntegerAttribute {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][Xml.XmlNode]$Node,
+        [Parameter(Mandatory)][string]$LocalName,
+        [int]$Default = 0
+    )
+
+    $raw = Get-HwpxNodeAttribute -Node $Node -LocalName $LocalName
+    if ([string]::IsNullOrWhiteSpace($raw)) { return $Default }
+    $value = 0
+    if (-not [int]::TryParse($raw, [Globalization.NumberStyles]::Integer,
+            [Globalization.CultureInfo]::InvariantCulture, [ref]$value)) {
+        throw [Xml.XmlException]::new("HWPX $LocalName 속성이 정수가 아닙니다: $raw")
+    }
+    $value
+}
+
+function Get-HwpxNodeBooleanAttribute {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][Xml.XmlNode]$Node,
+        [Parameter(Mandatory)][string]$LocalName,
+        [bool]$Default = $false
+    )
+
+    $raw = Get-HwpxNodeAttribute -Node $Node -LocalName $LocalName
+    if ([string]::IsNullOrWhiteSpace($raw)) { return $Default }
+    switch ($raw.Trim().ToLowerInvariant()) {
+        { $_ -in @('1', 'true', 'yes') } { return $true }
+        { $_ -in @('0', 'false', 'no') } { return $false }
+        default { throw [Xml.XmlException]::new("HWPX $LocalName 속성이 참/거짓 값이 아닙니다: $raw") }
+    }
+}
+
+function Get-HwpxParagraphText {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][Xml.XmlNode]$Paragraph)
+
+    $parts = [Collections.Generic.List[string]]::new()
+    foreach ($textNode in @($Paragraph.SelectNodes(".//*[local-name()='t']"))) {
+        $nearestParagraph = $textNode.ParentNode
+        while ($null -ne $nearestParagraph -and $nearestParagraph.LocalName -ne 'p') {
+            $nearestParagraph = $nearestParagraph.ParentNode
+        }
+        if ([object]::ReferenceEquals($nearestParagraph, $Paragraph)) {
+            $parts.Add([string]$textNode.InnerText)
+        }
+    }
+    $parts -join ''
+}
+
+function Get-HwpxTableStructures {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][Xml.XmlDocument]$Document,
+        [Parameter(Mandatory)][string]$SectionName,
+        [Parameter(Mandatory)][AllowEmptyCollection()][Collections.Generic.List[object]]$Tables,
+        [Parameter(Mandatory)][AllowEmptyCollection()][Collections.Generic.List[string]]$StructureWarnings,
+        [ValidateRange(1, 100000000)][long]$MaximumGridSlots = 5000000
+    )
+
+    foreach ($tableNode in @($Document.SelectNodes("//*[local-name()='tbl']"))) {
+        $tableIndex = $Tables.Count
+        $rowNodes = @($tableNode.SelectNodes("./*[local-name()='tr']"))
+        $cells = [Collections.Generic.List[object]]::new()
+        $derivedColumnCount = 0
+        for ($rowIndex = 0; $rowIndex -lt $rowNodes.Count; $rowIndex++) {
+            $cellNodes = @($rowNodes[$rowIndex].SelectNodes("./*[local-name()='tc']"))
+            $fallbackColumn = 0
+            foreach ($cellNode in $cellNodes) {
+                $addressNode = $cellNode.SelectSingleNode("./*[local-name()='cellAddr']")
+                $spanNode = $cellNode.SelectSingleNode("./*[local-name()='cellSpan']")
+                $sizeNode = $cellNode.SelectSingleNode("./*[local-name()='cellSz']")
+                $marginNode = $cellNode.SelectSingleNode("./*[local-name()='cellMargin']")
+                $subListNode = $cellNode.SelectSingleNode("./*[local-name()='subList']")
+
+                if ($null -eq $addressNode) {
+                    $StructureWarnings.Add(
+                        "$SectionName 표 $tableIndex 셀 $($cells.Count)에 cellAddr가 없어 tr/tc 순서로 주소를 복원했습니다."
+                    )
+                    $rowAddress = $rowIndex
+                    $columnAddress = $fallbackColumn
+                }
+                else {
+                    $rowAddress = Get-HwpxNodeIntegerAttribute -Node $addressNode -LocalName 'rowAddr' -Default $rowIndex
+                    $columnAddress = Get-HwpxNodeIntegerAttribute -Node $addressNode -LocalName 'colAddr' -Default $fallbackColumn
+                }
+                $rowSpan = if ($null -eq $spanNode) { 1 } else {
+                    Get-HwpxNodeIntegerAttribute -Node $spanNode -LocalName 'rowSpan' -Default 1
+                }
+                $columnSpan = if ($null -eq $spanNode) { 1 } else {
+                    Get-HwpxNodeIntegerAttribute -Node $spanNode -LocalName 'colSpan' -Default 1
+                }
+                $fallbackColumn = [Math]::Max($fallbackColumn, $columnAddress + [Math]::Max(1, $columnSpan))
+                $derivedColumnCount = [Math]::Max($derivedColumnCount, $columnAddress + [Math]::Max(1, $columnSpan))
+
+                $paragraphs = [Collections.Generic.List[string]]::new()
+                if ($null -ne $subListNode) {
+                    foreach ($paragraphNode in @($subListNode.SelectNodes("./*[local-name()='p']"))) {
+                        $paragraphs.Add((Get-HwpxParagraphText -Paragraph $paragraphNode))
+                    }
+                }
+                $paragraphArray = @($paragraphs)
+                $cells.Add([pscustomobject][ordered]@{
+                    index = $cells.Count
+                    id = ('table-{0}-cell-{1}' -f $tableIndex, $cells.Count)
+                    name = Get-HwpxNodeAttribute -Node $cellNode -LocalName 'name'
+                    rowAddress = $rowAddress
+                    columnAddress = $columnAddress
+                    rowSpan = $rowSpan
+                    columnSpan = $columnSpan
+                    width = if ($null -eq $sizeNode) { 0 } else {
+                        Get-HwpxNodeIntegerAttribute -Node $sizeNode -LocalName 'width'
+                    }
+                    height = if ($null -eq $sizeNode) { 0 } else {
+                        Get-HwpxNodeIntegerAttribute -Node $sizeNode -LocalName 'height'
+                    }
+                    margins = [pscustomobject][ordered]@{
+                        left = if ($null -eq $marginNode) { 0 } else { Get-HwpxNodeIntegerAttribute -Node $marginNode -LocalName 'left' }
+                        right = if ($null -eq $marginNode) { 0 } else { Get-HwpxNodeIntegerAttribute -Node $marginNode -LocalName 'right' }
+                        top = if ($null -eq $marginNode) { 0 } else { Get-HwpxNodeIntegerAttribute -Node $marginNode -LocalName 'top' }
+                        bottom = if ($null -eq $marginNode) { 0 } else { Get-HwpxNodeIntegerAttribute -Node $marginNode -LocalName 'bottom' }
+                    }
+                    borderFillId = Get-HwpxNodeIntegerAttribute -Node $cellNode -LocalName 'borderFillIDRef'
+                    cellFlagsRaw = $null
+                    hasMargin = Get-HwpxNodeBooleanAttribute -Node $cellNode -LocalName 'hasMargin'
+                    protect = Get-HwpxNodeBooleanAttribute -Node $cellNode -LocalName 'protect'
+                    header = Get-HwpxNodeBooleanAttribute -Node $cellNode -LocalName 'header'
+                    editable = Get-HwpxNodeBooleanAttribute -Node $cellNode -LocalName 'editable'
+                    dirty = Get-HwpxNodeBooleanAttribute -Node $cellNode -LocalName 'dirty'
+                    paragraphCountDeclared = $paragraphArray.Count
+                    paragraphs = $paragraphArray
+                    text = $paragraphArray -join "`r`n"
+                    listPropertiesRaw = $null
+                    textDirectionCode = $null
+                    textDirection = if ($null -eq $subListNode) { '' } else { Get-HwpxNodeAttribute -Node $subListNode -LocalName 'textDirection' }
+                    lineWrapCode = $null
+                    lineWrap = if ($null -eq $subListNode) { '' } else { Get-HwpxNodeAttribute -Node $subListNode -LocalName 'lineWrap' }
+                    verticalAlignmentCode = $null
+                    verticalAlignment = if ($null -eq $subListNode) { '' } else { Get-HwpxNodeAttribute -Node $subListNode -LocalName 'vertAlign' }
+                })
+            }
+        }
+
+        $rowCount = Get-HwpxNodeIntegerAttribute -Node $tableNode -LocalName 'rowCnt' -Default $rowNodes.Count
+        $columnCount = Get-HwpxNodeIntegerAttribute -Node $tableNode -LocalName 'colCnt' -Default $derivedColumnCount
+        if ($rowCount -lt 1 -or $columnCount -lt 1) {
+            $StructureWarnings.Add("$SectionName 표 $tableIndex 행·열 수를 복원할 수 없어 빈 그리드로 반환했습니다.")
+            $rowCount = [Math]::Max(0, $rowCount)
+            $columnCount = [Math]::Max(0, $columnCount)
+        }
+        $rowSizes = [object[]]::new($rowCount)
+        for ($rowIndex = 0; $rowIndex -lt $rowCount; $rowIndex++) {
+            $directHeights = @(
+                $cells | Where-Object {
+                    [int]$_.RowAddress -eq $rowIndex -and [int]$_.RowSpan -eq 1 -and [long]$_.Height -gt 0
+                } | ForEach-Object { [long]$_.Height }
+            )
+            if ($directHeights.Count -gt 0) {
+                $rowSizes[$rowIndex] = [long](($directHeights | Measure-Object -Maximum).Maximum)
+            }
+        }
+        $inMarginNode = $tableNode.SelectSingleNode("./*[local-name()='inMargin']")
+        $validZones = [Collections.Generic.List[object]]::new()
+        foreach ($zoneNode in @($tableNode.SelectNodes(
+                    "./*[local-name()='cellzoneList']/*[local-name()='cellzone']"
+                ))) {
+            $validZones.Add([pscustomobject][ordered]@{
+                index = $validZones.Count
+                startColumnAddress = Get-HwpxNodeIntegerAttribute -Node $zoneNode -LocalName 'startColAddr'
+                startRowAddress = Get-HwpxNodeIntegerAttribute -Node $zoneNode -LocalName 'startRowAddr'
+                endColumnAddress = Get-HwpxNodeIntegerAttribute -Node $zoneNode -LocalName 'endColAddr'
+                endRowAddress = Get-HwpxNodeIntegerAttribute -Node $zoneNode -LocalName 'endRowAddr'
+                borderFillId = Get-HwpxNodeIntegerAttribute -Node $zoneNode -LocalName 'borderFillIDRef'
+            })
+        }
+        $label = "$SectionName 표 $tableIndex"
+        $grid = @(New-HwpTableGrid -RowCount $rowCount -ColumnCount $columnCount -Cells @($cells) `
+            -Warnings $StructureWarnings -TableLabel $label -MaximumGridSlots $MaximumGridSlots)
+
+        $Tables.Add([pscustomobject][ordered]@{
+            index = $tableIndex
+            section = $SectionName
+            source = 'hwpx-package'
+            recordLevel = $null
+            rowCount = $rowCount
+            columnCount = $columnCount
+            cellSpacing = Get-HwpxNodeIntegerAttribute -Node $tableNode -LocalName 'cellSpacing'
+            innerMargins = [pscustomobject][ordered]@{
+                left = if ($null -eq $inMarginNode) { 0 } else { Get-HwpxNodeIntegerAttribute -Node $inMarginNode -LocalName 'left' }
+                right = if ($null -eq $inMarginNode) { 0 } else { Get-HwpxNodeIntegerAttribute -Node $inMarginNode -LocalName 'right' }
+                top = if ($null -eq $inMarginNode) { 0 } else { Get-HwpxNodeIntegerAttribute -Node $inMarginNode -LocalName 'top' }
+                bottom = if ($null -eq $inMarginNode) { 0 } else { Get-HwpxNodeIntegerAttribute -Node $inMarginNode -LocalName 'bottom' }
+            }
+            rowSizes = @($rowSizes)
+            borderFillId = Get-HwpxNodeIntegerAttribute -Node $tableNode -LocalName 'borderFillIDRef'
+            properties = [pscustomobject][ordered]@{
+                raw = $null
+                pageBreakCode = $null
+                pageBreak = Get-HwpxNodeAttribute -Node $tableNode -LocalName 'pageBreak'
+                repeatHeader = Get-HwpxNodeBooleanAttribute -Node $tableNode -LocalName 'repeatHeader'
+                noAdjust = Get-HwpxNodeBooleanAttribute -Node $tableNode -LocalName 'noAdjust'
+            }
+            validZones = @($validZones)
+            cells = @($cells)
+            grid = $grid
+        })
+    }
+}
+
 function Get-HwpxSectionData {
     [CmdletBinding()]
     param(
@@ -343,7 +557,14 @@ function Get-HwpxSectionData {
         [Parameter(Mandatory)]
         [ValidateNotNull()]
         [AllowEmptyCollection()]
-        [Collections.Specialized.OrderedDictionary]$FieldMap
+        [Collections.Specialized.OrderedDictionary]$FieldMap,
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [Collections.Generic.List[object]]$Tables,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [Collections.Generic.List[string]]$StructureWarnings
     )
 
     $paragraphs = [Collections.Generic.List[string]]::new()
@@ -442,6 +663,9 @@ function Get-HwpxSectionData {
             $FieldMap.Add($unfinished.Name, $unfinished.Text.ToString())
         }
     }
+
+    Get-HwpxTableStructures -Document $Document -SectionName $SectionName -Tables $Tables `
+        -StructureWarnings $StructureWarnings
 
     @($paragraphs)
 }
@@ -546,21 +770,25 @@ function Get-HwpxPackageInspection {
 
             $paragraphs = [Collections.Generic.List[string]]::new()
             $controls = [Collections.Generic.List[object]]::new()
+            $tables = [Collections.Generic.List[object]]::new()
+            $structureWarnings = [Collections.Generic.List[string]]::new()
             $fields = [Collections.Specialized.OrderedDictionary]::new([StringComparer]::Ordinal)
             foreach ($sectionEntry in $sectionEntries) {
                 $document = Read-HwpxXmlEntry -Entry $sectionEntry -MaximumCharacters $MaximumXmlCharacters
                 foreach ($paragraph in @(Get-HwpxSectionData -Document $document -SectionName $sectionEntry.FullName `
-                    -Controls $controls -FieldMap $fields)) {
+                    -Controls $controls -FieldMap $fields -Tables $tables -StructureWarnings $structureWarnings)) {
                     $paragraphs.Add([string]$paragraph)
                 }
             }
 
             $warnings.Add('HWPX를 ZIP/XML 구조로 읽었습니다. 페이지 수와 최종 레이아웃은 한컴오피스에서 별도 확인해야 합니다.')
+            foreach ($structureWarning in $structureWarnings) { $warnings.Add($structureWarning) }
             New-HwpResult -Status PASS_WITH_WARNINGS -Command inspect-hwpx-package -Data ([pscustomobject]@{
                 Path = $resolvedPath
                 Text = $paragraphs -join "`r`n"
                 Fields = [pscustomobject]$fields
                 Controls = @($controls)
+                Tables = @($tables)
                 PageCount = 0
                 SectionCount = $sectionEntries.Count
                 EntryCount = $archive.Entries.Count
@@ -638,7 +866,8 @@ function Get-HwpInspection {
 
         return New-HwpInspectionRecord -Status $package.Status -Path $resolvedPath -Sha256 $sha256 `
             -DetectedKind $detectedKind -Text ([string]$package.Data.Text) -Fields $package.Data.Fields `
-            -Controls @($package.Data.Controls) -PageCount ([int]$package.Data.PageCount) `
+            -Controls @($package.Data.Controls) -Tables @($package.Data.Tables) `
+            -PageCount ([int]$package.Data.PageCount) `
             -Warnings @($package.Warnings)
     }
 
@@ -659,7 +888,8 @@ function Get-HwpInspection {
         return New-HwpInspectionRecord -Status $portable.Status -Path $resolvedPath -Sha256 $sha256 `
             -DetectedKind $detectedKind -Text ([string]$portable.Data.Text) `
             -Fields $portable.Data.Fields -Controls @($portable.Data.Controls) `
-            -PageCount ([int]$portable.Data.PageCount) -Warnings @($portable.Warnings)
+            -Tables @($portable.Data.Tables) -PageCount ([int]$portable.Data.PageCount) `
+            -Warnings @($portable.Warnings)
     }
     if ($route.BackendId -ne 'hancom-interactive') {
         return New-HwpInspectionRecord -Status BLOCKED -Path $resolvedPath `
