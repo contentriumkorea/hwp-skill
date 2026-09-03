@@ -1,6 +1,6 @@
-$executionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpExecution.psm1'
-$capabilityModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCapabilities.psm1'
-$capabilitySchema = Join-Path $PSScriptRoot '../skill/hwp-skill/schemas/capabilities.schema.json'
+$executionModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpExecution.psm1'
+$capabilityModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpCapabilities.psm1'
+$capabilitySchema = Join-Path $PSScriptRoot '../skills/hwp-skill/schemas/capabilities.schema.json'
 
 Describe 'HWP 엔진 기능 스냅샷' {
     BeforeAll {

@@ -9,7 +9,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$libraryRoot = Join-Path $PSScriptRoot '../../skill/hwp-skill/scripts/lib'
+$libraryRoot = Join-Path $PSScriptRoot '../../skills/hwp-skill/scripts/lib'
 Import-Module (Join-Path $libraryRoot 'HwpCommon.psm1') -Force
 Import-Module (Join-Path $libraryRoot 'HwpExecution.psm1') -Force
 Import-Module (Join-Path $libraryRoot 'HwpSession.psm1') -Force

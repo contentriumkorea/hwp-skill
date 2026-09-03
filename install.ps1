@@ -142,9 +142,9 @@ if ($null -eq $InstallValidator) {
     }
 }
 
-$sourcePath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'skill\hwp-skill'))
+$sourcePath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'skills\hwp-skill'))
 if (-not (Test-Path -LiteralPath (Join-Path $sourcePath 'SKILL.md') -PathType Leaf)) {
-    return New-HwpNativeInstallResult -Status FAILED -Errors @('배포본에서 skill/hwp-skill/SKILL.md를 찾지 못했습니다.')
+    return New-HwpNativeInstallResult -Status FAILED -Errors @('배포본에서 skills/hwp-skill/SKILL.md를 찾지 못했습니다.')
 }
 if (Test-HwpNativeTreeHasReparsePoint -Root $sourcePath) {
     return New-HwpNativeInstallResult -Status BLOCKED -Errors @(

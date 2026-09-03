@@ -1,10 +1,10 @@
-﻿$commonModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCommon.psm1'
-$executionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpExecution.psm1'
-$capabilityModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCapabilities.psm1'
-$inspectModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpInspect.psm1'
-$generateModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpGenerate.psm1'
-$hwpxModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpHwpx.psm1'
-$convertModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpConvert.psm1'
+$commonModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpCommon.psm1'
+$executionModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpExecution.psm1'
+$capabilityModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpCapabilities.psm1'
+$inspectModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpInspect.psm1'
+$generateModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpGenerate.psm1'
+$hwpxModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpHwpx.psm1'
+$convertModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpConvert.psm1'
 $imageFixture = Join-Path $PSScriptRoot 'fixtures/source/fixture-blue.png'
 
 Describe 'HWPX 직접 작성 및 최종 변환 경계' {
@@ -182,7 +182,7 @@ Describe 'HWPX 직접 작성 및 최종 변환 경계' {
     It '최종 HWP 변환은 별도 작업자 계약으로만 결과를 승격한다' {
         $input = Join-Path $TestDrive 'input.hwpx'
         $output = Join-Path $TestDrive 'output.hwp'
-        Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../skill/hwp-skill/templates/default.hwpx') -Destination $input
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../skills/hwp-skill/templates/default.hwpx') -Destination $input
         $worker = {
             param($source, $target)
             [IO.File]::WriteAllBytes($target, [byte[]](0xD0,0xCF,0x11,0xE0,0xA1,0xB1,0x1A,0xE1,0,0,0,0))

@@ -119,7 +119,8 @@ claude plugin install hwp-skill@contentrium
 ## 스킬 내용의 제품 중립화
 
 - frontmatter의 `description`은 `Use when AI 도구가 ...`로 시작한다.
-- `compatibility`에 Windows와 PowerShell 요구사항을 기록한다.
+- 공통 frontmatter는 `name`과 `description`만 사용하고, 본문의 `지원 환경`에 Windows와
+  PowerShell 요구사항을 기록한다.
 - 실행 계약의 주어를 `Codex`에서 `AI 에이전트`로 바꾼다.
 - Codex 전용 호출 표기는 `agents/openai.yaml`에만 둔다.
 - HWPX 우선, 무창 실행, HWP 마지막 변환, 원본 보존 정책은 변경하지 않는다.

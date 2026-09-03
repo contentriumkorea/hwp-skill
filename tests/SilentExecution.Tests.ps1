@@ -1,5 +1,5 @@
 $monitorModule = Join-Path $PSScriptRoot 'WindowActivityMonitor.psm1'
-$cli = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/Invoke-HwpSkill.ps1'
+$cli = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/Invoke-HwpSkill.ps1'
 $pwsh = Join-Path $PSHOME 'pwsh.exe'
 
 Import-Module $monitorModule -Force

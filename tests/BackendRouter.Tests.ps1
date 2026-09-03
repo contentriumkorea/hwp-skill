@@ -1,6 +1,6 @@
-$executionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpExecution.psm1'
-$capabilityModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCapabilities.psm1'
-$routerModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpBackendRouter.psm1'
+$executionModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpExecution.psm1'
+$capabilityModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpCapabilities.psm1'
+$routerModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpBackendRouter.psm1'
 
 Describe 'HWP 백엔드 라우터' {
     function New-TestRouterInputs {

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "hwp-skill",
+  "displayName": "HWP Skill",
+  "description": "Windows에서 HWP, HWT, HWPX 문서를 안전하게 읽고 작성하는 스킬",
+  "author": {
+    "name": "contentrium",
+    "url": "https://github.com/contentriumkorea"
+  },
+  "homepage": "https://github.com/contentriumkorea/hwp-skill",
+  "repository": "https://github.com/contentriumkorea/hwp-skill",
+  "license": "MIT",
+  "keywords": [
+    "hwp",
+    "hwt",
+    "hwpx",
+    "hancom",
+    "korean-document"
+  ]
+}

@@ -1,9 +1,9 @@
-﻿$commonModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCommon.psm1'
-$executionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpExecution.psm1'
-$capabilitiesModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCapabilities.psm1'
-$portableModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpPortable.psm1'
-$tablesModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpTables.psm1'
-$inspectModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpInspect.psm1'
+$commonModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpCommon.psm1'
+$executionModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpExecution.psm1'
+$capabilitiesModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpCapabilities.psm1'
+$portableModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpPortable.psm1'
+$tablesModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpTables.psm1'
+$inspectModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpInspect.psm1'
 
 Import-Module $commonModule -Force
 Import-Module $executionModule -Force
@@ -491,7 +491,7 @@ Describe 'HWP 표 구조 복원' {
 
 Describe '표 구조 검사 JSON 스키마' {
     It 'tables 필드가 없으면 검사 결과 계약을 거부한다' -Skip:(-not $hasTestJson) {
-        $schemaPath = Join-Path $PSScriptRoot '../skill/hwp-skill/schemas/inspection.schema.json'
+        $schemaPath = Join-Path $PSScriptRoot '../skills/hwp-skill/schemas/inspection.schema.json'
         $withoutTables = [ordered]@{
             status = 'PASS_WITH_WARNINGS'
             path = 'C:\fixture.hwpx'
@@ -509,7 +509,7 @@ Describe '표 구조 검사 JSON 스키마' {
     }
 
     It '행 수가 음수인 잘못된 표 구조를 거부한다' -Skip:(-not $hasTestJson) {
-        $schemaPath = Join-Path $PSScriptRoot '../skill/hwp-skill/schemas/inspection.schema.json'
+        $schemaPath = Join-Path $PSScriptRoot '../skills/hwp-skill/schemas/inspection.schema.json'
         $malformed = [ordered]@{
             status = 'PASS_WITH_WARNINGS'
             path = 'C:\fixture.hwpx'

@@ -1,7 +1,7 @@
-$commonModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCommon.psm1'
-$executionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpExecution.psm1'
-$capabilitiesModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCapabilities.psm1'
-$verifyModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpVerify.psm1'
+$commonModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpCommon.psm1'
+$executionModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpExecution.psm1'
+$capabilitiesModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpCapabilities.psm1'
+$verifyModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpVerify.psm1'
 $helperModule = Join-Path $PSScriptRoot 'TestHelpers.psm1'
 Import-Module $commonModule -Force
 Import-Module $executionModule -Force

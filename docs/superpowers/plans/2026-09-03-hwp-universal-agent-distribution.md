@@ -146,8 +146,9 @@ git mv skill skills
 
 - [ ] **Step 4: 스킬 메타데이터와 본문을 제품 중립화**
 
-`description`은 `Use when AI 도구가`로 시작하고 `compatibility`에 Windows와
-PowerShell 요구사항을 기록한다. 본문의 `Codex의 정식 작업 형식`은
+`description`은 `Use when AI 도구가`로 시작하고 본문의 `지원 환경`에 Windows와
+PowerShell 요구사항을 기록한다. frontmatter는 공통 필드인 `name`과 `description`만
+사용한다. 본문의 `Codex의 정식 작업 형식`은
 `AI 에이전트의 정식 작업 형식`으로 바꾸되 실행 정책은 그대로 둔다.
 
 - [ ] **Step 5: 저장소·Claude 검증 시험 통과 확인**

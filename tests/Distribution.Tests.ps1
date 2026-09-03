@@ -17,7 +17,7 @@ Describe '범용 Agent Skills 배포 구조' {
 
         $plugin.name | Should Be 'hwp-skill'
         $plugin.displayName | Should Be 'HWP Skill'
-        $plugin.PSObject.Properties.Name | Should Not Contain 'version'
+        (@($plugin.PSObject.Properties.Name) -contains 'version') | Should Be $false
         $marketplace.name | Should Be 'contentrium'
         @($marketplace.plugins).Count | Should Be 1
         $marketplace.plugins[0].name | Should Be 'hwp-skill'
@@ -37,7 +37,8 @@ Describe '범용 Agent Skills 배포 구조' {
 
         $skill | Should Match '(?m)^name:\s+hwp-skill\r?$'
         $skill | Should Match '(?m)^description:\s+Use when AI 도구가'
-        $skill | Should Match '(?m)^compatibility:\s+.+'
+        $skill | Should Match '(?m)^## 지원 환경\r?$'
+        $skill | Should Match 'Windows PowerShell 5\.1'
         $skill | Should Match 'AI 에이전트의 정식 작업 형식'
         $skill | Should Not Match 'Codex의 정식 작업 형식'
     }

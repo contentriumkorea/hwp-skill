@@ -1,5 +1,5 @@
-$executionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpExecution.psm1'
-$sessionModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpSession.psm1'
+$executionModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpExecution.psm1'
+$sessionModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpSession.psm1'
 
 Describe 'HWP 실행 컨텍스트' {
     It '기본 모드는 silent이며 대화형 창을 허용하지 않는다' {

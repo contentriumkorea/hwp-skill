@@ -1,5 +1,5 @@
-$commonModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpCommon.psm1'
-$batchModule = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/lib/HwpBatch.psm1'
+$commonModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpCommon.psm1'
+$batchModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpBatch.psm1'
 $helperModule = Join-Path $PSScriptRoot 'TestHelpers.psm1'
 Import-Module $commonModule -Force
 Import-Module $helperModule -Force
@@ -83,7 +83,7 @@ Describe 'Invoke-HwpBatch 안전 정책' {
 
 Describe '통합 CLI JSON 계약' {
     It '유효한 계획 검증은 JSON과 종료 코드 0을 반환한다' {
-        $cli = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/Invoke-HwpSkill.ps1'
+        $cli = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/Invoke-HwpSkill.ps1'
         $planPath = Join-Path $TestDrive 'plan.json'
         $plan = New-ValidPlan
         [IO.File]::WriteAllText($planPath, ($plan | ConvertTo-Json -Depth 20), [Text.UTF8Encoding]::new($false))
@@ -99,7 +99,7 @@ Describe '통합 CLI JSON 계약' {
     }
 
     It 'preflight는 실행 컨텍스트 없이도 silent 기본값으로 PASS JSON과 종료 코드 0을 반환한다' {
-        $cli = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/Invoke-HwpSkill.ps1'
+        $cli = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/Invoke-HwpSkill.ps1'
         $pwsh = Join-Path $PSHOME 'pwsh.exe'
 
         $raw = & $pwsh -NoProfile -File $cli preflight

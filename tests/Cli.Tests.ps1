@@ -1,4 +1,4 @@
-$cli = Join-Path $PSScriptRoot '../skill/hwp-skill/scripts/Invoke-HwpSkill.ps1'
+$cli = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/Invoke-HwpSkill.ps1'
 $pwsh = Join-Path $PSHOME 'pwsh.exe'
 
 Describe 'HWP 공용 CLI 실행 모드' {
@@ -81,7 +81,7 @@ Describe 'HWP 공용 CLI 실행 모드' {
     It 'Windows PowerShell 5.1에서도 서식 계획으로 HWPX를 직접 작성한다' `
         -Skip:(-not (Test-Path "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe")) {
         $windowsPowerShell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-        $planPath = Join-Path $PSScriptRoot '../skill/hwp-skill/examples/generate-new.plan.json'
+        $planPath = Join-Path $PSScriptRoot '../skills/hwp-skill/examples/generate-new.plan.json'
         $outputPath = Join-Path $TestDrive 'styled-ps51.hwpx'
 
         $raw = & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -File $cli generate `
