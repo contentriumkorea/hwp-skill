@@ -86,7 +86,8 @@ claude plugin install hwp-skill@contentrium
 
 마켓플레이스 이름은 `contentrium`, 플러그인 이름과 스킬 이름은 `hwp-skill`, 표시
 이름은 `HWP Skill`로 고정한다. 명시적 플러그인 버전은 두지 않고 Git 커밋 SHA를
-업데이트 식별자로 사용한다.
+업데이트 식별자로 사용한다. 플러그인 소스는 같은 Git 저장소의 루트를 가리키는 `./`로
+지정해, 마켓플레이스를 받은 뒤 별도의 SSH 복제를 시도하지 않도록 한다.
 
 ### PowerShell 설치기
 

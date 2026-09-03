@@ -134,7 +134,7 @@ git mv skill skills
   "description": "contentrium 공개 Agent Skills",
   "plugins": [{
     "name": "hwp-skill",
-    "source": { "source": "github", "repo": "contentriumkorea/hwp-skill" },
+    "source": "./",
     "description": "HWP, HWT, HWPX 문서 작업 스킬",
     "homepage": "https://github.com/contentriumkorea/hwp-skill",
     "repository": "https://github.com/contentriumkorea/hwp-skill",

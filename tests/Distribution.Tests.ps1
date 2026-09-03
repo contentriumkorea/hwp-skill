@@ -21,8 +21,7 @@ Describe '범용 Agent Skills 배포 구조' {
         $marketplace.name | Should Be 'contentrium'
         @($marketplace.plugins).Count | Should Be 1
         $marketplace.plugins[0].name | Should Be 'hwp-skill'
-        $marketplace.plugins[0].source.source | Should Be 'github'
-        $marketplace.plugins[0].source.repo | Should Be 'contentriumkorea/hwp-skill'
+        $marketplace.plugins[0].source | Should Be './'
     }
 
     It 'Claude JSON manifest를 UTF-8 BOM 없이 저장한다' {
