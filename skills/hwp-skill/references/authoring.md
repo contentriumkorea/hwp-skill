@@ -16,7 +16,42 @@
   -PlanPath "계획.json" -OutputPath "별도 결과.hwpx"
 ```
 
-완전한 예제는 [구역별 보고서 계획](../examples/authoring-v2.plan.json)을 복사한다.
+용지·줄 간격을 별도로 지정하지 않은 일반 서류는 다음 기본 계획에서 시작한다.
+제목과 본문은 공통 160%·문단 앞뒤 0mm를 쓰고, 그 사이에는 글자 크기 6pt인 빈 문단을
+둔다. 빈 문단도 실제 편집 가능한 문단이므로 한글에서 엔터/백스페이스로 추가·삭제하거나
+빈 줄의 글자 크기만 바꿀 수 있다. A4 세로와 본문 11pt는 유지된다.
+
+```json
+{
+  "version": "2.0",
+  "document": {
+    "page": {"paperSize": "A4", "orientation": "PORTRAIT"},
+    "textStyle": {"fontSizePt": 11},
+    "paragraphStyle": {"lineSpacingPercent": 160, "marginBeforeMm": 0, "marginAfterMm": 0}
+  },
+  "content": [
+    {"type": "paragraph", "text": "업무 보고서", "textStyle": {"fontSizePt": 18, "bold": true}},
+    {"type": "paragraph", "text": "", "textStyle": {"fontSizePt": 6}},
+    {"type": "paragraph", "text": "업무 보고서 본문"}
+  ]
+}
+```
+
+일반 서류의 공간 구성은 **내용 문단 → 필요한 빈 문단 → 다음 내용 문단**이다.
+좁은 간격은 빈 문단 6pt, 조금 넓은 간격은 9pt처럼 빈 문단의 글자 크기로 조절한다.
+이 수치는 예시이며 본문 글자를 여백용으로 줄이거나 키우지 않는다. 제목·소제목의
+크기 차이는 정보 위계를 위한 서식이다. 문단 위·아래 값이나 FIXED/AT_LEAST 줄 간격으로
+추가 여백을 만들지 않고, 제목·본문·이름 있는 스타일도 공통 160%/앞뒤 0을 상속한다.
+빈 문단은 `text:""`인 독립 paragraph 블록이다. 공백 문자나 `\n\n`을 넣는 방식과 다르다.
+`text` 안의 `\n`은 문단 내부 줄바꿈(`hp:lineBreak`)이므로 독립된 엔터 문단으로 쓰지 않는다.
+표 셀마다 빈 줄을 일괄 삽입하지 않고 내용 구분에 필요한 위치에만 둔다. 쪽 넘김은
+빈 줄을 여러 개 쌓는 대신 `page-break`로 지정한다. 정확한 빈 줄의 물리 높이는 렌더링
+검증과 구분한다.
+
+사용자가 가로·특정 줄 간격을 요청한 경우 해당 값을 적용한다. 기존 양식 수정은
+원본의 방향·문단 설정을 유지하며 자동으로 빈 문단 방식으로 재작성하지 않는다.
+[구역별 보고서 계획](../examples/authoring-v2.plan.json)은
+세로/가로 혼합, 다단 등 고급 기능 예제이며 일반 서류의 기본 서식이 아니다.
 작업 중 한컴·Word·Explorer를 열거나 결과 파일을 자동으로 표시하지 않는다.
 명령의 전체 JSON에는 상세 검사 정보가 포함된다. AI는 이를 내부 변수/로그에 보관하고
 `status/errors/StructuralVerification`만 먼저 확인한다. 전체 JSON이나 XML을 사용자 대화에
@@ -55,6 +90,8 @@
 
 V1의 `widthMm/heightMm`는 화면상 치수다. V2의 `paperWidthMm/paperHeightMm`는 회전 전
 치수다. 실제 HWPX `pagePr`에는 회전 전 치수를 쓰고 `landscape`로 방향을 표현한다.
+저장값은 **세로 `WIDELY`, 가로 `NARROWLY`**다. 영단어의 뜻으로 반대로 판단하지 않는다.
+배포된 한컴 기본 템플릿은 `WIDELY`, 너비 59528, 높이 84186인 세로 A4다.
 검사 결과 `paperWidth/paperHeight`와 `width/height`를 구분한다.
 
 `page-break`는 쪽 나누기, `column-break`는 단 나누기, `sections`의 새 항목은 구역 나누기다.
@@ -64,6 +101,16 @@ V1의 `widthMm/heightMm`는 화면상 치수다. V2의 `paperWidthMm/paperHeight
 
 문단은 `{type:"paragraph",text:"본문"}` 또는 `runs:[{text,textStyle?}]` 중 하나다.
 글자 기본값은 문서 → 구역 → 블록 → 셀/문단 → run 순으로 상속하고 명시적 `false`도 보존한다.
+
+줄 간격 160%는 `lineSpacingPercent:160`이며 1.6이나 160pt가 아니다.
+명시적으로 요청된 고정/최소 간격은 `valuePt`로 입력한다. 일반 서류의 여백 구성에는
+앞의 빈 문단 방식을 사용한다. 작성기가 HwpUnitChar 호환 분기를 생성하여
+14pt를 최신 분기 1400·구형 분기 2800으로 기록한다. 문단의 mm 길이도 구형 분기에서
+두 배이며 비율 간격은 두 분기에서 동일하다. 이 보정은 문단 속성에만 적용한다.
+새 문서에 추정 `linesegarray`를 넣지 않는다. 실제 페이지 수·글자 줄바꿈은 렌더링 미검증이다.
+검사 결과의 `raw` 및 `lineSpacing.value`는 파일에 저장된 원시 값이다. 문단의 mm/pt는
+호환 분기를 반영하여 읽으며, 고정/최소 줄 간격의 물리값은 `lineSpacing.measurement`에
+있다. 비율 줄 간격은 `value`가 백분율이고 `measurement`는 비어 있다.
 
 - `textStyle`: `fontFamily`, `fontSizePt`, `bold`, `italic`, `textColor`, `underline`
   (`NONE/BOTTOM/CENTER/TOP`), `strikeout`, `superscript`, `subscript`,

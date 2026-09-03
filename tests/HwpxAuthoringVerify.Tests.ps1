@@ -31,8 +31,8 @@ function New-ContractFixture {
     $header = '<hh:head xmlns:hh="'+$hh+'" secCnt="2"><hh:refList><hh:fontfaces>'+ $fonts +'</hh:fontfaces><hh:charProperties><hh:charPr id="0"><hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/></hh:charPr></hh:charProperties><hh:paraProperties><hh:paraPr id="0" tabPrIDRef="0"><hh:heading type="NONE" idRef="0"/></hh:paraPr></hh:paraProperties><hh:borderFills><hh:borderFill id="1"/></hh:borderFills><hh:styles><hh:style id="0" charPrIDRef="0" paraPrIDRef="0" nextStyleIDRef="0"/></hh:styles><hh:tabProperties><hh:tabPr id="0"/></hh:tabProperties><hh:numberings><hh:numbering id="1"/></hh:numberings><hh:bullets><hh:bullet id="1"/></hh:bullets></hh:refList></hh:head>'
     $start = '<hs:sec xmlns:hs="'+$hs+'" xmlns:hp="'+$hp+'" xmlns:hc="'+$hc+'"><hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0">'
     $end = '</hp:run></hp:p></hs:sec>'
-    $page0 = '<hp:secPr><hp:pagePr landscape="NARROWLY" width="59528" height="84189" gutterType="LEFT_ONLY"><hp:margin left="4252" right="4252" top="2835" bottom="2835" header="4252" footer="4252" gutter="0"/></hp:pagePr></hp:secPr><hp:ctrl><hp:colPr colCount="1" sameSz="1" sameGap="0"/></hp:ctrl>'
-    $page1 = '<hp:secPr><hp:pagePr landscape="WIDELY" width="41953" height="59528" gutterType="LEFT_ONLY"><hp:margin left="2835" right="2835" top="1417" bottom="1701" header="1984" footer="2268" gutter="567"/></hp:pagePr></hp:secPr><hp:ctrl><hp:colPr colCount="2" sameSz="0" sameGap="2268"><hp:colSz width="22677" gap="2268"/><hp:colSz width="28346" gap="0"/></hp:colPr></hp:ctrl>'
+    $page0 = '<hp:secPr><hp:pagePr landscape="WIDELY" width="59528" height="84189" gutterType="LEFT_ONLY"><hp:margin left="4252" right="4252" top="2835" bottom="2835" header="4252" footer="4252" gutter="0"/></hp:pagePr></hp:secPr><hp:ctrl><hp:colPr colCount="1" sameSz="1" sameGap="0"/></hp:ctrl>'
+    $page1 = '<hp:secPr><hp:pagePr landscape="NARROWLY" width="41953" height="59528" gutterType="LEFT_ONLY"><hp:margin left="2835" right="2835" top="1417" bottom="1701" header="1984" footer="2268" gutter="567"/></hp:pagePr></hp:secPr><hp:ctrl><hp:colPr colCount="2" sameSz="0" sameGap="2268"><hp:colSz width="22677" gap="2268"/><hp:colSz width="28346" gap="0"/></hp:colPr></hp:ctrl>'
     $cell = '<hp:tc header="{0}" borderFillIDRef="1"><hp:cellAddr rowAddr="{1}" colAddr="{2}"/><hp:cellSpan rowSpan="{3}" colSpan="{4}"/><hp:cellSz width="{5}" height="{6}"/></hp:tc>'
     $table0 = '<hp:tbl rowCnt="2" colCnt="3" repeatHeader="1"><hp:sz width="28346" height="6237"/><hp:tr>'+($cell -f 1,0,0,1,2,18898,2835)+($cell -f 1,0,2,1,1,9448,2835)+'</hp:tr><hp:tr>'+($cell -f 0,1,0,1,1,9449,3402)+($cell -f 0,1,1,1,2,18897,3402)+'</hp:tr></hp:tbl>'
     $table1 = '<hp:tbl rowCnt="1" colCnt="2" repeatHeader="0"><hp:sz width="22677" height="1800"/><hp:tr>'+($cell -f 0,0,0,1,1,11338,1800)+($cell -f 0,0,1,1,1,11339,1800)+'</hp:tr></hp:tbl>'
@@ -101,7 +101,7 @@ Describe 'Bounded independent generated HWPX contract verifier' {
         }
 
         $corruptions = @(
-            @{Name='page direction'; Entry='Contents/section1.xml'; XPath='//hp:pagePr'; Attr='landscape'; Value='NARROWLY'; Error='landscape'},
+            @{Name='page direction'; Entry='Contents/section1.xml'; XPath='//hp:pagePr'; Attr='landscape'; Value='WIDELY'; Error='landscape'},
             @{Name='rotated stored dimensions'; Entry='Contents/section1.xml'; XPath='//hp:pagePr'; Attr='width'; Value='59528'; Error='width'},
             @{Name='missing page height'; Entry='Contents/section0.xml'; XPath='//hp:pagePr'; Attr='height'; Value=''; Error='height'},
             @{Name='margin'; Entry='Contents/section0.xml'; XPath='//hp:pagePr/hp:margin'; Attr='left'; Value='4251'; Error='left'},
@@ -204,10 +204,9 @@ Describe 'Bounded independent generated HWPX contract verifier' {
             }
             (Test-HwpxGeneratedContract $path $plan).Status | Should Be PASS
         }
-        It 'allows V1 line caches and taller default table rows' {
+        It 'allows taller default table rows in V1 without invented line caches' {
             $path=Join-Path $TestDrive 'v1.hwpx'; $plan=New-ContractFixture $path; $plan.sourceVersion='1.0'
             Edit-ContractFixture $path 'Contents/section1.xml' {param($doc,$ns)
-                $null=$doc.DocumentElement.AppendChild($doc.CreateElement('hp','linesegarray',$ns.LookupNamespace('hp')))
                 foreach($n in $doc.SelectNodes('//hp:cellSz | //hp:tbl/hp:sz',$ns)) {$n.SetAttribute('height','2400')}
             }
             (Test-HwpxGeneratedContract $path $plan).Status | Should Be PASS

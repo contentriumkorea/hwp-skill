@@ -170,6 +170,43 @@ function Test-HavReferences {
     }
 }
 
+function Test-HavParagraphCompatibility {
+    param([object]$State, [object]$Xml, [object]$UsedParagraphIds)
+    # Inspect literal XML, without importing the writer's style/unit helpers.
+    $cases=$Xml.Doc.SelectNodes('//hh:paraPr/hp:switch/hp:case[@hp:required-namespace="http://www.hancom.co.kr/hwpml/2016/HwpUnitChar"]',$Xml.Ns)
+    foreach ($modern in $cases) {
+        $switch=$modern.ParentNode
+        if (-not $UsedParagraphIds.Contains((Get-HavId $switch.ParentNode.GetAttribute('id')))) {continue}
+        $where='header paraPr['+$switch.ParentNode.GetAttribute('id')+']'
+        $fallbacks=@($switch.SelectNodes('hp:default',$Xml.Ns))
+        Assert-Hav $State ($fallbacks.Count -eq 1 -and $switch.SelectNodes('hp:case',$Xml.Ns).Count -eq 1) "$where expected one modern/legacy paragraph branch pair."
+        if ($fallbacks.Count -ne 1) {continue}
+        $fallback=$fallbacks[0]
+        foreach ($field in @('hh:lineSpacing','hh:margin/hc:intent','hh:margin/hc:left','hh:margin/hc:right','hh:margin/hc:prev','hh:margin/hc:next')) {
+            $newNodes=@($modern.SelectNodes($field,$Xml.Ns));$oldNodes=@($fallback.SelectNodes($field,$Xml.Ns))
+            Assert-Hav $State ($newNodes.Count -eq 1 -and $oldNodes.Count -eq 1) "$where $field must occur once in each paragraph branch."
+            if ($newNodes.Count -ne 1 -or $oldNodes.Count -ne 1) {continue}
+            $new=$newNodes[0];$old=$oldNodes[0]
+            Assert-HavText $State $new 'unit' 'HWPUNIT' "$where $field modern"
+            Assert-HavText $State $old 'unit' 'HWPUNIT' "$where $field legacy"
+            [long]$newValue=0;[long]$oldValue=0
+            $valid=[long]::TryParse($new.GetAttribute('value'),[ref]$newValue) -and [long]::TryParse($old.GetAttribute('value'),[ref]$oldValue)
+            $valid=$valid -and $newValue -ge -2147483648 -and $newValue -le 2147483647
+            $valid=$valid -and $oldValue -ge -2147483648 -and $oldValue -le 2147483647
+            Assert-Hav $State $valid "$where $field invalid paragraph measurement."
+            if (-not $valid) {continue}
+            $scale=2
+            if ($field -ceq 'hh:lineSpacing') {
+                $type=$new.GetAttribute('type')
+                Assert-Hav $State ($type -cin @('PERCENT','FIXED','BETWEEN_LINES','AT_LEAST')) "$where lineSpacing has an unknown or missing type."
+                Assert-HavText $State $old 'type' $type "$where lineSpacing legacy"
+                if ($type -ceq 'PERCENT') {$scale=1}
+            }
+            Assert-Hav $State ($oldValue -eq $newValue*$scale) "$where $field legacy/modern units disagree."
+        }
+    }
+}
+
 function Test-HavPage {
     param([object]$State, [object]$Xml, [object]$Document)
     $page=Get-HavValue $Document 'page'
@@ -180,7 +217,7 @@ function Test-HavPage {
     Assert-Hav $State ($pages.Count -eq 1) "$($Xml.Name) expected one pagePr in the section properties."
     if ($pages.Count -ne 1) {return 0}
     $node=$pages[0]; $where=$Xml.Name+' pagePr'
-    Assert-HavText $State $node 'landscape' $(if($landscape){'WIDELY'}else{'NARROWLY'}) $where
+    Assert-HavText $State $node 'landscape' $(if($landscape){'NARROWLY'}else{'WIDELY'}) $where
     Assert-HavNumber $State $node 'width' $(if($landscape){$displayHeight}else{$displayWidth}) $where
     Assert-HavNumber $State $node 'height' $(if($landscape){$displayWidth}else{$displayHeight}) $where
     $gutterType=Get-HavValue $page 'gutterType' 'LEFT_ONLY'
@@ -439,7 +476,8 @@ function Test-HwpxGeneratedContract {
     4096 entries, 64 MiB/entry, 16 MiB/XML, depth 128, 500000 XML nodes,
     256 sections, 20000 table grid slots, 32 MiB/image, 128 MiB source images.
     Only specified structural and geometry contracts are checked. Extra unused
-    resources are permitted. Text fidelity, advanced styling, pagination, native
+    resources are permitted. Paragraph compatibility units and absent generated
+    line caches are checked. Text fidelity, advanced styling, pagination, native
     rendering and visual layout are outside this gate. PASS never verifies them.
     .OUTPUTS
     PSCustomObject: Status (PASS|FAILED), Errors (string[]), Checks (int),
@@ -451,6 +489,7 @@ function Test-HwpxGeneratedContract {
     $state=[pscustomobject]@{
         Errors=[Collections.Generic.List[string]]::new();Checks=0;XmlNodes=0;GridSlots=0;AssetBytes=[long]0
         Assets=@{};ImageHashes=@{}
+        ParagraphIds=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
         FieldIds=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
         FieldValues=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     }
@@ -527,12 +566,15 @@ function Test-HwpxGeneratedContract {
         for ($s=0;$s -lt $sections.Count;$s++) {
             $name='Contents/section'+$s+'.xml'
             $xml=Read-HavXml $state $entries $name 'sec' 'hs'
+            foreach ($p in $xml.Doc.SelectNodes('//hp:p[@paraPrIDRef]',$xml.Ns)) {
+                $null=$state.ParagraphIds.Add((Get-HavId $p.GetAttribute('paraPrIDRef')))
+            }
             $blocks=@(Get-HavValue $sections[$s] 'content' @())
             if ($blocks.Count -gt 20000) {throw 'Normalized section content limit exceeded.'}
             $available=Test-HavPage $state $xml (Get-HavValue $sections[$s] 'document')
             Test-HavReferences $state $xml $resources
             Test-HavFields $state $xml
-            if ($version -ceq '2.0') {Assert-Hav $state ($xml.Doc.SelectNodes('//hp:linesegarray',$xml.Ns).Count -eq 0) "$name V2 must not contain linesegarray caches."}
+            Assert-Hav $state ($xml.Doc.SelectNodes('//hp:linesegarray',$xml.Ns).Count -eq 0) "$name generated documents must not contain linesegarray caches."
             $tables=@($xml.Doc.SelectNodes('//hp:tbl',$xml.Ns));$expectedTables=@($blocks | Where-Object {(Get-HavValue $_ 'type') -ceq 'table'})
             $columnSettings=Get-HavValue (Get-HavValue $sections[$s] 'document') 'columns'
             $columnWidths=@(Get-HavValue $columnSettings 'widthsMm' @())
@@ -550,6 +592,7 @@ function Test-HwpxGeneratedContract {
             Assert-Hav $state ($pictures.Count -eq $expectedPictures.Count) "$name embedded picture count mismatch."
             for ($i=0;$i -lt [Math]::Min($pictures.Count,$expectedPictures.Count);$i++) {Test-HavPicture $state $xml $pictures[$i] $expectedPictures[$i] $manifest $entries ($version -ceq '2.0') "$name image[$i]"}
         }
+        Test-HavParagraphCompatibility $state $header $state.ParagraphIds
     } catch { $state.Errors.Add("Contract verification failed: $($_.Exception.Message)") }
     finally {if ($null -ne $zip) {$zip.Dispose()};if ($null -ne $file) {$file.Dispose()}}
     [pscustomobject]@{

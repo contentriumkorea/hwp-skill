@@ -53,9 +53,10 @@ function New-HwpxSectionPropertiesXml {
     $value = @'
 <hp:secPr id="" textDirection="HORIZONTAL" spaceColumns="1134" tabStop="8000" tabStopVal="4000" tabStopUnit="HWPUNIT" outlineShapeIDRef="1" memoShapeIDRef="1" textVerticalWidthHead="0" masterPageCnt="0"><hp:grid lineGrid="0" charGrid="0" wonggojiFormat="0"/><hp:startNum pageStartsOn="BOTH" page="0" pic="0" tbl="0" equation="0"/><hp:visibility hideFirstHeader="0" hideFirstFooter="0" hideFirstMasterPage="0" border="SHOW_ALL" fill="SHOW_ALL" hideFirstPageNum="0" hideFirstEmptyLine="0" showLineNumber="0"/><hp:lineNumberShape restartType="0" countBy="0" distance="0" startNumber="0"/><hp:pagePr landscape="WIDELY" width="59528" height="84186" gutterType="LEFT_ONLY"><hp:margin header="4252" footer="4252" gutter="0" left="4251" right="4251" top="2834" bottom="2834"/></hp:pagePr><hp:footNotePr><hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/><hp:noteLine length="-1" type="SOLID" width="0.12 mm" color="#000000"/><hp:noteSpacing betweenNotes="283" belowLine="567" aboveLine="850"/><hp:numbering type="CONTINUOUS" newNum="1"/><hp:placement place="EACH_COLUMN" beneathText="0"/></hp:footNotePr><hp:endNotePr><hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/><hp:noteLine length="14692344" type="SOLID" width="0.12 mm" color="#000000"/><hp:noteSpacing betweenNotes="0" belowLine="567" aboveLine="850"/><hp:numbering type="CONTINUOUS" newNum="1"/><hp:placement place="END_OF_DOCUMENT" beneathText="0"/></hp:endNotePr><hp:pageBorderFill type="BOTH" borderFillIDRef="1" textBorder="PAPER" headerInside="0" footerInside="0" fillArea="PAPER"><hp:offset left="1417" right="1417" top="1417" bottom="1417"/></hp:pageBorderFill><hp:pageBorderFill type="EVEN" borderFillIDRef="1" textBorder="PAPER" headerInside="0" footerInside="0" fillArea="PAPER"><hp:offset left="1417" right="1417" top="1417" bottom="1417"/></hp:pageBorderFill><hp:pageBorderFill type="ODD" borderFillIDRef="1" textBorder="PAPER" headerInside="0" footerInside="0" fillArea="PAPER"><hp:offset left="1417" right="1417" top="1417" bottom="1417"/></hp:pageBorderFill>
 '@
-    $value = $value.Replace('landscape="WIDELY" width="59528" height="84186"', 'landscape="NARROWLY" width="59528" height="84189"')
+    $value = $value.Replace('height="84186"', 'height="84189"')
     if ($null -ne $PageSettings) {
-        $landscape = if ([string]$PageSettings.orientation -eq 'LANDSCAPE') { 'WIDELY' } else { 'NARROWLY' }
+        # Hancom's saved enum is counterintuitive: WIDELY=portrait, NARROWLY=landscape.
+        $landscape = if ([string]$PageSettings.orientation -eq 'LANDSCAPE') { 'NARROWLY' } else { 'WIDELY' }
         $pageXml = '<hp:pagePr landscape="{0}" width="{1}" height="{2}" gutterType="LEFT_ONLY"><hp:margin header="{3}" footer="{4}" gutter="{5}" left="{6}" right="{7}" top="{8}" bottom="{9}"/></hp:pagePr>' -f `
             $landscape, $PageSettings.width, $PageSettings.height, $PageSettings.margins.header,
             $PageSettings.margins.footer, $PageSettings.margins.gutter, $PageSettings.margins.left,
@@ -620,7 +621,9 @@ function Invoke-HwpxGenerateDocument {
             $sharedRegistry = $styleContext.registry
             $headerXml = $styleContext.HeaderXml
             $sectionXml = New-HwpxSectionXml -Blocks @($styleContext.Blocks) -PageSettings $styleContext.Page -SectionIndex $s -Document $section.document -SourceVersion $Plan.sourceVersion
-            if ($Plan.sourceVersion -eq '2.0') {$sectionXml=[regex]::Replace($sectionXml,'<hp:linesegarray>.*?</hp:linesegarray>','')}
+            # These are renderer caches, not layout instructions. A fixed 10pt/160%
+            # cache is false for arbitrary text, fonts and paragraph spacing in V1 too.
+            $sectionXml=[regex]::Replace($sectionXml,'<hp:linesegarray>.*?</hp:linesegarray>','')
             Write-HwpxZipTextEntry -Archive $targetArchive -Name ('Contents/section{0}.xml' -f $s) -Text $sectionXml
         }
         $headerXml = [regex]::Replace($headerXml, '(\bsecCnt=")\d+(" )', ('${1}' + @($Plan.sections).Count + '$2'))

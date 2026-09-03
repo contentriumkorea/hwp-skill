@@ -46,7 +46,7 @@ function New-ScopedTestFixture {
     Update-ScopedTestSection $Path {
         param($text)
         $text = $text.Replace('<hs:sec ', '<hs:sec xmlns:u="urn:scoped-test" u:root="preserve" ')
-        $text = $text.Replace('landscape="WIDELY"', 'landscape="NARROWLY" u:page="keep"')
+        $text = $text.Replace('landscape="WIDELY"', 'landscape="WIDELY" u:page="keep"')
         $text = $text.Replace('<hp:t/>', '<hp:t u:text="keep">Before</hp:t>')
         $text.Replace('</hs:sec>', @'
 <!--keep this comment--><u:extension u:flag="original"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>Nested</hp:t></hp:run></hp:p><u:opaque><![CDATA[<untouched>]]></u:opaque></u:extension>
@@ -145,7 +145,7 @@ Describe 'Bounded HWPX scoped editing' {
         (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant() | Should Be $before
         $xml = Read-ScopedTestXml $output
         $page = $xml.SelectSingleNode('//*[local-name()="pagePr"]')
-        $page.GetAttribute('landscape') | Should Be 'WIDELY'
+        $page.GetAttribute('landscape') | Should Be 'NARROWLY'
         $page.GetAttribute('width') | Should Be '59528'
         $page.GetAttribute('height') | Should Be '84186'
         $page.GetAttribute('page','urn:scoped-test') | Should Be 'keep'
@@ -209,7 +209,7 @@ Describe 'Bounded HWPX scoped editing' {
     It 'accepts JSON objects and an empty replacement text' {
         $plan = '{"version":"2.0","operations":[{"type":"replace-run-text","sectionIndex":0,"paragraphIndex":0,"runIndex":1,"text":"","expectedText":"Before"},{"type":"set-page","sectionIndex":0,"orientation":"PORTRAIT"}]}' | ConvertFrom-Json
         (Invoke-HwpxScopedEdit -LiteralPath $source -OutputPath $output -Plan $plan).Status | Should Be 'PASS_WITH_WARNINGS'
-        (Read-ScopedTestXml $output).SelectSingleNode('//*[local-name()="pagePr"]').GetAttribute('landscape') | Should Be 'NARROWLY'
+        (Read-ScopedTestXml $output).SelectSingleNode('//*[local-name()="pagePr"]').GetAttribute('landscape') | Should Be 'WIDELY'
         (Read-ScopedTestXml $output).SelectSingleNode('/*/*[local-name()="p"][1]/*[local-name()="run"][2]/*[local-name()="t"]').InnerText | Should Be ''
     }
 
@@ -432,7 +432,7 @@ Describe 'Scoped inspected-source guard and page geometry' {
         $page = (Read-ScopedTestXml $output).SelectSingleNode('//*[local-name()="pagePr"]')
         $page.GetAttribute('width') | Should Be '59528'
         $page.GetAttribute('height') | Should Be '84189'
-        $page.GetAttribute('landscape') | Should Be 'NARROWLY'
+        $page.GetAttribute('landscape') | Should Be 'WIDELY'
         $page.GetAttribute('page','urn:scoped-test') | Should Be 'keep'
         $margin = $page.FirstChild
         $margin.GetAttribute('left') | Should Be '5669'
@@ -449,7 +449,7 @@ Describe 'Scoped inspected-source guard and page geometry' {
         $xmlPage = (Read-ScopedTestXml $output).SelectSingleNode('//*[local-name()="pagePr"]')
         $xmlPage.GetAttribute('width') | Should Be '28346'
         $xmlPage.GetAttribute('height') | Should Be '56693'
-        $xmlPage.GetAttribute('landscape') | Should Be 'WIDELY'
+        $xmlPage.GetAttribute('landscape') | Should Be 'NARROWLY'
         $page.orientation = 'PORTRAIT'
         Assert-ScopedTestBlocked $source (Join-Path $caseDir 'blocked.hwpx') $plan
     }
@@ -735,12 +735,14 @@ Describe 'Scoped cloned character and paragraph formatting' {
         $clone.SelectSingleNode('*[local-name()="align"]').GetAttribute('horizontal') | Should Be 'CENTER'
         $clone.SelectNodes('.//*[local-name()="lineSpacing"]').Count | Should Be 2
         foreach($line in $clone.SelectNodes('.//*[local-name()="lineSpacing"]')) {$line.GetAttribute('value') | Should Be '220'; $line.GetAttribute('type') | Should Be 'PERCENT'}
-        foreach($margin in $clone.SelectNodes('.//*[local-name()="margin"]')) {
-            $margin.SelectSingleNode('*[local-name()="left"]').GetAttribute('value') | Should Be '2835'
-            $margin.SelectSingleNode('*[local-name()="right"]').GetAttribute('value') | Should Be '1417'
-            $margin.SelectSingleNode('*[local-name()="intent"]').GetAttribute('value') | Should Be '-850'
-            $margin.SelectSingleNode('*[local-name()="prev"]').GetAttribute('value') | Should Be '567'
-            $margin.SelectSingleNode('*[local-name()="next"]').GetAttribute('value') | Should Be '1134'
+        foreach($expected in @(
+            @{branch='case';left='2835';right='1417';intent='-850';prev='567';next='1134'},
+            @{branch='default';left='5670';right='2834';intent='-1700';prev='1134';next='2268'}
+        )) {
+            $margin=$clone.SelectSingleNode('.//*[local-name()="'+$expected.branch+'"]/*[local-name()="margin"]')
+            foreach($name in @('left','right','intent','prev','next')) {
+                $margin.SelectSingleNode('*[local-name()="'+$name+'"]').GetAttribute('value') | Should Be $expected[$name]
+            }
         }
         foreach($name in @('keepWithNext','keepLines','pageBreakBefore')) {$clone.SelectSingleNode('*[local-name()="breakSetting"]').GetAttribute($name) | Should Be '1'}
         $clone.GetAttribute('vendor','urn:scoped-style') | Should Be 'preserve'

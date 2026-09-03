@@ -289,7 +289,7 @@ function New-ScopedPageReplacement {
         if ($fields['orientation'] -isnot [string] -or @('LANDSCAPE','PORTRAIT') -cnotcontains $fields['orientation']) {
             throw "$Location.orientation must be LANDSCAPE or PORTRAIT."
         }
-        $value = if ($fields['orientation'] -ceq 'LANDSCAPE') { 'WIDELY' } else { 'NARROWLY' }
+        $value = if ($fields['orientation'] -ceq 'LANDSCAPE') { 'NARROWLY' } else { 'WIDELY' }
         $copy.SetAttribute('landscape',$value)
     }
     if ($fields.ContainsKey('paperWidthMm') -ne $fields.ContainsKey('paperHeightMm')) { throw "$Location requires both paper dimensions." }
@@ -315,8 +315,8 @@ function New-ScopedPageReplacement {
     foreach ($name in @('left','right','top','bottom','header','footer','gutter')) { $m[$name] = Get-ScopedXmlInteger $margin $name }
     $gutterType = $copy.GetAttribute('gutterType')
     if (@('LEFT_ONLY','LEFT_RIGHT','TOP_ONLY','TOP_BOTTOM') -cnotcontains $gutterType) { throw 'Unsupported pagePr.gutterType.' }
-    $effectiveWidth = if ($copy.GetAttribute('landscape') -ceq 'WIDELY') { $height } else { $width }
-    $effectiveHeight = if ($copy.GetAttribute('landscape') -ceq 'WIDELY') { $width } else { $height }
+    $effectiveWidth = if ($copy.GetAttribute('landscape') -ceq 'NARROWLY') { $height } else { $width }
+    $effectiveHeight = if ($copy.GetAttribute('landscape') -ceq 'NARROWLY') { $width } else { $height }
     $topGutter = $gutterType -cin @('TOP_ONLY','TOP_BOTTOM')
     $bodyWidth = [long]$effectiveWidth - $m.left - $m.right
     $bodyHeight = [long]$effectiveHeight - $m.top - $m.bottom - $m.header - $m.footer
@@ -725,6 +725,7 @@ function New-ScopedFormatResource {
                     if ($percent -lt 1 -or $percent -gt 1000) { throw 'lineSpacingPercent must be 1 to 1000.' }
                     foreach ($line in (Get-ScopedParagraphBranches $copy 'lineSpacing')) {
                         $line.SetAttribute('type','PERCENT'); $line.SetAttribute('value',[string]$percent)
+                        $line.SetAttribute('unit','HWPUNIT')
                     }
                 }
                 {$_ -cin @('keepWithNext','keepLines','pageBreakBefore')} {
@@ -736,7 +737,10 @@ function New-ScopedFormatResource {
                     $units = ConvertTo-ScopedMm $value "paragraphStyle.$key" -Signed:($key -ceq 'indentMm')
                     foreach ($margin in (Get-ScopedParagraphBranches $copy 'margin')) {
                         $node = Get-ScopedOneChild $margin ('hc:'+$names[$key])
-                        $node.SetAttribute('value',[string]$units); $node.SetAttribute('unit','HWPUNIT')
+                        # HwpUnitChar uses 1/7200 inch; the legacy paragraph branch
+                        # (including direct pre-switch resources) uses twice the value.
+                        $scale = if ($margin.ParentNode.NamespaceURI -ceq $script:ScopedHp -and $margin.ParentNode.LocalName -ceq 'case') { 1 } else { 2 }
+                        $node.SetAttribute('value',[string]([long]$units*$scale)); $node.SetAttribute('unit','HWPUNIT')
                     }
                 }
             }

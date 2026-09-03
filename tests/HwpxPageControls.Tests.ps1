@@ -27,7 +27,7 @@ Describe 'HWPX 쪽 방향과 유효 영역' {
         $result = Invoke-HwpGenerate -NewDocument -Plan (New-PageTestPlan $null) -OutputPath $out
         $result.Status | Should Be 'PASS_WITH_WARNINGS'
         $xml = Read-PageTestXml $out
-        $xml.SelectSingleNode("//*[local-name()='pagePr']").GetAttribute('landscape') | Should Be 'NARROWLY'
+        $xml.SelectSingleNode("//*[local-name()='pagePr']").GetAttribute('landscape') | Should Be 'WIDELY'
     }
 
     It '가로 A4의 저장 치수는 210x297이고 유효 치수는 297x210이다' {
@@ -36,7 +36,7 @@ Describe 'HWPX 쪽 방향과 유효 영역' {
         $result.Status | Should Be 'PASS_WITH_WARNINGS'
         $xml = Read-PageTestXml $out
         $page = $xml.SelectSingleNode("//*[local-name()='pagePr']")
-        $page.GetAttribute('landscape') | Should Be 'WIDELY'
+        $page.GetAttribute('landscape') | Should Be 'NARROWLY'
         [int]$page.GetAttribute('width') | Should Be 59528
         [int]$page.GetAttribute('height') | Should Be 84189
         $read = $result.After.Sections[0].PageDefinitions[0]
@@ -46,7 +46,7 @@ Describe 'HWPX 쪽 방향과 유효 영역' {
     }
 
     It '독립적인 가로 기준 XML을 너비 비교로 세로 오판하지 않는다' {
-        [xml]$xml = '<sec><pagePr landscape="WIDELY" width="59528" height="84189"><margin left="4252" right="4252"/></pagePr></sec>'
+        [xml]$xml = '<sec><pagePr landscape="NARROWLY" width="59528" height="84189"><margin left="4252" right="4252"/></pagePr></sec>'
         $data = & (Get-Module HwpInspect) { param($doc) Get-HwpxSectionLayoutData -Document $doc -SectionName 'section0' -ParagraphStartIndex 0 } $xml
         $data.PageDefinitions[0].Orientation | Should Be 'LANDSCAPE'
         [Math]::Round($data.PageDefinitions[0].Width.Millimeter) | Should Be 297
@@ -60,7 +60,9 @@ Describe 'HWPX 쪽 방향과 유효 영역' {
         $xml = Read-PageTestXml $out
         $size = $xml.SelectSingleNode("//*[local-name()='tbl']/*[local-name()='sz']")
         [Math]::Round(([int]$size.GetAttribute('width')) / 283.4645669) | Should Be 118
-        $line = $xml.SelectSingleNode("/*/*[local-name()='p'][2]/*[local-name()='linesegarray']/*")
-        [Math]::Round(([int]$line.GetAttribute('horzsize')) / 283.4645669) | Should Be 118
+        $page = $xml.SelectSingleNode("//*[local-name()='pagePr']")
+        $margin = $page.SelectSingleNode("*[local-name()='margin']")
+        [Math]::Round(([int]$page.GetAttribute('width')-[int]$margin.GetAttribute('left')-[int]$margin.GetAttribute('right')) / 283.4645669) | Should Be 118
+        $xml.SelectNodes("//*[local-name()='linesegarray']").Count | Should Be 0
     }
 }

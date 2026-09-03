@@ -429,12 +429,28 @@ function Get-HwpxParagraphText {
 }
 
 function New-HwpxMeasurement {
-    param([Parameter(Mandatory)][long]$Raw)
+    param([Parameter(Mandatory)][long]$Raw, [ValidateSet(1,2)][int]$StorageScale=1)
     [pscustomobject][ordered]@{
         raw = $Raw
-        point = [Math]::Round($Raw / 100.0, 4)
-        millimeter = [Math]::Round($Raw / 283.4645669, 4)
+        point = [Math]::Round($Raw / (100.0*$StorageScale), 4)
+        millimeter = [Math]::Round($Raw / (283.4645669*$StorageScale), 4)
     }
+}
+
+function Get-HwpxParagraphSpacingNode {
+    param([Xml.XmlNode]$Paragraph, [ValidateSet('margin','lineSpacing')][string]$Name)
+    $hp='http://www.hancom.co.kr/hwpml/2011/paragraph'
+    $hh='http://www.hancom.co.kr/hwpml/2011/head'
+    $modern='http://www.hancom.co.kr/hwpml/2016/HwpUnitChar'
+    $switch="./*[local-name()='switch' and namespace-uri()='$hp']"
+    $child="*[local-name()='$Name' and namespace-uri()='$hh']"
+    $node=$Paragraph.SelectSingleNode("$switch/*[local-name()='case' and namespace-uri()='$hp' and @*[local-name()='required-namespace' and .='$modern']]/$child")
+    if ($null -ne $node) {return [pscustomobject]@{Node=$node;StorageScale=1}}
+    $node=$Paragraph.SelectSingleNode("$switch/*[local-name()='default' and namespace-uri()='$hp']/$child")
+    if ($null -eq $node) {$node=$Paragraph.SelectSingleNode("./$child")}
+    # Before HwpUnitChar, paragraph lengths used twice the modern HWPUNIT value.
+    # Raw remains unchanged; only the physical point/mm interpretation is scaled.
+    return [pscustomobject]@{Node=$node;StorageScale=2}
 }
 
 function Get-HwpxBorderWidthMillimeter {
@@ -579,8 +595,10 @@ function Get-HwpxHeaderResources {
     $paraShapes = [Collections.Generic.List[object]]::new()
     foreach ($shapeNode in @($Document.SelectNodes("//*[local-name()='paraPr']"))) {
         $alignNode = $shapeNode.SelectSingleNode("./*[local-name()='align']")
-        $marginNode = $shapeNode.SelectSingleNode(".//*[local-name()='margin']")
-        $lineSpacingNode = $shapeNode.SelectSingleNode(".//*[local-name()='lineSpacing']")
+        $marginInfo = Get-HwpxParagraphSpacingNode $shapeNode 'margin'
+        $spacingInfo = Get-HwpxParagraphSpacingNode $shapeNode 'lineSpacing'
+        $marginNode = $marginInfo.Node
+        $lineSpacingNode = $spacingInfo.Node
         $borderNode = $shapeNode.SelectSingleNode("./*[local-name()='border']")
         $marginValues = [ordered]@{ left=0; right=0; before=0; after=0; indent=0 }
         if ($null -ne $marginNode) {
@@ -591,6 +609,7 @@ function Get-HwpxHeaderResources {
         }
         $lineValue = if ($null -eq $lineSpacingNode) { 0 } else { Get-HwpxNodeIntegerAttribute -Node $lineSpacingNode -LocalName 'value' }
         $lineType = if ($null -eq $lineSpacingNode) { '' } else { Get-HwpxNodeAttribute -Node $lineSpacingNode -LocalName 'type' }
+        $lineUnit = if ($null -eq $lineSpacingNode) { '' } else { Get-HwpxNodeAttribute -Node $lineSpacingNode -LocalName 'unit' }
         $paraShapes.Add([pscustomobject][ordered]@{
             index = $paraShapes.Count
             id = Get-HwpxNodeIntegerAttribute -Node $shapeNode -LocalName 'id'
@@ -600,15 +619,20 @@ function Get-HwpxHeaderResources {
             alignmentCode = $null
             alignment = if ($null -eq $alignNode) { '' } else { Get-HwpxNodeAttribute -Node $alignNode -LocalName 'horizontal' }
             margins = [pscustomobject][ordered]@{
-                left = New-HwpxMeasurement -Raw $marginValues.left
-                right = New-HwpxMeasurement -Raw $marginValues.right
-                before = New-HwpxMeasurement -Raw $marginValues.before
-                after = New-HwpxMeasurement -Raw $marginValues.after
+                left = New-HwpxMeasurement -Raw $marginValues.left -StorageScale $marginInfo.StorageScale
+                right = New-HwpxMeasurement -Raw $marginValues.right -StorageScale $marginInfo.StorageScale
+                before = New-HwpxMeasurement -Raw $marginValues.before -StorageScale $marginInfo.StorageScale
+                after = New-HwpxMeasurement -Raw $marginValues.after -StorageScale $marginInfo.StorageScale
             }
-            indent = New-HwpxMeasurement -Raw $marginValues.indent
+            indent = New-HwpxMeasurement -Raw $marginValues.indent -StorageScale $marginInfo.StorageScale
             tabDefinitionId = Get-HwpxNodeIntegerAttribute -Node $shapeNode -LocalName 'tabPrIDRef'
             borderFillId = if ($null -eq $borderNode) { 0 } else { Get-HwpxNodeIntegerAttribute -Node $borderNode -LocalName 'borderFillIDRef' }
-            lineSpacing = [pscustomobject][ordered]@{ typeCode = $null; type = $lineType; value = $lineValue }
+            lineSpacing = [pscustomobject][ordered]@{
+                typeCode = $null; type = $lineType; value = $lineValue; unit = $lineUnit
+                measurement = if ($lineUnit -ceq 'HWPUNIT' -and $lineType -cin @('FIXED','AT_LEAST','BETWEEN_LINES')) {
+                    New-HwpxMeasurement -Raw $lineValue -StorageScale $spacingInfo.StorageScale
+                } else { $null }
+            }
             properties = Get-HwpxElementProperties -Node $shapeNode -PreserveXml
         })
     }
@@ -728,7 +752,7 @@ function Get-HwpxSectionLayoutData {
         $width = Get-HwpxNodeIntegerAttribute -Node $pageNode -LocalName 'width'
         $height = Get-HwpxNodeIntegerAttribute -Node $pageNode -LocalName 'height'
         $landscape = Get-HwpxNodeAttribute -Node $pageNode -LocalName 'landscape'
-        $orientation = switch ($landscape) { 'WIDELY' { 'LANDSCAPE' }; 'NARROWLY' { 'PORTRAIT' }; default { 'UNKNOWN' } }
+        $orientation = switch ($landscape) { 'WIDELY' { 'PORTRAIT' }; 'NARROWLY' { 'LANDSCAPE' }; default { 'UNKNOWN' } }
         $marginNode = $pageNode.SelectSingleNode("./*[local-name()='margin']")
         $getMargin = {
             param($Name)

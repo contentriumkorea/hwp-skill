@@ -63,9 +63,16 @@ Contentrium은 영상·디자인·웹·AI 기술을 연결해 공공 콘텐츠�
 HWPX에 직접 기록합니다. 기존 V1 계획과 HWP 5.x 읽기는 유지합니다.
 미지원 속성을 조용히 무시하지 않고 작성 전에 거부하며, 구조 검증과 실제 렌더링은 구분합니다.
 
+일반 새 서류의 기본값은 **A4 세로, 줄 간격 160%, 문단 위·아래 간격 0**입니다.
+제목·소제목·본문 사이의 추가 공간은 엔터에 해당하는 빈 문단으로 만들고, 빈 문단의
+글자 크기로 조절해 문단 모양 메뉴를 열지 않고도 수정하기 쉽게 구성합니다.
+사용자가 지정한 서식과 기존 양식의 간격은 유지합니다.
+
 - [작성 규격과 명령](skills/hwp-skill/references/authoring.md)
 - [읽기·작성·수정·검증별 기능표](skills/hwp-skill/references/feature-support.md)
 - [세로 → 가로 → 세로 예제](skills/hwp-skill/examples/authoring-v2.plan.json)
+- [방향·문단 단위 수정 검증](docs/superpowers/reports/2026-09-03-hwpx-portrait-spacing-qa.md)
+- [빈 문단 작성 방식 검증과 화면 감시 한계](docs/superpowers/reports/2026-09-03-hwpx-editable-spacing-qa.md)
 
 `edit-hwpx`는 별도 결과에서 지정한 XML만 부분 수정하고, 변경하지 않은 포함 파일과
 알 수 없는 XML 확장 요소를 보존합니다. 한컴오피스 전체 기능의 완전한 대체나

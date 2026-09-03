@@ -23,7 +23,9 @@
     },
     "paragraphStyle": {
       "alignment": "JUSTIFY",
-      "lineSpacingPercent": 160
+      "lineSpacingPercent": 160,
+      "marginBeforeMm": 0,
+      "marginAfterMm": 0
     },
     "tableStyle": {
       "borderType": "SOLID",
@@ -43,9 +45,14 @@
         "textColor": "#1F4E79"
       },
       "paragraphStyle": {
-        "alignment": "CENTER",
-        "lineSpacingPercent": 145,
-        "marginAfterMm": 5
+        "alignment": "CENTER"
+      }
+    },
+    {
+      "type": "paragraph",
+      "text": "",
+      "textStyle": {
+        "fontSizePt": 9
       }
     },
     {

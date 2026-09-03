@@ -25,7 +25,7 @@ Describe 'Independent HWPX promotion gate' {
                 try { $xml = $reader.ReadToEnd() } finally { $reader.Dispose() }
                 $entry.Delete()
                 $writer = [IO.StreamWriter]::new($archive.CreateEntry('Contents/section0.xml').Open(), [Text.UTF8Encoding]::new($false))
-                try { $writer.Write($xml.Replace('landscape="NARROWLY"', 'landscape="WIDELY"')) } finally { $writer.Dispose() }
+                try { $writer.Write($xml.Replace('landscape="WIDELY"', 'landscape="NARROWLY"')) } finally { $writer.Dispose() }
             } finally { $archive.Dispose() }
             return $inspection
         }

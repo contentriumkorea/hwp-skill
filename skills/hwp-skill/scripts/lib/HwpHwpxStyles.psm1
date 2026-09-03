@@ -305,13 +305,22 @@ function Get-HwpxParagraphStylesXml {
         $right = ConvertTo-HwpxStyleUnit -Millimeter $style.rightMarginMm
         $before = ConvertTo-HwpxStyleUnit -Millimeter $style.marginBeforeMm
         $after = ConvertTo-HwpxStyleUnit -Millimeter $style.marginAfterMm
-        $null = $builder.Append('<hh:paraPr id="').Append($entry.id).Append('" tabPrIDRef="0" condense="0" fontLineHeight="0" snapToGrid="1" suppressLineNumbers="0" checked="0" textDir="LTR"><hh:align horizontal="').Append($style.alignment).Append('" vertical="BASELINE"/><hh:heading type="NONE" idRef="0" level="0"/><hh:breakSetting breakLatinWord="KEEP_WORD" breakNonLatinWord="KEEP_WORD" widowOrphan="').Append([int]$style.widowOrphan).Append('" keepWithNext="').Append([int]$style.keepWithNext).Append('" keepLines="').Append([int]$style.keepLines).Append('" pageBreakBefore="').Append([int]$style.pageBreakBefore).Append('" lineWrap="BREAK"/><hh:autoSpacing eAsianEng="0" eAsianNum="0"/><hh:margin>')
-        $null = $builder.Append('<hc:intent value="').Append($intent).Append('" unit="HWPUNIT"/><hc:left value="').Append($left).Append('" unit="HWPUNIT"/><hc:right value="').Append($right).Append('" unit="HWPUNIT"/><hc:prev value="').Append($before).Append('" unit="HWPUNIT"/><hc:next value="').Append($after).Append('" unit="HWPUNIT"/></hh:margin>')
+        $null = $builder.Append('<hh:paraPr id="').Append($entry.id).Append('" tabPrIDRef="0" condense="0" fontLineHeight="0" snapToGrid="1" suppressLineNumbers="0" checked="0" textDir="LTR"><hh:align horizontal="').Append($style.alignment).Append('" vertical="BASELINE"/><hh:heading type="NONE" idRef="0" level="0"/><hh:breakSetting breakLatinWord="KEEP_WORD" breakNonLatinWord="KEEP_WORD" widowOrphan="').Append([int]$style.widowOrphan).Append('" keepWithNext="').Append([int]$style.keepWithNext).Append('" keepLines="').Append([int]$style.keepLines).Append('" pageBreakBefore="').Append([int]$style.pageBreakBefore).Append('" lineWrap="BREAK"/><hh:autoSpacing eAsianEng="0" eAsianNum="0"/><hp:switch>')
         $spacingType=if ($null -eq $style.lineSpacing) {'PERCENT'} else {$style.lineSpacing.type}
         $spacingValue=if ($null -eq $style.lineSpacing) {$style.lineSpacingPercent} else {[int][Math]::Round($style.lineSpacing.valuePt*100)}
-        $null = $builder.Append('<hh:lineSpacing type="').Append($spacingType).Append('" value="').Append($spacingValue).Append('" unit="HWPUNIT"/><hh:border borderFillIDRef="2" offsetLeft="0" offsetRight="0" offsetTop="0" offsetBottom="0" connect="0" ignoreMargin="0"/></hh:paraPr>')
+        # Match Hancom's template: modern HwpUnitChar values and doubled legacy
+        # paragraph lengths. Percent is dimensionless and must never be doubled.
+        foreach ($scale in @(1,2)) {
+            if ($scale -eq 1) { $null=$builder.Append('<hp:case hp:required-namespace="http://www.hancom.co.kr/hwpml/2016/HwpUnitChar">') }
+            else { $null=$builder.Append('<hp:default>') }
+            $null=$builder.Append('<hh:margin><hc:intent value="').Append([long]$intent*$scale).Append('" unit="HWPUNIT"/><hc:left value="').Append([long]$left*$scale).Append('" unit="HWPUNIT"/><hc:right value="').Append([long]$right*$scale).Append('" unit="HWPUNIT"/><hc:prev value="').Append([long]$before*$scale).Append('" unit="HWPUNIT"/><hc:next value="').Append([long]$after*$scale).Append('" unit="HWPUNIT"/></hh:margin>')
+            $branchSpacing=if ($spacingType -eq 'PERCENT') {$spacingValue} else {[long]$spacingValue*$scale}
+            $null=$builder.Append('<hh:lineSpacing type="').Append($spacingType).Append('" value="').Append($branchSpacing).Append('" unit="HWPUNIT"/>')
+            if ($scale -eq 1) { $null=$builder.Append('</hp:case>') } else { $null=$builder.Append('</hp:default>') }
+        }
+        $null=$builder.Append('</hp:switch><hh:border borderFillIDRef="2" offsetLeft="0" offsetRight="0" offsetTop="0" offsetBottom="0" connect="0" ignoreMargin="0"/></hh:paraPr>')
     }
-    [xml]$root='<root xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">'+$builder.ToString()+'</root>'
+    [xml]$root='<root xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">'+$builder.ToString()+'</root>'
     foreach ($entry in $Registry.ParagraphStyles) {
         $node=$root.DocumentElement.SelectSingleNode("*[local-name()='paraPr' and @id='$($entry.id)']")
         $node.SetAttribute('tabPrIDRef',[string]$entry.tabId)
