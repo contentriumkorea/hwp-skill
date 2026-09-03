@@ -80,7 +80,7 @@ npx skills@latest add contentriumkorea/hwp-skill --skill hwp-skill --global --ag
 ### Claude Code 플러그인
 
 ```text
-claude plugin marketplace add contentriumkorea/hwp-skill
+claude plugin marketplace add https://github.com/contentriumkorea/hwp-skill.git
 claude plugin install hwp-skill@contentrium
 ```
 

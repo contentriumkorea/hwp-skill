@@ -121,12 +121,12 @@ Claude Code에서는 이 GitHub 저장소를 플러그인 마켓플레이스로 
 있습니다.
 
 ```powershell
-claude plugin marketplace add contentriumkorea/hwp-skill
+claude plugin marketplace add https://github.com/contentriumkorea/hwp-skill.git
 claude plugin install hwp-skill@contentrium
 ```
 
-플러그인 설치 후에는 자연어로 한글 문서 작업을 요청하거나 `/hwp-skill`로 직접 호출할
-수 있습니다.
+플러그인 설치 후에는 자연어로 한글 문서 작업을 요청하거나
+`/hwp-skill:hwp-skill`로 직접 호출할 수 있습니다.
 
 ### 3. Windows PowerShell로 직접 설치하기
 
@@ -190,7 +190,8 @@ junction, 심볼릭 링크 같은 재분석 지점이 발견되면 기존 설치
 Windows PowerShell 실행 권한이 없는 원격 환경에서는 HWP 처리 엔진도 실행되지 않습니다.
 
 설치 후 새 AI 작업을 시작하고 자연어로 한글 문서 작업을 요청하면 됩니다. Codex에서는
-`$hwp-skill`, Claude Code에서는 `/hwp-skill`로 명시 호출할 수도 있습니다. 기본 프롬프트는
+`$hwp-skill`, PowerShell로 설치한 Claude Code 개인 스킬은 `/hwp-skill`, Claude 공식
+플러그인은 `/hwp-skill:hwp-skill`로 명시 호출할 수 있습니다. 기본 프롬프트는
 `silent` 단일 작업으로 시작하며, 내부 계획·명령·엔진 상태를 대화에 표시하지 않습니다.
 준비되지 않은 엔진이면 자동 GUI 대체 없이 원본 보존과 제한 사유를 한 번에 보고합니다.
 
@@ -203,7 +204,7 @@ $hwp-skill로 이 HWPX 파일이 제대로 읽히는지 확인해 줘.
 ```
 
 ```text
-/hwp-skill 이 HWP 파일의 본문과 표 구조를 확인해 줘.
+/hwp-skill:hwp-skill 이 HWP 파일의 본문과 표 구조를 확인해 줘.
 ```
 
 ```text

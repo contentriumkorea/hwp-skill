@@ -187,8 +187,9 @@ Describe 'hwp-skill 저장소 구조' {
 
         $readme | Should Match 'npx\s+skills@latest\s+add\s+contentriumkorea/hwp-skill'
         $readme | Should Match "--agent\s+'\*'"
-        $readme | Should Match 'claude\s+plugin\s+marketplace\s+add\s+contentriumkorea/hwp-skill'
+        $readme | Should Match 'claude\s+plugin\s+marketplace\s+add\s+https://github\.com/contentriumkorea/hwp-skill\.git'
         $readme | Should Match 'claude\s+plugin\s+install\s+hwp-skill@contentrium'
+        $readme | Should Match '/hwp-skill:hwp-skill'
         $readme | Should Match '\.\\install\.ps1\s+-Target\s+Claude'
         $readme | Should Match '\.\\install\.ps1\s+-Target\s+Universal'
         $readme | Should Match '\.\\install\.ps1\s+-Target\s+All'
