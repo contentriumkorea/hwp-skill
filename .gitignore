@@ -1,6 +1,7 @@
 .worktrees/
 .superpowers/
 tests/output/
+dist/
 tmp/
 *.partial.hwp
 *.partial.hwt

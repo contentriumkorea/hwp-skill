@@ -43,3 +43,44 @@ Describe '범용 Agent Skills 배포 구조' {
         $skill | Should Not Match 'Codex의 정식 작업 형식'
     }
 }
+
+Describe '독립 HWP Skill ZIP 패키지' {
+    BeforeEach {
+        $script:packageScript = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../package.ps1'))
+        $script:packagePath = Join-Path $TestDrive ('hwp-skill-' + [guid]::NewGuid().ToString('n') + '.zip')
+    }
+
+    It 'ZIP 최상위 hwp-skill 폴더에 필수 파일과 실행 스크립트를 포함한다' {
+        $null = & $packageScript -OutputPath $packagePath
+
+        Test-Path -LiteralPath $packagePath -PathType Leaf | Should Be $true
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $archive = [IO.Compression.ZipFile]::OpenRead($packagePath)
+        try {
+            $entryNames = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\','/') })
+            ($entryNames -contains 'hwp-skill/SKILL.md') | Should Be $true
+            ($entryNames -contains 'hwp-skill/scripts/Invoke-HwpSkill.ps1') | Should Be $true
+            @($entryNames | Where-Object { $_ -match '^hwp-skill/' }).Count | Should BeGreaterThan 2
+        }
+        finally {
+            $archive.Dispose()
+        }
+    }
+
+    It 'Force 없이는 기존 ZIP을 덮어쓰지 않는다' {
+        $originalBytes = [byte[]](0x50,0x52,0x45,0x53,0x45,0x52,0x56,0x45)
+        [IO.File]::WriteAllBytes($packagePath, $originalBytes)
+        $beforeHash = (Get-FileHash -LiteralPath $packagePath -Algorithm SHA256).Hash
+        $errorMessage = ''
+
+        try {
+            $null = & $packageScript -OutputPath $packagePath
+        }
+        catch {
+            $errorMessage = $_.Exception.Message
+        }
+
+        $errorMessage | Should Match '이미|existing|Force'
+        (Get-FileHash -LiteralPath $packagePath -Algorithm SHA256).Hash | Should Be $beforeHash
+    }
+}
