@@ -376,25 +376,56 @@ function Get-HwpxNodeBooleanAttribute {
     }
 }
 
+function Get-HwpxTextToken {
+    param([Parameter(Mandatory)][Xml.XmlNode]$Node, [AllowNull()][Xml.XmlNode]$Paragraph=$null)
+
+    $insideText=$false
+    if ($Node.NodeType -eq [Xml.XmlNodeType]::Element) {
+        switch ($Node.LocalName) {
+            'lineBreak' {$value="`n"}
+            'tab' {$value="`t"}
+            default {return $null}
+        }
+        # Also read older generated files where separators were siblings of t.
+        $insideText=$true
+    } elseif ($Node.NodeType -in @([Xml.XmlNodeType]::Text, [Xml.XmlNodeType]::CDATA,
+            [Xml.XmlNodeType]::SignificantWhitespace, [Xml.XmlNodeType]::Whitespace)) {
+        $value=[string]$Node.Value
+    } else {return $null}
+
+    $ancestor=$Node.ParentNode
+    while ($null -ne $ancestor) {
+        if ($ancestor.LocalName -eq 'p') {
+            if ($null -ne $Paragraph -and -not [object]::ReferenceEquals($ancestor,$Paragraph)) {return $null}
+            if ($insideText) {return $value}
+            return $null
+        }
+        # Text in a nested paragraph is inspected as its own paragraph; control
+        # metadata or object text must not become text of the enclosing run.
+        if ($ancestor.LocalName -in @('ctrl','fieldBegin','fieldEnd','secPr','subList','drawText',
+                'tbl','pic','equation','footNote','endNote','header','footer','rect','ellipse','line')) {return $null}
+        if ($ancestor.LocalName -eq 't') {$insideText=$true}
+        $ancestor=$ancestor.ParentNode
+    }
+    return $null
+}
+
+function Get-HwpxInlineText {
+    param([Parameter(Mandatory)][Xml.XmlNode]$Root, [Parameter(Mandatory)][Xml.XmlNode]$Paragraph)
+    $text=[Text.StringBuilder]::new()
+    # XPath unions are in DOM order. Consume leaf text/CDATA once, never a t's
+    # InnerText followed by its descendants (which duplicates/reorders content).
+    foreach ($node in $Root.SelectNodes(".//text() | .//*[local-name()='lineBreak' or local-name()='tab']")) {
+        $token=Get-HwpxTextToken -Node $node -Paragraph $Paragraph
+        if ($null -ne $token) {$null=$text.Append($token)}
+    }
+    $text.ToString()
+}
+
 function Get-HwpxParagraphText {
     [CmdletBinding()]
     param([Parameter(Mandatory)][Xml.XmlNode]$Paragraph)
-
-    $parts = [Collections.Generic.List[string]]::new()
-    foreach ($textNode in @($Paragraph.SelectNodes(".//*[local-name()='t' or local-name()='lineBreak' or local-name()='tab']"))) {
-        $nearestParagraph = $textNode.ParentNode
-        while ($null -ne $nearestParagraph -and $nearestParagraph.LocalName -ne 'p') {
-            $nearestParagraph = $nearestParagraph.ParentNode
-        }
-        if ([object]::ReferenceEquals($nearestParagraph, $Paragraph)) {
-            switch ($textNode.LocalName) {
-                'lineBreak' { $parts.Add("`n") }
-                'tab' { $parts.Add("`t") }
-                default { $parts.Add([string]$textNode.InnerText) }
-            }
-        }
-    }
-    $parts -join ''
+    Get-HwpxInlineText -Root $Paragraph -Paragraph $Paragraph
 }
 
 function New-HwpxMeasurement {
@@ -540,6 +571,8 @@ function Get-HwpxHeaderResources {
             shadeColorRaw = $null
             shadeColor = Get-HwpxNodeAttribute -Node $shapeNode -LocalName 'shadeColor'
             borderFillId = Get-HwpxNodeIntegerAttribute -Node $shapeNode -LocalName 'borderFillIDRef'
+            # Keep HWPX enums and per-language values without inventing binary codes.
+            properties = Get-HwpxElementProperties -Node $shapeNode -PreserveXml
         })
     }
 
@@ -576,7 +609,29 @@ function Get-HwpxHeaderResources {
             tabDefinitionId = Get-HwpxNodeIntegerAttribute -Node $shapeNode -LocalName 'tabPrIDRef'
             borderFillId = if ($null -eq $borderNode) { 0 } else { Get-HwpxNodeIntegerAttribute -Node $borderNode -LocalName 'borderFillIDRef' }
             lineSpacing = [pscustomobject][ordered]@{ typeCode = $null; type = $lineType; value = $lineValue }
+            properties = Get-HwpxElementProperties -Node $shapeNode -PreserveXml
         })
+    }
+
+    # Additive HWPX-only resources. IDs link to styleId/tabDefinitionId and the
+    # heading idRef retained in paraShapes[].properties. Raw attributes stay
+    # strings, including UINT32 inheritance sentinels in numbering paraHead.
+    $authoringResources = [ordered]@{}
+    foreach ($pair in @(@('styles','style'), @('tabProperties','tabPr'), @('numberings','numbering'), @('bullets','bullet'))) {
+        $items = [Collections.Generic.List[object]]::new()
+        foreach ($node in @($Document.SelectNodes("/*[local-name()='head']/*[local-name()='refList']/*[local-name()='$($pair[0])']/*[local-name()='$($pair[1])']"))) {
+            $item = [pscustomobject][ordered]@{
+                index = $items.Count
+                id = Get-HwpxNodeIntegerAttribute -Node $node -LocalName 'id'
+                properties = Get-HwpxElementProperties -Node $node -PreserveXml
+            }
+            if ($pair[0] -eq 'styles') {
+                $item | Add-Member NoteProperty name (Get-HwpxNodeAttribute -Node $node -LocalName 'name')
+                $item | Add-Member NoteProperty type (Get-HwpxNodeAttribute -Node $node -LocalName 'type')
+            }
+            $items.Add($item)
+        }
+        $authoringResources[$pair[0]] = @($items)
     }
 
     [pscustomobject][ordered]@{
@@ -584,6 +639,10 @@ function Get-HwpxHeaderResources {
         borderFills = @($borderFills)
         charShapes = @($charShapes)
         paraShapes = @($paraShapes)
+        styles = $authoringResources.styles
+        tabProperties = $authoringResources.tabProperties
+        numberings = $authoringResources.numberings
+        bullets = $authoringResources.bullets
     }
 }
 
@@ -592,14 +651,7 @@ function Get-HwpxRunText {
         [Parameter(Mandatory)][Xml.XmlNode]$Run,
         [Parameter(Mandatory)][Xml.XmlNode]$Paragraph
     )
-    $parts = [Collections.Generic.List[string]]::new()
-    foreach ($node in @($Run.SelectNodes(".//*[local-name()='t' or local-name()='lineBreak' or local-name()='tab']"))) {
-        $nearestParagraph = $node.ParentNode
-        while ($null -ne $nearestParagraph -and $nearestParagraph.LocalName -ne 'p') { $nearestParagraph = $nearestParagraph.ParentNode }
-        if (-not [object]::ReferenceEquals($nearestParagraph, $Paragraph)) { continue }
-        switch ($node.LocalName) { 'lineBreak' { $parts.Add("`n") } 'tab' { $parts.Add("`t") } default { $parts.Add([string]$node.InnerText) } }
-    }
-    $parts -join ''
+    Get-HwpxInlineText -Root $Run -Paragraph $Paragraph
 }
 
 function Get-HwpxSectionLayoutData {
@@ -661,6 +713,8 @@ function Get-HwpxSectionLayoutData {
             paraShapeId = Get-HwpxNodeIntegerAttribute -Node $paragraph -LocalName 'paraPrIDRef'
             styleId = Get-HwpxNodeIntegerAttribute -Node $paragraph -LocalName 'styleIDRef'
             breakTypeRaw = $null
+            pageBreak = Get-HwpxNodeBooleanAttribute -Node $paragraph -LocalName 'pageBreak'
+            columnBreak = Get-HwpxNodeBooleanAttribute -Node $paragraph -LocalName 'columnBreak'
             controlMask = $null
             instanceId = Get-HwpxNodeAttribute -Node $paragraph -LocalName 'id'
             charShapeRuns = @($charRuns)
@@ -673,6 +727,8 @@ function Get-HwpxSectionLayoutData {
     foreach ($pageNode in @($Document.SelectNodes("//*[local-name()='pagePr']"))) {
         $width = Get-HwpxNodeIntegerAttribute -Node $pageNode -LocalName 'width'
         $height = Get-HwpxNodeIntegerAttribute -Node $pageNode -LocalName 'height'
+        $landscape = Get-HwpxNodeAttribute -Node $pageNode -LocalName 'landscape'
+        $orientation = switch ($landscape) { 'WIDELY' { 'LANDSCAPE' }; 'NARROWLY' { 'PORTRAIT' }; default { 'UNKNOWN' } }
         $marginNode = $pageNode.SelectSingleNode("./*[local-name()='margin']")
         $getMargin = {
             param($Name)
@@ -681,10 +737,12 @@ function Get-HwpxSectionLayoutData {
         }
         $pageDefinitions.Add([pscustomobject][ordered]@{
             index = $pageDefinitions.Count
-            orientation = if ($width -gt $height) { 'LANDSCAPE' } else { 'PORTRAIT' }
-            landscapeRaw = Get-HwpxNodeAttribute -Node $pageNode -LocalName 'landscape'
-            width = New-HwpxMeasurement -Raw $width
-            height = New-HwpxMeasurement -Raw $height
+            orientation = $orientation
+            landscapeRaw = $landscape
+            paperWidth = New-HwpxMeasurement -Raw $width
+            paperHeight = New-HwpxMeasurement -Raw $height
+            width = New-HwpxMeasurement -Raw $(if ($orientation -eq 'LANDSCAPE') { $height } else { $width })
+            height = New-HwpxMeasurement -Raw $(if ($orientation -eq 'LANDSCAPE') { $width } else { $height })
             margins = [pscustomobject][ordered]@{
                 left = New-HwpxMeasurement -Raw (& $getMargin 'left')
                 right = New-HwpxMeasurement -Raw (& $getMargin 'right')
@@ -703,6 +761,37 @@ function Get-HwpxSectionLayoutData {
         pageDefinitions = @($pageDefinitions)
         lineSegmentCount = @($paragraphModels | ForEach-Object { $_.LineSegments }).Count
     }
+}
+
+function Get-HwpxElementProperties {
+    param([Xml.XmlNode]$Node,[int]$Depth=0,[switch]$PreserveXml)
+    if ($null -eq $Node) {return $null}
+    $attributes=[ordered]@{}
+    foreach ($a in $Node.Attributes) {$attributes[$a.LocalName]=$a.Value}
+    $text=[Text.StringBuilder]::new()
+    $children=[Collections.Generic.List[object]]::new()
+    foreach ($child in $Node.ChildNodes) {
+        if ($child.NodeType -in @([Xml.XmlNodeType]::Text, [Xml.XmlNodeType]::CDATA,
+                [Xml.XmlNodeType]::SignificantWhitespace, [Xml.XmlNodeType]::Whitespace)) {
+            $null=$text.Append($child.Value)
+        }
+        elseif ($Depth -lt 4 -and $child.NodeType -eq [Xml.XmlNodeType]::Element -and
+                $child.LocalName -notin @('subList','drawText','tr','t')) {
+            $children.Add((Get-HwpxElementProperties -Node $child -Depth ($Depth+1)))
+        }
+    }
+    $properties=[pscustomobject][ordered]@{
+        element=$Node.LocalName
+        attributes=[pscustomobject]$attributes
+        children=@($children)
+        namespaceUri=$Node.NamespaceURI
+        text=$text.ToString()
+    }
+    # The existing shallow projection remains convenient for callers. Store full
+    # resource XML once at its root so deeper/omitted nodes, mixed-content order
+    # and qualified attributes survive too; do not duplicate entire control bodies.
+    if ($PreserveXml) {$properties | Add-Member NoteProperty xml $Node.OuterXml}
+    $properties
 }
 
 function Get-HwpxTableStructures {
@@ -907,11 +996,16 @@ function Get-HwpxSectionData {
         endNote = 'en'
         header = 'head'
         footer = 'foot'
+        rect = 'rect'
+        ellipse = 'ellipse'
+        line = 'line'
+        bookmark = 'bookmark'
+        pageNum = 'pageNum'
     }
     foreach ($node in @($Document.SelectNodes(
         "//*[local-name()='tbl' or local-name()='pic' or local-name()='fieldBegin' or " +
         "local-name()='equation' or local-name()='footNote' or local-name()='endNote' or " +
-        "local-name()='header' or local-name()='footer']"
+        "local-name()='header' or local-name()='footer' or local-name()='rect' or local-name()='ellipse' or local-name()='line' or local-name()='bookmark' or local-name()='pageNum']"
     ))) {
         $controls.Add([pscustomobject]@{
             index = $Controls.Count
@@ -920,12 +1014,13 @@ function Get-HwpxSectionData {
             instanceId = (Get-HwpxNodeAttribute -Node $node -LocalName 'id')
             section = $SectionName
             source = 'hwpx-package'
+            properties = Get-HwpxElementProperties $node
         })
     }
 
     $activeFields = [Collections.Generic.List[object]]::new()
     $fieldNodes = @($Document.SelectNodes(
-        "//*[local-name()='fieldBegin' or local-name()='fieldEnd' or local-name()='t']"
+        "//text() | //*[local-name()='fieldBegin' or local-name()='fieldEnd' or local-name()='lineBreak' or local-name()='tab']"
     ))
     foreach ($node in $fieldNodes) {
         if ($node.LocalName -eq 'fieldBegin') {
@@ -937,19 +1032,11 @@ function Get-HwpxSectionData {
             continue
         }
 
-        if ($node.LocalName -eq 't') {
-            $insideFieldDefinition = $false
-            $ancestor = $node.ParentNode
-            while ($null -ne $ancestor) {
-                if ($ancestor.LocalName -eq 'fieldBegin') {
-                    $insideFieldDefinition = $true
-                    break
-                }
-                $ancestor = $ancestor.ParentNode
-            }
-            if (-not $insideFieldDefinition) {
+        if ($node.LocalName -ne 'fieldEnd') {
+            $token=Get-HwpxTextToken -Node $node
+            if ($null -ne $token) {
                 foreach ($active in $activeFields) {
-                    $null = $active.Text.Append([string]$node.InnerText)
+                    $null = $active.Text.Append($token)
                 }
             }
             continue
@@ -1091,7 +1178,10 @@ function Get-HwpxPackageInspection {
             $tables = [Collections.Generic.List[object]]::new()
             $structureWarnings = [Collections.Generic.List[string]]::new()
             $fields = [Collections.Specialized.OrderedDictionary]::new([StringComparer]::Ordinal)
-            $resources = [pscustomobject]@{ fonts = @(); borderFills = @(); charShapes = @(); paraShapes = @() }
+            $resources = [pscustomobject]@{
+                fonts = @(); borderFills = @(); charShapes = @(); paraShapes = @()
+                styles = @(); tabProperties = @(); numberings = @(); bullets = @()
+            }
             if ($entryMap.ContainsKey('Contents/header.xml')) {
                 $headerDocument = Read-HwpxXmlEntry -Entry $entryMap['Contents/header.xml'] -MaximumCharacters $MaximumXmlCharacters
                 $resources = Get-HwpxHeaderResources -Document $headerDocument
@@ -1112,6 +1202,8 @@ function Get-HwpxPackageInspection {
                     paragraphStartIndex = $layoutParagraphs.Count - @($layoutData.Paragraphs).Count
                     paragraphCount = @($layoutData.Paragraphs).Count
                     pageDefinitions = @($layoutData.PageDefinitions)
+                    columns = @($document.SelectNodes("//*[local-name()='colPr']") | ForEach-Object {Get-HwpxElementProperties $_})
+                    pageBorders = @($document.SelectNodes("//*[local-name()='pageBorderFill']") | ForEach-Object {Get-HwpxElementProperties $_})
                     storedPageFirstLineCount = 0
                 })
                 $lineSegmentCount += [int]$layoutData.LineSegmentCount

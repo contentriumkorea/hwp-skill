@@ -1,4 +1,4 @@
-$modulePath = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpCommon.psm1'
+﻿$modulePath = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpCommon.psm1'
 if (Test-Path -LiteralPath $modulePath) {
     Import-Module $modulePath -Force
 }

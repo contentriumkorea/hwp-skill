@@ -87,6 +87,7 @@ function Get-HwpCapabilitySnapshot {
         schemaVersion = '1.0'
         executionMode = [string]$ExecutionContext.Mode
         backends = @($backends)
+        authoring = (Get-Content -LiteralPath (Join-Path $PSScriptRoot '../../references/authoring-capabilities.json') -Raw -Encoding UTF8 | ConvertFrom-Json)
     }
 }
 

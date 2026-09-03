@@ -1,5 +1,5 @@
-$cli = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/Invoke-HwpSkill.ps1'
-$pwsh = Join-Path $PSHOME 'pwsh.exe'
+﻿$cli = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/Invoke-HwpSkill.ps1'
+$pwsh = (Get-Process -Id $PID).Path
 
 Describe 'HWP 공용 CLI 실행 모드' {
     It 'capabilities 기본 실행 모드는 silent다' {

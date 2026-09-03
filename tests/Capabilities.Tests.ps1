@@ -1,4 +1,4 @@
-$executionModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpExecution.psm1'
+﻿$executionModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpExecution.psm1'
 $capabilityModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpCapabilities.psm1'
 $capabilitySchema = Join-Path $PSScriptRoot '../skills/hwp-skill/schemas/capabilities.schema.json'
 
@@ -11,6 +11,21 @@ Describe 'HWP 엔진 기능 스냅샷' {
     function ConvertTo-SnapshotJson {
         param([Parameter(Mandatory)][object]$InputObject)
         $InputObject | ConvertTo-Json -Depth 20
+    }
+
+    function Test-CapabilityJson {
+        [CmdletBinding()]
+        param([Parameter(ValueFromPipeline)][string]$Json, [string]$SchemaFile)
+        process {
+            if (Get-Command Test-Json -ErrorAction SilentlyContinue) {
+                return ($Json | Test-Json -SchemaFile $SchemaFile -ErrorAction SilentlyContinue)
+            }
+            # JSON Schema conformance is test-only; the installed 5.1 runtime has no PS7 dependency.
+            $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Json))
+            $command = '[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(''{0}'')) | Test-Json -SchemaFile ''{1}'' -ErrorAction SilentlyContinue' -f $encoded,$SchemaFile.Replace("'","''")
+            $result = & pwsh -NoProfile -Command $command
+            return (($result -join '').Trim() -eq 'True')
+        }
     }
 
     function New-DeterministicCapabilitySnapshot {
@@ -121,14 +136,22 @@ Describe 'HWP 엔진 기능 스냅샷' {
         $snapshot = New-DeterministicCapabilitySnapshot
         $json = ConvertTo-SnapshotJson $snapshot
 
-        $json | Test-Json -SchemaFile $capabilitySchema | Should Be $true
+        $json | Test-CapabilityJson -SchemaFile $capabilitySchema | Should Be $true
+    }
+    It '작성 기능표는 실제 무창 명령과 시각 검증 한계를 반환한다' {
+        $snapshot=Get-HwpCapabilitySnapshot
+        $snapshot.authoring.defaultPlanVersion | Should Be '2.0'
+        $snapshot.authoring.requiresHancomForHwpx | Should Be $false
+        $snapshot.authoring.nativeRenderingVerified | Should Be $false
+        ($snapshot.authoring.features|Where-Object {$_.id -eq 'printed-page-toc'}).create | Should Be unsupported
+        ($snapshot|ConvertTo-Json -Depth 20) | Test-CapabilityJson -SchemaFile $capabilitySchema | Should Be $true
     }
 
     It '공개 JSON 스키마는 지원하지 않는 executionMode를 거부한다' {
         $invalid = New-DeterministicCapabilitySnapshot
         $invalid.executionMode = 'desktop'
 
-        (ConvertTo-SnapshotJson $invalid) | Test-Json -SchemaFile $capabilitySchema -ErrorAction SilentlyContinue |
+        (ConvertTo-SnapshotJson $invalid) | Test-CapabilityJson -SchemaFile $capabilitySchema -ErrorAction SilentlyContinue |
             Should Be $false
     }
 
@@ -136,7 +159,7 @@ Describe 'HWP 엔진 기능 스냅샷' {
         $invalid = New-DeterministicCapabilitySnapshot
         $invalid.backends[1].id = 'portable-beta'
 
-        (ConvertTo-SnapshotJson $invalid) | Test-Json -SchemaFile $capabilitySchema -ErrorAction SilentlyContinue |
+        (ConvertTo-SnapshotJson $invalid) | Test-CapabilityJson -SchemaFile $capabilitySchema -ErrorAction SilentlyContinue |
             Should Be $false
     }
 
@@ -145,7 +168,7 @@ Describe 'HWP 엔진 기능 스냅샷' {
         $invalid.backends[0].formats = @('HWP-BINARY')
         $invalid.backends[3].operations = @('inspect')
 
-        (ConvertTo-SnapshotJson $invalid) | Test-Json -SchemaFile $capabilitySchema -ErrorAction SilentlyContinue |
+        (ConvertTo-SnapshotJson $invalid) | Test-CapabilityJson -SchemaFile $capabilitySchema -ErrorAction SilentlyContinue |
             Should Be $false
     }
 
@@ -155,7 +178,7 @@ Describe 'HWP 엔진 기능 스냅샷' {
         $invalid.backends[1].isolation = 'current-session'
         $invalid.backends[0].reason = 'Different reason'
 
-        (ConvertTo-SnapshotJson $invalid) | Test-Json -SchemaFile $capabilitySchema -ErrorAction SilentlyContinue |
+        (ConvertTo-SnapshotJson $invalid) | Test-CapabilityJson -SchemaFile $capabilitySchema -ErrorAction SilentlyContinue |
             Should Be $false
     }
 }

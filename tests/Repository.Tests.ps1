@@ -1,4 +1,4 @@
-Describe 'hwp-skill 저장소 구조' {
+﻿Describe 'hwp-skill 저장소 구조' {
     It '내부 SDD 구현 보고서를 공개 Git 이력에 추적하지 않는다' {
         $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
         $tracked = @(& git -C $repositoryRoot ls-files)
@@ -84,13 +84,13 @@ Describe 'hwp-skill 저장소 구조' {
 
         $content = Get-Content -LiteralPath $cliPath -Raw -Encoding UTF8
 
-        $content | Should Match '\[ValidateSet\(''capabilities'',''preflight'',''inspect'',''validate-plan'',''apply'',''generate'',''batch'',''compare'',''verify'',''export''\)\]'
+        $content | Should Match '\[ValidateSet\(''capabilities'',''preflight'',''inspect'',''validate-plan'',''validate-generate-plan'',''edit-hwpx'',''apply'',''generate'',''batch'',''compare'',''verify'',''export''\)\]'
         $content | Should Match '\[ValidateSet\(''silent'',''isolated-native'',''interactive''\)\]\s*\[string\]\$ExecutionMode\s*=\s*''silent'''
         $content | Should Match '\[switch\]\$AllowInteractiveWindow'
         $content | Should Match "'capabilities'\s*\{"
     }
 
-    It '공개 편집 스키마가 위험한 계획 조합을 거부한다' {
+    It '공개 편집 스키마가 위험한 계획 조합을 거부한다' -Skip:($null -eq (Get-Command Test-Json -ErrorAction SilentlyContinue)) {
         $schemaPath = Join-Path $PSScriptRoot '../skills/hwp-skill/schemas/edit-plan.schema.json'
         $valid = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../skills/hwp-skill/examples/replace-text.plan.json') `
             -Raw -Encoding UTF8 | ConvertFrom-Json

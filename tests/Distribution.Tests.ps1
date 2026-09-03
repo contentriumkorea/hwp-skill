@@ -1,4 +1,4 @@
-Describe '범용 Agent Skills 배포 구조' {
+﻿Describe '범용 Agent Skills 배포 구조' {
     BeforeAll {
         $script:repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
         $script:skillRoot = Join-Path $repositoryRoot 'skills/hwp-skill'

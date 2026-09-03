@@ -149,7 +149,21 @@ function New-HwpResult {
     }
 }
 
+function Initialize-HwpxZipStream {
+    param([Parameter(Mandatory)][IO.Stream]$Stream)
+    if (-not $Stream.CanRead -or -not $Stream.CanWrite -or -not $Stream.CanSeek -or $Stream.Length -ne 0) {
+        throw 'HWPX ZIP initialization requires a new empty read/write stream.'
+    }
+    # A complete one-entry ZIP: stored mimetype, CRC32 4741F082, 19 ASCII bytes.
+    # .NET Framework writes DEFLATE even for NoCompression. Update preserves
+    # this existing stored entry while subsequent content is added normally.
+    $seed=[Convert]::FromBase64String('UEsDBBQAAAAAAAAAISiC8EFHEwAAABMAAAAIAAAAbWltZXR5cGVhcHBsaWNhdGlvbi9od3AremlwUEsBAhQAFAAAAAAAAAAhKILwQUcTAAAAEwAAAAgAAAAAAAAAAAAAAAAAAAAAAG1pbWV0eXBlUEsFBgAAAAABAAEANgAAADkAAAAAAA==')
+    $Stream.Write($seed,0,$seed.Length)
+    $Stream.Position=0
+}
+
 Export-ModuleMember -Function @(
+    'Initialize-HwpxZipStream',
     'Resolve-HwpLiteralPath',
     'Get-HwpFileKind',
     'Get-HwpSha256',

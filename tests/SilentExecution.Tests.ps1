@@ -1,6 +1,6 @@
-$monitorModule = Join-Path $PSScriptRoot 'WindowActivityMonitor.psm1'
+﻿$monitorModule = Join-Path $PSScriptRoot 'WindowActivityMonitor.psm1'
 $cli = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/Invoke-HwpSkill.ps1'
-$pwsh = Join-Path $PSHOME 'pwsh.exe'
+$pwsh = (Get-Process -Id $PID).Path
 
 Import-Module $monitorModule -Force
 
@@ -176,6 +176,21 @@ Describe 'HWP silent acceptance gate' {
         Assert-NoHwpActivity -Observation $result
         Test-Path -LiteralPath $outputPath | Should Be $true
     }
+    It 'V2 혼합 구역과 부분 수정도 새 창과 포커스 변경 없이 끝난다' {
+        $planPath=Join-Path $PSScriptRoot '../skills/hwp-skill/examples/authoring-v2.plan.json'
+        $outputPath=Join-Path $TestDrive 'v2.hwpx'
+        $result=Invoke-SilentCliJson -Arguments @('generate','-NewDocument','-PlanPath',$planPath,'-OutputPath',$outputPath)
+        $result.ExitCode | Should Be 0
+        $result.Json.status | Should Be PASS_WITH_WARNINGS
+        @($result.Json.data.After.sections).Count | Should Be 3
+        Assert-NoHwpActivity $result
+        $editPlan=Join-Path $TestDrive 'v2-edit.json'
+        [IO.File]::WriteAllText($editPlan,'{"version":"2.0","operations":[{"type":"set-page","sectionIndex":0,"orientation":"LANDSCAPE"}]}')
+        $result=Invoke-SilentCliJson -Arguments @('edit-hwpx','-LiteralPath',$outputPath,'-PlanPath',$editPlan,'-OutputPath',(Join-Path $TestDrive 'v2-edited.hwpx'),'-ApproveAdvanced')
+        $result.ExitCode | Should Be 0
+        $result.Json.status | Should Be PASS_WITH_WARNINGS
+        Assert-NoHwpActivity $result
+    }
 }
 
 Describe 'test runner safety gate' {
@@ -210,7 +225,9 @@ Describe ''Native probe'' {
 
         $nativeExitCode | Should Be 2
         $allExitCode | Should Be 2
-        ($nativeRaw | Out-String) | Should Match 'AllowInteractiveNative'
-        ($allRaw | Out-String) | Should Match 'AllowInteractiveNative'
+        $nativeMessage = ($nativeRaw | ForEach-Object { if ($_ -is [Management.Automation.ErrorRecord]) { $_.Exception.Message } else { [string]$_ } }) -join ''
+        $allMessage = ($allRaw | ForEach-Object { if ($_ -is [Management.Automation.ErrorRecord]) { $_.Exception.Message } else { [string]$_ } }) -join ''
+        ($nativeMessage -replace '\s','') | Should Match 'AllowInteractiveNative'
+        ($allMessage -replace '\s','') | Should Match 'AllowInteractiveNative'
     }
 }

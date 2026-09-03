@@ -143,7 +143,9 @@ function Copy-HwpBatchPlanForSource {
         [Parameter(Mandatory)][string]$SourceSha256
     )
 
-    $copy = ($Plan | ConvertTo-Json -Depth 100) | ConvertFrom-Json -Depth 100
+    $jsonParameters = @{ ErrorAction = 'Stop' }
+    if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey('Depth')) { $jsonParameters.Depth = 100 }
+    $copy = ($Plan | ConvertTo-Json -Depth 100) | ConvertFrom-Json @jsonParameters
     $copy.source.path = $SourcePath
     $copy.source.sha256 = $SourceSha256
     $copy

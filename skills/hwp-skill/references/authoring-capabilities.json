@@ -1,0 +1,30 @@
+{
+  "planVersions": ["1.0", "2.0"],
+  "defaultPlanVersion": "2.0",
+  "defaultOutputFormat": "hwpx",
+  "requiresHancomForHwpx": false,
+  "requiresSecurityModuleForImages": false,
+  "nativeRenderingVerified": false,
+  "generateCommand": "generate -NewDocument",
+  "validateCommand": "validate-generate-plan",
+  "scopedEditCommand": "edit-hwpx",
+  "features": [
+    {"id":"page-sections","read":"supported","create":"supported","edit":"supported","structure":"supported","visual":"conditional"},
+    {"id":"columns-page-border","read":"supported","create":"supported","edit":"unsupported","structure":"supported","visual":"conditional"},
+    {"id":"rich-text-paragraphs","read":"supported","create":"supported","edit":"conditional","structure":"supported","visual":"conditional"},
+    {"id":"table-geometry","read":"supported","create":"supported","edit":"conditional","structure":"supported","visual":"conditional"},
+    {"id":"embedded-images","read":"supported","create":"supported","edit":"unsupported","structure":"supported","visual":"conditional"},
+    {"id":"basic-shapes","read":"supported","create":"supported","edit":"unsupported","structure":"supported","visual":"conditional"},
+    {"id":"headers-footers-page-number","read":"supported","create":"supported","edit":"unsupported","structure":"supported","visual":"conditional"},
+    {"id":"fields-bookmarks-links-notes","read":"supported","create":"supported","edit":"unsupported","structure":"supported","visual":"conditional"},
+    {"id":"linked-toc","read":"supported","create":"supported","edit":"unsupported","structure":"supported","visual":"conditional"},
+    {"id":"printed-page-toc","read":"conditional","create":"unsupported","edit":"unsupported","structure":"unsupported","visual":"conditional"},
+    {"id":"equation-chart-trackchanges-ole","read":"conditional","create":"unsupported","edit":"unsupported","structure":"conditional","visual":"conditional"}
+  ],
+  "conditions": {
+    "visual":"준비된 별도 무창 렌더러가 필요합니다. 없으면 실제 페이지 수, 글꼴 대체와 픽셀 배치를 검증하지 않습니다.",
+    "edit":"검사로 특정한 지원 작업만 별도 HWPX에서 수정합니다. 복잡하거나 모호한 기존 개체는 사전 차단합니다.",
+    "hwpOutput":"사용자가 HWP를 요청한 경우에만 별도 숨김 변환 엔진이 필요합니다. HWPX 확장자를 바꾸어 대체하지 않습니다.",
+    "read":"HWPX 속성 판독 기준입니다. HWP 5.x는 별도의 휴대형 읽기 범위를 따르며 고급 개체는 발견/보존을 뜻합니다."
+  }
+}

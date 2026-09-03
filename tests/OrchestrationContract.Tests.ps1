@@ -1,4 +1,4 @@
-Describe 'HWP 스킬 단일 silent 오케스트레이션 계약' {
+﻿Describe 'HWP 스킬 단일 silent 오케스트레이션 계약' {
     BeforeAll {
         $skillPath = Join-Path $PSScriptRoot '../skills/hwp-skill/SKILL.md'
         $interfacePath = Join-Path $PSScriptRoot '../skills/hwp-skill/agents/openai.yaml'

@@ -1,4 +1,4 @@
-$commonModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpCommon.psm1'
+﻿$commonModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpCommon.psm1'
 $planModule = Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpPlan.psm1'
 $helperModule = Join-Path $PSScriptRoot 'TestHelpers.psm1'
 Import-Module $commonModule -Force

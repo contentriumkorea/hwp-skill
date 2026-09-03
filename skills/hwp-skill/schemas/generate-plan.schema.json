@@ -1,177 +1,1849 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/contentriumkorea/hwp-skill/blob/main/skill/hwp-skill/schemas/generate-plan.schema.json",
+  "$id": "https://github.com/contentriumkorea/hwp-skill/blob/main/skills/hwp-skill/schemas/generate-plan.schema.json",
   "title": "HWP 스킬 새 문서 계획",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["version", "content"],
-  "properties": {
-    "version": { "const": "1.0" },
-    "title": { "type": "string" },
-    "document": { "$ref": "#/$defs/document" },
-    "content": {
-      "type": "array",
-      "minItems": 1,
-      "maxItems": 500,
-      "items": {
-        "oneOf": [
-          { "$ref": "#/$defs/paragraph" },
-          { "$ref": "#/$defs/table" },
-          { "$ref": "#/$defs/field" },
-          { "$ref": "#/$defs/image" },
-          { "$ref": "#/$defs/pageBreak" }
-        ]
-      }
+  "oneOf": [
+    {
+      "$ref": "#/$defs/version1"
+    },
+    {
+      "$ref": "#/$defs/version2"
     }
-  },
+  ],
   "$defs": {
-    "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+    "borderSide": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/tableStyle/properties/borderType"
+        },
+        "widthMm": {
+          "type": "number",
+          "enum": [
+            0.1,
+            0.12,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.4,
+            0.5,
+            0.6,
+            0.7,
+            1,
+            1.5,
+            2,
+            3,
+            4,
+            5
+          ]
+        },
+        "color": {
+          "$ref": "#/$defs/color"
+        }
+      }
+    },
+    "boxMargins": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "leftMm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "rightMm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "topMm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "bottomMm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        }
+      }
+    },
+    "placement": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "treatAsChar": {
+          "type": "boolean"
+        },
+        "horizontalAlignment": {
+          "enum": [
+            "LEFT",
+            "CENTER",
+            "RIGHT"
+          ]
+        },
+        "verticalAlignment": {
+          "enum": [
+            "TOP",
+            "CENTER",
+            "BOTTOM"
+          ]
+        },
+        "horizontalRelativeTo": {
+          "enum": [
+            "PAPER",
+            "PAGE",
+            "COLUMN",
+            "PARA"
+          ]
+        },
+        "verticalRelativeTo": {
+          "enum": [
+            "PAPER",
+            "PAGE",
+            "PARA"
+          ]
+        },
+        "horizontalOffsetMm": {
+          "type": "number",
+          "minimum": -2000,
+          "maximum": 2000
+        },
+        "verticalOffsetMm": {
+          "type": "number",
+          "minimum": -2000,
+          "maximum": 2000
+        },
+        "textWrap": {
+          "enum": [
+            "SQUARE",
+            "TOP_AND_BOTTOM",
+            "BEHIND_TEXT",
+            "IN_FRONT_OF_TEXT"
+          ]
+        }
+      }
+    },
+    "shape": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "shape",
+        "widthMm",
+        "heightMm"
+      ],
+      "properties": {
+        "type": {
+          "const": "shape"
+        },
+        "shape": {
+          "enum": [
+            "rectangle",
+            "ellipse",
+            "line",
+            "text-box"
+          ]
+        },
+        "widthMm": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 2000
+        },
+        "heightMm": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 2000
+        },
+        "text": {
+          "type": "string"
+        },
+        "style": {
+          "$ref": "#/$defs/tableStyle"
+        },
+        "textStyle": {
+          "$ref": "#/$defs/textStyle"
+        },
+        "paragraphStyle": {
+          "$ref": "#/$defs/paragraphStyle"
+        },
+        "placement": {
+          "$ref": "#/$defs/placement"
+        },
+        "rotation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 359
+        },
+        "altText": {
+          "type": "string"
+        },
+        "caption": {
+          "type": "string"
+        }
+      }
+    },
+    "documentV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "page": {
+          "$ref": "#/$defs/pageV2"
+        },
+        "styles": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "textStyle": {
+                "$ref": "#/$defs/textStyle"
+              },
+              "paragraphStyle": {
+                "$ref": "#/$defs/paragraphStyle"
+              }
+            }
+          }
+        },
+        "columns": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "count"
+          ],
+          "properties": {
+            "count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8
+            },
+            "gapMm": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 200
+            },
+            "widthsMm": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "items": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 2000
+              }
+            },
+            "separator": {
+              "$ref": "#/$defs/borderSide"
+            }
+          }
+        },
+        "textStyle": {
+          "$ref": "#/$defs/textStyle"
+        },
+        "paragraphStyle": {
+          "$ref": "#/$defs/paragraphStyle"
+        },
+        "tableStyle": {
+          "$ref": "#/$defs/tableStyle"
+        },
+        "header": {
+          "$ref": "#/$defs/headerFooter"
+        },
+        "footer": {
+          "$ref": "#/$defs/headerFooter"
+        },
+        "hideFirstHeader": {
+          "type": "boolean"
+        },
+        "hideFirstFooter": {
+          "type": "boolean"
+        },
+        "hideFirstPageNumber": {
+          "type": "boolean"
+        },
+        "pageNumber": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {
+            "position": {
+              "enum": [
+                "NONE",
+                "TOP_LEFT",
+                "TOP_CENTER",
+                "TOP_RIGHT",
+                "BOTTOM_LEFT",
+                "BOTTOM_CENTER",
+                "BOTTOM_RIGHT",
+                "OUTSIDE_TOP",
+                "OUTSIDE_BOTTOM",
+                "INSIDE_TOP",
+                "INSIDE_BOTTOM"
+              ]
+            },
+            "formatType": {
+              "enum": [
+                "DIGIT",
+                "CIRCLED_DIGIT",
+                "ROMAN_CAPITAL",
+                "ROMAN_SMALL",
+                "LATIN_CAPITAL",
+                "LATIN_SMALL",
+                "HANGUL_SYLLABLE"
+              ]
+            },
+            "start": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "sideChar": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "pageV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "orientation": {
+          "enum": [
+            "PORTRAIT",
+            "LANDSCAPE"
+          ]
+        },
+        "gutterType": {
+          "enum": [
+            "LEFT_ONLY",
+            "LEFT_RIGHT",
+            "TOP_ONLY"
+          ]
+        },
+        "border": {
+          "$ref": "#/$defs/tableStyle"
+        },
+        "paperSize": {
+          "enum": [
+            "A3",
+            "A4",
+            "A5",
+            "ISO_B4",
+            "ISO_B5",
+            "JIS_B4",
+            "JIS_B5",
+            "LETTER",
+            "LEGAL"
+          ]
+        },
+        "paperWidthMm": {
+          "type": "number",
+          "minimum": 10,
+          "maximum": 2000
+        },
+        "paperHeightMm": {
+          "type": "number",
+          "minimum": 10,
+          "maximum": 2000
+        },
+        "margins": {
+          "$ref": "#/$defs/pageMargins"
+        },
+        "borderApplyTo": {
+          "enum": [
+            "BOTH",
+            "ODD",
+            "EVEN"
+          ]
+        },
+        "borderVisibility": {
+          "enum": [
+            "SHOW_ALL",
+            "HIDE_FIRST",
+            "SHOW_FIRST"
+          ]
+        },
+        "fillVisibility": {
+          "enum": [
+            "SHOW_ALL",
+            "HIDE_FIRST",
+            "SHOW_FIRST"
+          ]
+        }
+      }
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{6}$"
+    },
     "textStyle": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "fontFamily": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "fontSizePt": { "type": "number", "minimum": 1, "maximum": 409.6 },
-        "bold": { "type": "boolean" },
-        "italic": { "type": "boolean" },
-        "textColor": { "$ref": "#/$defs/color" }
+        "fontFamily": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "fontSizePt": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 409.6
+        },
+        "bold": {
+          "type": "boolean"
+        },
+        "italic": {
+          "type": "boolean"
+        },
+        "underline": {
+          "enum": [
+            "NONE",
+            "BOTTOM",
+            "CENTER",
+            "TOP"
+          ]
+        },
+        "strikeout": {
+          "type": "boolean"
+        },
+        "superscript": {
+          "type": "boolean"
+        },
+        "subscript": {
+          "type": "boolean"
+        },
+        "letterSpacingPercent": {
+          "type": "integer",
+          "minimum": -50,
+          "maximum": 50
+        },
+        "widthPercent": {
+          "type": "integer",
+          "minimum": 50,
+          "maximum": 200
+        },
+        "textColor": {
+          "$ref": "#/$defs/color"
+        }
       }
     },
     "paragraphStyle": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "alignment": { "enum": ["JUSTIFY", "LEFT", "RIGHT", "CENTER", "DISTRIBUTE", "DISTRIBUTE_SPACE"] },
-        "lineSpacingPercent": { "type": "integer", "minimum": 50, "maximum": 500 },
-        "marginBeforeMm": { "type": "number", "minimum": 0, "maximum": 1000 },
-        "marginAfterMm": { "type": "number", "minimum": 0, "maximum": 1000 },
-        "leftMarginMm": { "type": "number", "minimum": 0, "maximum": 1000 },
-        "rightMarginMm": { "type": "number", "minimum": 0, "maximum": 1000 },
-        "indentMm": { "type": "number", "minimum": -1000, "maximum": 1000 }
+        "alignment": {
+          "enum": [
+            "JUSTIFY",
+            "LEFT",
+            "RIGHT",
+            "CENTER",
+            "DISTRIBUTE",
+            "DISTRIBUTE_SPACE"
+          ]
+        },
+        "keepWithNext": {
+          "type": "boolean"
+        },
+        "keepLines": {
+          "type": "boolean"
+        },
+        "widowOrphan": {
+          "type": "boolean"
+        },
+        "pageBreakBefore": {
+          "type": "boolean"
+        },
+        "lineSpacing": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "valuePt"
+          ],
+          "properties": {
+            "type": {
+              "enum": [
+                "FIXED",
+                "AT_LEAST"
+              ]
+            },
+            "valuePt": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000
+            }
+          }
+        },
+        "tabs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 40,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "positionMm"
+            ],
+            "properties": {
+              "positionMm": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 2000
+              },
+              "alignment": {
+                "enum": [
+                  "LEFT",
+                  "RIGHT",
+                  "CENTER",
+                  "DECIMAL"
+                ]
+              },
+              "leader": {
+                "$ref": "#/$defs/tableStyle/properties/borderType"
+              }
+            }
+          }
+        },
+        "list": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "enum": [
+                "NUMBER",
+                "BULLET",
+                "OUTLINE"
+              ]
+            },
+            "level": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 7
+            },
+            "start": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9999
+            },
+            "character": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1
+            }
+          }
+        },
+        "lineSpacingPercent": {
+          "type": "integer",
+          "minimum": 50,
+          "maximum": 500
+        },
+        "marginBeforeMm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "marginAfterMm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "leftMarginMm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "rightMarginMm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "indentMm": {
+          "type": "number",
+          "minimum": -1000,
+          "maximum": 1000
+        }
       }
     },
     "tableStyle": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "borderType": { "enum": ["NONE", "SOLID", "DASH", "DOT", "DASH_DOT", "DASH_DOT_DOT", "LONG_DASH", "CIRCLE", "DOUBLE", "THIN_THICK", "THICK_THIN", "THIN_THICK_THIN", "WAVE", "DOUBLE_WAVE"] },
-        "borderWidthMm": { "type": "number", "minimum": 0.05, "maximum": 10 },
-        "borderColor": { "$ref": "#/$defs/color" },
-        "fillColor": {
-          "anyOf": [
-            { "$ref": "#/$defs/color" },
-            { "const": "none" }
+        "borderType": {
+          "enum": [
+            "NONE",
+            "SOLID",
+            "DASH",
+            "DOT",
+            "DASH_DOT",
+            "DASH_DOT_DOT",
+            "LONG_DASH",
+            "CIRCLE",
+            "DOUBLE",
+            "THIN_THICK",
+            "THICK_THIN",
+            "THIN_THICK_THIN",
+            "WAVE",
+            "DOUBLE_WAVE"
           ]
         },
-        "cellPaddingMm": { "type": "number", "minimum": 0, "maximum": 50 }
+        "borders": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "left": {
+              "$ref": "#/$defs/borderSide"
+            },
+            "right": {
+              "$ref": "#/$defs/borderSide"
+            },
+            "top": {
+              "$ref": "#/$defs/borderSide"
+            },
+            "bottom": {
+              "$ref": "#/$defs/borderSide"
+            }
+          }
+        },
+        "cellMargins": {
+          "$ref": "#/$defs/boxMargins"
+        },
+        "borderWidthMm": {
+          "type": "number",
+          "enum": [
+            0.1,
+            0.12,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.4,
+            0.5,
+            0.6,
+            0.7,
+            1,
+            1.5,
+            2,
+            3,
+            4,
+            5
+          ]
+        },
+        "borderColor": {
+          "$ref": "#/$defs/color"
+        },
+        "fillColor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/color"
+            },
+            {
+              "const": "none"
+            }
+          ]
+        },
+        "cellPaddingMm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 50
+        }
       }
     },
     "pageMargins": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "leftMm": { "type": "number", "minimum": 0, "maximum": 500 },
-        "rightMm": { "type": "number", "minimum": 0, "maximum": 500 },
-        "topMm": { "type": "number", "minimum": 0, "maximum": 500 },
-        "bottomMm": { "type": "number", "minimum": 0, "maximum": 500 },
-        "headerMm": { "type": "number", "minimum": 0, "maximum": 500 },
-        "footerMm": { "type": "number", "minimum": 0, "maximum": 500 },
-        "gutterMm": { "type": "number", "minimum": 0, "maximum": 500 }
+        "leftMm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "rightMm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "topMm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "bottomMm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "headerMm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "footerMm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "gutterMm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 500
+        }
       }
     },
     "page": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "orientation": { "enum": ["PORTRAIT", "LANDSCAPE"] },
-        "widthMm": { "type": "number", "minimum": 10, "maximum": 2000 },
-        "heightMm": { "type": "number", "minimum": 10, "maximum": 2000 },
-        "margins": { "$ref": "#/$defs/pageMargins" }
+        "orientation": {
+          "enum": [
+            "PORTRAIT",
+            "LANDSCAPE"
+          ]
+        },
+        "widthMm": {
+          "type": "number",
+          "minimum": 10,
+          "maximum": 2000
+        },
+        "heightMm": {
+          "type": "number",
+          "minimum": 10,
+          "maximum": 2000
+        },
+        "margins": {
+          "$ref": "#/$defs/pageMargins"
+        }
       }
     },
     "document": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "page": { "$ref": "#/$defs/page" },
-        "textStyle": { "$ref": "#/$defs/textStyle" },
-        "paragraphStyle": { "$ref": "#/$defs/paragraphStyle" },
-        "tableStyle": { "$ref": "#/$defs/tableStyle" }
+        "page": {
+          "$ref": "#/$defs/page"
+        },
+        "textStyle": {
+          "$ref": "#/$defs/textStyle"
+        },
+        "paragraphStyle": {
+          "$ref": "#/$defs/paragraphStyle"
+        },
+        "tableStyle": {
+          "$ref": "#/$defs/tableStyle"
+        }
       }
     },
     "paragraph": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "text"],
+      "required": [
+        "type"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "text"
+          ],
+          "not": {
+            "required": [
+              "runs"
+            ]
+          }
+        },
+        {
+          "required": [
+            "runs"
+          ],
+          "not": {
+            "required": [
+              "text"
+            ]
+          }
+        }
+      ],
       "properties": {
-        "type": { "const": "paragraph" },
-        "text": { "type": "string" },
-        "textStyle": { "$ref": "#/$defs/textStyle" },
-        "paragraphStyle": { "$ref": "#/$defs/paragraphStyle" }
+        "type": {
+          "const": "paragraph"
+        },
+        "styleName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "runs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "text"
+            ],
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "textStyle": {
+                "$ref": "#/$defs/textStyle"
+              }
+            }
+          }
+        },
+        "text": {
+          "type": "string"
+        },
+        "textStyle": {
+          "$ref": "#/$defs/textStyle"
+        },
+        "paragraphStyle": {
+          "$ref": "#/$defs/paragraphStyle"
+        }
       }
     },
     "tableCell": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["row", "column", "text"],
+      "required": [
+        "row",
+        "column"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "text"
+          ],
+          "not": {
+            "required": [
+              "paragraphs"
+            ]
+          }
+        },
+        {
+          "required": [
+            "paragraphs"
+          ],
+          "not": {
+            "required": [
+              "text"
+            ]
+          }
+        }
+      ],
       "properties": {
-        "row": { "type": "integer", "minimum": 1, "maximum": 100 },
-        "column": { "type": "integer", "minimum": 1, "maximum": 100 },
-        "text": { "type": "string" },
-        "textStyle": { "$ref": "#/$defs/textStyle" },
-        "paragraphStyle": { "$ref": "#/$defs/paragraphStyle" },
-        "style": { "$ref": "#/$defs/tableStyle" }
+        "paragraphs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/paragraph"
+          }
+        },
+        "row": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "rowSpan": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "colSpan": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "verticalAlignment": {
+          "enum": [
+            "TOP",
+            "CENTER",
+            "BOTTOM"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "textStyle": {
+          "$ref": "#/$defs/textStyle"
+        },
+        "paragraphStyle": {
+          "$ref": "#/$defs/paragraphStyle"
+        },
+        "style": {
+          "$ref": "#/$defs/tableStyle"
+        }
       }
     },
     "table": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "rows", "columns", "cells"],
+      "required": [
+        "type",
+        "rows",
+        "columns",
+        "cells"
+      ],
       "properties": {
-        "type": { "const": "table" },
-        "rows": { "type": "integer", "minimum": 1, "maximum": 100 },
-        "columns": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "type": {
+          "const": "table"
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "columns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "widthMm": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 2000
+        },
+        "columnWidthsMm": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 2000
+          }
+        },
+        "rowHeightsMm": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 2000
+          }
+        },
+        "repeatHeader": {
+          "type": "boolean"
+        },
+        "caption": {
+          "type": "string"
+        },
+        "pageBreak": {
+          "enum": [
+            "CELL",
+            "TABLE",
+            "NONE"
+          ]
+        },
+        "alignment": {
+          "enum": [
+            "LEFT",
+            "CENTER",
+            "RIGHT"
+          ]
+        },
         "cells": {
           "type": "array",
-          "items": { "$ref": "#/$defs/tableCell" }
+          "items": {
+            "$ref": "#/$defs/tableCell"
+          }
         },
-        "textStyle": { "$ref": "#/$defs/textStyle" },
-        "paragraphStyle": { "$ref": "#/$defs/paragraphStyle" },
-        "style": { "$ref": "#/$defs/tableStyle" }
+        "textStyle": {
+          "$ref": "#/$defs/textStyle"
+        },
+        "paragraphStyle": {
+          "$ref": "#/$defs/paragraphStyle"
+        },
+        "style": {
+          "$ref": "#/$defs/tableStyle"
+        }
       }
     },
     "field": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "name", "value"],
+      "required": [
+        "type",
+        "name",
+        "value"
+      ],
       "properties": {
-        "type": { "const": "field" },
-        "name": { "type": "string", "minLength": 1 },
-        "value": { "type": "string" },
-        "label": { "type": "string" },
-        "memo": { "type": "string" },
-        "display": { "type": "string" },
-        "textStyle": { "$ref": "#/$defs/textStyle" },
-        "paragraphStyle": { "$ref": "#/$defs/paragraphStyle" }
+        "type": {
+          "const": "field"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "textStyle": {
+          "$ref": "#/$defs/textStyle"
+        },
+        "paragraphStyle": {
+          "$ref": "#/$defs/paragraphStyle"
+        },
+        "memo": {
+          "type": "string"
+        },
+        "display": {
+          "type": "string"
+        }
       }
     },
     "image": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "path"],
+      "required": [
+        "type",
+        "path"
+      ],
       "properties": {
-        "type": { "const": "image" },
-        "path": { "type": "string", "minLength": 1 },
-        "widthMm": { "type": "number", "exclusiveMinimum": 0, "maximum": 1000 },
-        "heightMm": { "type": "number", "exclusiveMinimum": 0, "maximum": 1000 }
+        "type": {
+          "const": "image"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "placement": {
+          "$ref": "#/$defs/placement"
+        },
+        "rotation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 359
+        },
+        "flipHorizontal": {
+          "type": "boolean"
+        },
+        "flipVertical": {
+          "type": "boolean"
+        },
+        "altText": {
+          "type": "string"
+        },
+        "caption": {
+          "type": "string"
+        },
+        "crop": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "left": {
+              "type": "number",
+              "minimum": 0,
+              "exclusiveMaximum": 1
+            },
+            "right": {
+              "type": "number",
+              "minimum": 0,
+              "exclusiveMaximum": 1
+            },
+            "top": {
+              "type": "number",
+              "minimum": 0,
+              "exclusiveMaximum": 1
+            },
+            "bottom": {
+              "type": "number",
+              "minimum": 0,
+              "exclusiveMaximum": 1
+            }
+          }
+        },
+        "widthMm": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000
+        },
+        "heightMm": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000
+        }
+      }
+    },
+    "columnBreak": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "column-break"
+        }
       }
     },
     "pageBreak": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type"],
+      "required": [
+        "type"
+      ],
       "properties": {
-        "type": { "const": "page-break" }
+        "type": {
+          "const": "page-break"
+        }
+      }
+    },
+    "version1": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "HWP 스킬 새 문서 계획",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "content"
+      ],
+      "properties": {
+        "version": {
+          "const": "1.0"
+        },
+        "title": {
+          "type": "string"
+        },
+        "document": {
+          "$ref": "#/$defs/version1/$defs/document"
+        },
+        "content": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 500,
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/version1/$defs/paragraph"
+              },
+              {
+                "$ref": "#/$defs/version1/$defs/table"
+              },
+              {
+                "$ref": "#/$defs/version1/$defs/field"
+              },
+              {
+                "$ref": "#/$defs/version1/$defs/image"
+              },
+              {
+                "$ref": "#/$defs/version1/$defs/pageBreak"
+              }
+            ]
+          }
+        }
+      },
+      "$defs": {
+        "color": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "textStyle": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "fontFamily": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "fontSizePt": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 409.6
+            },
+            "bold": {
+              "type": "boolean"
+            },
+            "italic": {
+              "type": "boolean"
+            },
+            "textColor": {
+              "$ref": "#/$defs/version1/$defs/color"
+            }
+          }
+        },
+        "paragraphStyle": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "alignment": {
+              "enum": [
+                "JUSTIFY",
+                "LEFT",
+                "RIGHT",
+                "CENTER",
+                "DISTRIBUTE",
+                "DISTRIBUTE_SPACE"
+              ]
+            },
+            "lineSpacingPercent": {
+              "type": "integer",
+              "minimum": 50,
+              "maximum": 500
+            },
+            "marginBeforeMm": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "marginAfterMm": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "leftMarginMm": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "rightMarginMm": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "indentMm": {
+              "type": "number",
+              "minimum": -1000,
+              "maximum": 1000
+            }
+          }
+        },
+        "tableStyle": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "borderType": {
+              "enum": [
+                "NONE",
+                "SOLID",
+                "DASH",
+                "DOT",
+                "DASH_DOT",
+                "DASH_DOT_DOT",
+                "LONG_DASH",
+                "CIRCLE",
+                "DOUBLE",
+                "THIN_THICK",
+                "THICK_THIN",
+                "THIN_THICK_THIN",
+                "WAVE",
+                "DOUBLE_WAVE"
+              ]
+            },
+            "borderWidthMm": {
+              "type": "number",
+              "minimum": 0.05,
+              "maximum": 10
+            },
+            "borderColor": {
+              "$ref": "#/$defs/version1/$defs/color"
+            },
+            "fillColor": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/version1/$defs/color"
+                },
+                {
+                  "const": "none"
+                }
+              ]
+            },
+            "cellPaddingMm": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 50
+            }
+          }
+        },
+        "pageMargins": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "leftMm": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 500
+            },
+            "rightMm": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 500
+            },
+            "topMm": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 500
+            },
+            "bottomMm": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 500
+            },
+            "headerMm": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 500
+            },
+            "footerMm": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 500
+            },
+            "gutterMm": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 500
+            }
+          }
+        },
+        "page": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "orientation": {
+              "enum": [
+                "PORTRAIT",
+                "LANDSCAPE"
+              ]
+            },
+            "widthMm": {
+              "type": "number",
+              "minimum": 10,
+              "maximum": 2000
+            },
+            "heightMm": {
+              "type": "number",
+              "minimum": 10,
+              "maximum": 2000
+            },
+            "margins": {
+              "$ref": "#/$defs/version1/$defs/pageMargins"
+            }
+          }
+        },
+        "document": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "page": {
+              "$ref": "#/$defs/version1/$defs/page"
+            },
+            "textStyle": {
+              "$ref": "#/$defs/version1/$defs/textStyle"
+            },
+            "paragraphStyle": {
+              "$ref": "#/$defs/version1/$defs/paragraphStyle"
+            },
+            "tableStyle": {
+              "$ref": "#/$defs/version1/$defs/tableStyle"
+            }
+          }
+        },
+        "paragraph": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "text"
+          ],
+          "properties": {
+            "type": {
+              "const": "paragraph"
+            },
+            "text": {
+              "type": "string"
+            },
+            "textStyle": {
+              "$ref": "#/$defs/version1/$defs/textStyle"
+            },
+            "paragraphStyle": {
+              "$ref": "#/$defs/version1/$defs/paragraphStyle"
+            }
+          }
+        },
+        "tableCell": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "row",
+            "column",
+            "text"
+          ],
+          "properties": {
+            "row": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "column": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "text": {
+              "type": "string"
+            },
+            "textStyle": {
+              "$ref": "#/$defs/version1/$defs/textStyle"
+            },
+            "paragraphStyle": {
+              "$ref": "#/$defs/version1/$defs/paragraphStyle"
+            },
+            "style": {
+              "$ref": "#/$defs/version1/$defs/tableStyle"
+            }
+          }
+        },
+        "table": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "rows",
+            "columns",
+            "cells"
+          ],
+          "properties": {
+            "type": {
+              "const": "table"
+            },
+            "rows": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "columns": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "cells": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/version1/$defs/tableCell"
+              }
+            },
+            "textStyle": {
+              "$ref": "#/$defs/version1/$defs/textStyle"
+            },
+            "paragraphStyle": {
+              "$ref": "#/$defs/version1/$defs/paragraphStyle"
+            },
+            "style": {
+              "$ref": "#/$defs/version1/$defs/tableStyle"
+            }
+          }
+        },
+        "field": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "name",
+            "value"
+          ],
+          "properties": {
+            "type": {
+              "const": "field"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "value": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "memo": {
+              "type": "string"
+            },
+            "display": {
+              "type": "string"
+            },
+            "textStyle": {
+              "$ref": "#/$defs/version1/$defs/textStyle"
+            },
+            "paragraphStyle": {
+              "$ref": "#/$defs/version1/$defs/paragraphStyle"
+            }
+          }
+        },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "path"
+          ],
+          "properties": {
+            "type": {
+              "const": "image"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "widthMm": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000
+            },
+            "heightMm": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000
+            }
+          }
+        },
+        "pageBreak": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "page-break"
+            }
+          }
+        }
+      }
+    },
+    "headerFooter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "applyPageType": {
+          "enum": [
+            "BOTH",
+            "ODD",
+            "EVEN"
+          ]
+        }
+      }
+    },
+    "bookmark": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "name"
+      ],
+      "properties": {
+        "type": {
+          "const": "bookmark"
+        },
+        "text": {
+          "type": "string"
+        },
+        "textStyle": {
+          "$ref": "#/$defs/textStyle"
+        },
+        "paragraphStyle": {
+          "$ref": "#/$defs/paragraphStyle"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      }
+    },
+    "hyperlink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "text",
+        "target"
+      ],
+      "properties": {
+        "type": {
+          "const": "hyperlink"
+        },
+        "text": {
+          "type": "string"
+        },
+        "textStyle": {
+          "$ref": "#/$defs/textStyle"
+        },
+        "paragraphStyle": {
+          "$ref": "#/$defs/paragraphStyle"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        }
+      }
+    },
+    "footnote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "text"
+      ],
+      "properties": {
+        "type": {
+          "const": "footnote"
+        },
+        "text": {
+          "type": "string"
+        },
+        "textStyle": {
+          "$ref": "#/$defs/textStyle"
+        },
+        "paragraphStyle": {
+          "$ref": "#/$defs/paragraphStyle"
+        },
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      }
+    },
+    "endnote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "text"
+      ],
+      "properties": {
+        "type": {
+          "const": "endnote"
+        },
+        "text": {
+          "type": "string"
+        },
+        "textStyle": {
+          "$ref": "#/$defs/textStyle"
+        },
+        "paragraphStyle": {
+          "$ref": "#/$defs/paragraphStyle"
+        },
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      }
+    },
+    "toc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "entries"
+      ],
+      "properties": {
+        "type": {
+          "const": "toc"
+        },
+        "textStyle": {
+          "$ref": "#/$defs/textStyle"
+        },
+        "paragraphStyle": {
+          "$ref": "#/$defs/paragraphStyle"
+        },
+        "title": {
+          "type": "string"
+        },
+        "entries": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "text",
+              "target"
+            ],
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "target": {
+                "type": "string",
+                "pattern": "^#[^\\s]+$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "columns": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "count"
+      ],
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        },
+        "gapMm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 200
+        },
+        "widthsMm": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 2000
+          }
+        },
+        "separator": {
+          "$ref": "#/$defs/borderSide"
+        }
+      }
+    },
+    "version2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "content"
+          ],
+          "not": {
+            "required": [
+              "sections"
+            ]
+          }
+        },
+        {
+          "required": [
+            "sections"
+          ],
+          "not": {
+            "required": [
+              "content"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "version": {
+          "const": "2.0"
+        },
+        "title": {
+          "type": "string"
+        },
+        "document": {
+          "$ref": "#/$defs/documentV2"
+        },
+        "sections": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "content"
+            ],
+            "properties": {
+              "document": {
+                "$ref": "#/$defs/documentV2"
+              },
+              "content": {
+                "$ref": "#/$defs/version2/properties/content"
+              }
+            }
+          }
+        },
+        "content": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 500,
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/paragraph"
+              },
+              {
+                "$ref": "#/$defs/table"
+              },
+              {
+                "$ref": "#/$defs/field"
+              },
+              {
+                "$ref": "#/$defs/image"
+              },
+              {
+                "$ref": "#/$defs/pageBreak"
+              },
+              {
+                "$ref": "#/$defs/columnBreak"
+              },
+              {
+                "$ref": "#/$defs/shape"
+              },
+              {
+                "$ref": "#/$defs/bookmark"
+              },
+              {
+                "$ref": "#/$defs/hyperlink"
+              },
+              {
+                "$ref": "#/$defs/footnote"
+              },
+              {
+                "$ref": "#/$defs/endnote"
+              },
+              {
+                "$ref": "#/$defs/toc"
+              }
+            ]
+          }
+        }
       }
     }
   }

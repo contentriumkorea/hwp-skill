@@ -402,7 +402,9 @@ function Import-HwpEditPlan {
             )
         }
         $json = [IO.File]::ReadAllText($resolvedPath, [Text.UTF8Encoding]::new($false, $true))
-        $plan = $json | ConvertFrom-Json -Depth 100 -ErrorAction Stop
+        $jsonParameters = @{ ErrorAction = 'Stop' }
+        if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey('Depth')) { $jsonParameters.Depth = 100 }
+        $plan = $json | ConvertFrom-Json @jsonParameters
     }
     catch {
         return New-HwpResult -Status BLOCKED -Command import-plan -Errors @(

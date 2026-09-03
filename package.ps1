@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$OutputPath = (Join-Path $PSScriptRoot 'dist\hwp-skill.zip'),
     [switch]$Force

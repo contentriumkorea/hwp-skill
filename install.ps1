@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [ValidateSet('Codex','Claude','Universal','All')]
     [string]$Target = 'Codex',

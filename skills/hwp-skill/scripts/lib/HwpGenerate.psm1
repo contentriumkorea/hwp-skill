@@ -10,6 +10,8 @@ Import-Module (Join-Path $PSScriptRoot 'HwpPlan.psm1') -ErrorAction Stop
 Import-Module (Join-Path $PSScriptRoot 'HwpEdit.psm1') -ErrorAction Stop
 Import-Module (Join-Path $PSScriptRoot 'HwpHwpx.psm1') -ErrorAction Stop
 Import-Module (Join-Path $PSScriptRoot 'HwpConvert.psm1') -ErrorAction Stop
+Import-Module (Join-Path $PSScriptRoot 'HwpAuthoringPlan.psm1') -ErrorAction Stop
+Import-Module (Join-Path $PSScriptRoot 'HwpAuthoringVerify.psm1') -ErrorAction Stop
 
 function Test-HwpGenerateProperty {
     param(
@@ -17,7 +19,7 @@ function Test-HwpGenerateProperty {
         [Parameter(Mandatory)][string]$Name
     )
 
-    $null -ne $InputObject -and $InputObject.PSObject.Properties.Name -contains $Name
+    $null -ne $InputObject -and $null -ne $InputObject.PSObject.Properties[$Name]
 }
 
 function Test-HwpGenerateOrdinalContains {
@@ -64,6 +66,9 @@ function Test-HwpNewDocumentPlan {
     [CmdletBinding()]
     param([Parameter(Mandatory)][ValidateNotNull()][object]$Plan)
 
+    $contract = Test-HwpAuthoringPlan -Plan $Plan
+    if ($contract.Status -ne 'PASS') { return New-HwpResult -Status BLOCKED -Command validate-generate-plan -Errors @($contract.Errors) }
+    $Plan = ConvertTo-HwpAuthoringPlan -Plan $Plan
     $errors = [Collections.Generic.List[string]]::new()
     if (-not (Test-HwpGenerateProperty -InputObject $Plan -Name 'version') -or [string]$Plan.version -ne '1.0') {
         $errors.Add("새 문서 계획 version은 '1.0'이어야 합니다.")
@@ -179,6 +184,9 @@ function Test-HwpNewDocumentPlan {
                 break
             }
             'page-break' { break }
+            'column-break' { break }
+            'shape' { break }
+            {$_ -in @('bookmark','hyperlink','footnote','endnote','toc')} {break}
             default { $errors.Add("지원하지 않는 새 문서 블록입니다: $type") }
         }
     }
@@ -922,6 +930,7 @@ function Invoke-HwpGenerateNewDocument {
     }
 
     # 출력 확장자가 HWP여도 작업 라우팅은 항상 HWPX 직접 작성으로 고정한다.
+    $Plan = ConvertTo-HwpAuthoringPlan -Plan $Plan
     $route = Resolve-HwpBackend -Command generate -DetectedKind NONE -RequestedFormat 'hwpx' -ExecutionContext $ExecutionContext -Capabilities $Capabilities
     if ($route.Status -ne 'PASS') {
         return New-HwpGenerateResult -Status $route.Status -Mode new-document -OutputPath $resolvedOutput -Warnings @($route.Warnings) -Errors @($route.Errors)
@@ -958,6 +967,13 @@ function Invoke-HwpGenerateNewDocument {
     if ($after.Status -notin 'PASS','PASS_WITH_WARNINGS') {
         $failedArtifactPath = Move-HwpGenerateArtifactToFailure -StagingPath $hwpxStaging -OutputPath $resolvedOutput
         return New-HwpGenerateResult -Status FAILED -Mode new-document -OutputPath $resolvedOutput -After $after -OperationResults @($operationResults) -FailedArtifactPath $failedArtifactPath -Warnings @($warnings) -Errors @($after.Errors)
+    }
+
+    $structuralVerification = Test-HwpxGeneratedContract -LiteralPath $hwpxStaging -Plan $Plan
+    if ($structuralVerification.Status -ne 'PASS') {
+        foreach ($message in @($structuralVerification.Errors)) { $errors.Add([string]$message) }
+        $failedArtifactPath = Move-HwpGenerateArtifactToFailure -StagingPath $hwpxStaging -OutputPath $resolvedOutput
+        return New-HwpGenerateResult -Status FAILED -Mode new-document -OutputPath $resolvedOutput -After $after -OperationResults @($operationResults) -FailedArtifactPath $failedArtifactPath -Warnings @($warnings) -Errors @($errors)
     }
 
     $actualTableCount = @($after.Controls | Where-Object { $_.CtrlId -eq 'tbl' }).Count
@@ -1026,6 +1042,7 @@ function Invoke-HwpGenerateNewDocument {
     $status = if ($warnings.Count -gt 0 -or $after.Status -eq 'PASS_WITH_WARNINGS') { 'PASS_WITH_WARNINGS' } else { 'PASS' }
     $result = New-HwpGenerateResult -Status $status -Mode new-document -OutputPath $resolvedOutput -After $after -OperationResults @($operationResults) -Warnings @($warnings)
     $result | Add-Member NoteProperty WorkFormat 'HWPX'
+    $result | Add-Member NoteProperty StructuralVerification $structuralVerification
     $result | Add-Member NoteProperty FinalFormat ([IO.Path]::GetExtension($resolvedOutput).TrimStart('.').ToUpperInvariant())
     $result | Add-Member NoteProperty HancomContentWrite $false
     $result | Add-Member NoteProperty FinalConversion $conversion

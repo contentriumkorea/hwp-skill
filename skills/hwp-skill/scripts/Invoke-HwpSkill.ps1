@@ -1,7 +1,7 @@
 ﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory, Position = 0)]
-    [ValidateSet('capabilities','preflight','inspect','validate-plan','apply','generate','batch','compare','verify','export')]
+    [ValidateSet('capabilities','preflight','inspect','validate-plan','validate-generate-plan','edit-hwpx','apply','generate','batch','compare','verify','export')]
     [string]$Command,
 
     [string]$LiteralPath,
@@ -114,6 +114,24 @@ try {
             $imported = Import-HwpEditPlan -LiteralPath $PlanPath
             New-HwpResult -Status $imported.Status -Command validate-plan -Data $imported.Data `
                 -Warnings @($imported.Warnings) -Errors @($imported.Errors)
+            break
+        }
+        'validate-generate-plan' {
+            Assert-HwpCliValue -Value $PlanPath -Name 'PlanPath'
+            Test-HwpNewDocumentPlan -Plan (Read-HwpCliJson -Path $PlanPath)
+            break
+        }
+        'edit-hwpx' {
+            Assert-HwpCliValue -Value $LiteralPath -Name 'LiteralPath'
+            Assert-HwpCliValue -Value $PlanPath -Name 'PlanPath'
+            Assert-HwpCliValue -Value $OutputPath -Name 'OutputPath'
+            $plan=Read-HwpCliJson -Path $PlanPath
+            if (@($plan.operations|Where-Object {$_.type -in @('set-page','merge-cells','split-cell')}).Count -gt 0 -and -not $ApproveAdvanced) {
+                New-HwpResult -Status BLOCKED -Command edit-hwpx -Errors @('기존 문서의 쪽 설정과 표 병합/분할은 대상과 변경값을 확인한 후 -ApproveAdvanced로 실행합니다.')
+                break
+            }
+            Import-Module (Join-Path $libraryRoot 'HwpHwpxScopedEdit.psm1') -ErrorAction Stop
+            Invoke-HwpxScopedEdit -LiteralPath $LiteralPath -OutputPath $OutputPath -Plan $plan
             break
         }
         'apply' {
