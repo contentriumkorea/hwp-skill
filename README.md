@@ -1,7 +1,9 @@
 # HWP Skill
 
-Windows에서 `.hwp`, `.hwt`, `.hwpx`를 다루기 위한 Codex 스킬 저장소입니다. 현재 공개
-릴리스는 **Phase 1 무창 계약**과 한글 문서 작업의 단일 오케스트레이션 흐름을 제공하며,
+Windows에서 `.hwp`, `.hwt`, `.hwpx`를 다루기 위한 Agent Skills 표준 호환 스킬
+저장소입니다. Codex, Claude Code, Cursor, OpenCode, Gemini CLI, GitHub Copilot CLI 등
+Agent Skills를 지원하는 여러 AI 에이전트에서 같은 `hwp-skill`을 사용할 수 있습니다.
+현재 공개 릴리스는 **Phase 1 무창 계약**과 한글 문서 작업의 단일 오케스트레이션 흐름을 제공하며,
 기본 실행 모드는 `silent`입니다. 공문,
 보고서, 계획서, 회의록, 제안서, 스토리보드처럼 원본 보존과 사용자
 포커스 유지가 중요한 한글 문서 파일 요청을 대상으로 합니다.
@@ -71,14 +73,15 @@ Phase 1은 HWP 바이너리를 직접 작성한다고 주장하지 않습니다.
 변환만 별도 작업자에 맡깁니다. 한컴오피스가 없는 컴퓨터에서도 HWP/HWT 읽기와 HWPX
 작성은 가능하며, 새 HWP 납품 파일이 꼭 필요하면 별도 HWP 변환 엔진이 필요합니다.
 
-자세한 제한은 [지원 환경과 제한 사항](skill/hwp-skill/references/limitations.md)을
+자세한 제한은 [지원 환경과 제한 사항](skills/hwp-skill/references/limitations.md)을
 확인하세요.
 
 ## 요구 환경
 
 - Windows
 - Windows PowerShell 5.1 또는 PowerShell 7 이상
-- Codex에서 스킬로 사용할 경우 Codex 데스크톱 또는 CLI
+- Agent Skills를 지원하는 AI 에이전트. Codex와 Claude Code는 전용 설치 경로도 제공
+- 여러 에이전트에 한 번에 설치할 때는 Node.js와 npm 필요
 - HWP 5.x 읽기는 Windows 기본 OLE 복합파일 API만 사용하며 한컴 설치가 필요하지 않음
 - HWPX 직접 작성·검사는 추가 GUI 실행 없이 동작
 - HWP 최종 변환을 요청하면 한컴 호환 변환 엔진과 숨김 작업자 구성이 필요함
@@ -98,18 +101,57 @@ Phase 1은 HWP 바이너리를 직접 작성한다고 주장하지 않습니다.
 
 ## 설치
 
-GitHub 저장소를 내려받은 뒤 저장소 폴더에서 실행합니다.
+### 1. 여러 AI 에이전트에 한 번에 설치하기(권장)
+
+Node.js와 npm이 있다면 `skills` CLI로 현재 지원되는 여러 AI 에이전트의 전역 스킬
+경로에 한 번에 복사할 수 있습니다. 심볼릭 링크 대신 실제 파일을 복사하므로 Windows의
+도구별 링크 처리 차이도 피합니다.
+
+```powershell
+npx skills@latest add contentriumkorea/hwp-skill --skill hwp-skill --global --agent '*' --copy --yes
+```
+
+이 경로는 Claude Code, Codex, Cursor, OpenCode를 비롯해 `skills` CLI가 지원하는
+Agent Skills 호환 도구를 자동 탐지합니다. 특정 도구만 설치하려면 `--agent` 값을 해당
+도구로 제한하면 됩니다.
+
+### 2. Claude Code 공식 플러그인으로 설치하기
+
+Claude Code에서는 이 GitHub 저장소를 플러그인 마켓플레이스로 등록한 뒤 설치할 수도
+있습니다.
+
+```powershell
+claude plugin marketplace add contentriumkorea/hwp-skill
+claude plugin install hwp-skill@contentrium
+```
+
+플러그인 설치 후에는 자연어로 한글 문서 작업을 요청하거나 `/hwp-skill`로 직접 호출할
+수 있습니다.
+
+### 3. Windows PowerShell로 직접 설치하기
+
+Node.js가 없거나 설치 위치를 직접 통제하려면 GitHub 저장소를 내려받아 설치 스크립트를
+사용합니다.
 
 ```powershell
 git clone https://github.com/contentriumkorea/hwp-skill.git
 Set-Location .\hwp-skill
-.\install.ps1
+.\install.ps1 -Target Codex
+.\install.ps1 -Target Claude
+.\install.ps1 -Target Universal
+.\install.ps1 -Target All
 ```
 
-기본 설치 위치는 다음 순서로 정합니다.
+대상별 기본 설치 위치는 다음과 같습니다.
 
-1. `CODEX_HOME`이 있으면 그 아래 `skills\hwp-skill`
-2. 없으면 사용자 프로필의 `.codex\skills\hwp-skill`
+| `-Target` | 설치 위치 | 용도 |
+|---|---|---|
+| `Codex` | `CODEX_HOME\skills\hwp-skill` 또는 `%USERPROFILE%\.codex\skills\hwp-skill` | Codex 전용, 기본값 |
+| `Claude` | `CLAUDE_CONFIG_DIR\skills\hwp-skill` 또는 `%USERPROFILE%\.claude\skills\hwp-skill` | Claude Code 개인 스킬 |
+| `Universal` | `%USERPROFILE%\.agents\skills\hwp-skill` | 공용 Agent Skills 경로를 읽는 도구 |
+| `All` | 위 세 위치 모두 | Codex·Claude Code·공용 경로 동시 설치 |
+
+인수 없이 `.\install.ps1`을 실행하면 이전 버전과 같이 Codex에 설치합니다.
 
 원하는 스킬 루트를 직접 지정할 수도 있습니다.
 
@@ -122,7 +164,7 @@ Set-Location .\hwp-skill
 
 ```powershell
 git pull
-.\install.ps1 -Update
+.\install.ps1 -Target All -Update
 ```
 
 업데이트 시 기존 `hwp-skill` 폴더는 스킬 루트의 `.hwp-skill-backups` 아래에 시간표가
@@ -130,16 +172,38 @@ git pull
 백업 폴더에 별도로 격리하고 기존 설치본을 원위치로 복원합니다. 설치 대상·백업 경로에
 junction, 심볼릭 링크 같은 재분석 지점이 발견되면 기존 설치를 옮기기 전에 중단합니다.
 
-설치 후 새 Codex 작업을 시작하고 `$hwp-skill`을 지정하면 됩니다. 기본 프롬프트는
+### 4. 독립 ZIP 패키지 만들기
+
+도구별 관리 화면이나 수동 업로드에서 폴더·ZIP을 요구하면 표준
+`hwp-skill/SKILL.md` 구조의 독립 패키지를 만듭니다.
+
+```powershell
+.\package.ps1
+.\package.ps1 -OutputPath "D:\배포\hwp-skill.zip" -Force
+```
+
+기본 결과는 `dist\hwp-skill.zip`입니다. 압축을 푼 `hwp-skill` 폴더를 대상 도구가
+안내하는 개인 또는 프로젝트 스킬 루트에 복사해도 됩니다.
+
+외부 스킬 설치 기능이 없는 일반 웹 채팅에는 이 저장소를 직접 설치할 수 없습니다.
+이 경우 로컬 에이전트나 해당 서비스의 프로젝트 지침·파일 업로드 기능을 사용해야 하며,
+Windows PowerShell 실행 권한이 없는 원격 환경에서는 HWP 처리 엔진도 실행되지 않습니다.
+
+설치 후 새 AI 작업을 시작하고 자연어로 한글 문서 작업을 요청하면 됩니다. Codex에서는
+`$hwp-skill`, Claude Code에서는 `/hwp-skill`로 명시 호출할 수도 있습니다. 기본 프롬프트는
 `silent` 단일 작업으로 시작하며, 내부 계획·명령·엔진 상태를 대화에 표시하지 않습니다.
 준비되지 않은 엔진이면 자동 GUI 대체 없이 원본 보존과 제한 사유를 한 번에 보고합니다.
 
-## Codex에서 사용하기
+## AI 도구에서 사용하기
 
 복잡한 명령을 직접 외우지 않아도 됩니다. 다음처럼 요청하세요.
 
 ```text
 $hwp-skill로 이 HWPX 파일이 제대로 읽히는지 확인해 줘.
+```
+
+```text
+/hwp-skill 이 HWP 파일의 본문과 표 구조를 확인해 줘.
 ```
 
 ```text
@@ -170,7 +234,7 @@ $hwp-skill로 이 폴더의 HWP들을 먼저 미리보기만 하고, 어떤 파�
 기본 `silent`는 현재 사용자 세션의 `Hwp.exe`를 실행하지 않고 포커스를 가져오지
 않습니다.
 
-이 섹션의 계약은 분명합니다. Codex 작업은 항상 HWPX에서 진행합니다. 새 HWP 결과가
+이 섹션의 계약은 분명합니다. AI 에이전트의 문서 작업은 항상 HWPX에서 진행합니다. 새 HWP 결과가
 필요하면 HWPX를 완성하고 검증한 뒤 마지막에만 숨김 변환합니다. HWP/HWT 기존 양식의
 네이티브 편집은 HWPX 양식으로 준비되지 않은 경우 현재 자동 경로에서 차단합니다.
 사용자가 한컴 창을 열어 화면에 보이게 작업하라고 명시한 경우에만 아래 interactive
@@ -179,7 +243,7 @@ $hwp-skill로 이 폴더의 HWP들을 먼저 미리보기만 하고, 어떤 파�
 ### 1. 환경 확인
 
 ```powershell
-$cli = ".\skill\hwp-skill\scripts\Invoke-HwpSkill.ps1"
+$cli = ".\skills\hwp-skill\scripts\Invoke-HwpSkill.ps1"
 & $cli preflight
 ```
 
@@ -206,7 +270,7 @@ HWP/HWT는 보호되지 않은 HWP 5.x 본문과 글꼴·글자 모양·문단 �
 
 ### 3. 계획 검증
 
-[편집 예제](skill/hwp-skill/examples/replace-text.plan.json)의 경로, 원본 SHA-256,
+[편집 예제](skills/hwp-skill/examples/replace-text.plan.json)의 경로, 원본 SHA-256,
 기준 문구와 값을 실제 검사 결과에 맞게 바꿉니다.
 
 ```powershell
@@ -217,7 +281,7 @@ HWP/HWT는 보호되지 않은 HWP 5.x 본문과 글꼴·글자 모양·문단 �
 
 ```powershell
 & $cli generate -NewDocument `
-  -PlanPath ".\skill\hwp-skill\examples\generate-new.plan.json" `
+  -PlanPath ".\skills\hwp-skill\examples\generate-new.plan.json" `
   -OutputPath "C:\문서\새문서.hwpx"
 ```
 
@@ -233,7 +297,7 @@ HWP/HWT는 보호되지 않은 HWP 5.x 본문과 글꼴·글자 모양·문단 �
 
 ```powershell
 & $cli generate -NewDocument `
-  -PlanPath ".\skill\hwp-skill\examples\generate-new.plan.json" `
+  -PlanPath ".\skills\hwp-skill\examples\generate-new.plan.json" `
   -OutputPath "C:\문서\새문서.hwp"
 ```
 
@@ -302,7 +366,7 @@ HWP/HWT 원본을 직접 열어 내용을 채우는 자동 경로는 현재 차�
 이 예외도 한컴을 열 수 있습니다. 보안 모듈이 없으면 본문·구조 재검사 결과와 함께
 PDF·페이지 이미지가 생성되지 않았다는 경고가 반환됩니다.
 
-전체 명령과 편집 필드는 [편집 작업 규격](skill/hwp-skill/references/operations.md)에
+전체 명령과 편집 필드는 [편집 작업 규격](skills/hwp-skill/references/operations.md)에
 정리되어 있습니다.
 
 ## 안전 설계
@@ -339,7 +403,7 @@ PDF·페이지 이미지가 생성되지 않았다는 경고가 반환됩니다.
 위 native 편집 흐름은 HWPX 직접 작업의 기본 경로가 아니라, 사용자가 창 표시를
 명시한 경우에만 허용되는 예외입니다.
 
-세부 정책과 복구 절차는 [안전 및 복구 정책](skill/hwp-skill/references/safety.md)을
+세부 정책과 복구 절차는 [안전 및 복구 정책](skills/hwp-skill/references/safety.md)을
 참조하세요.
 
 ## 개발과 시험
@@ -389,7 +453,7 @@ finally {
 ## 프로젝트 구조
 
 ```text
-skill/hwp-skill/
+skills/hwp-skill/
 ├─ SKILL.md
 ├─ agents/openai.yaml
 ├─ scripts/Invoke-HwpSkill.ps1

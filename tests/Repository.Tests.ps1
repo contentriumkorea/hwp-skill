@@ -181,4 +181,20 @@ Describe 'hwp-skill 저장소 구조' {
         $readme | Should Match 'HWP_NATIVE_RUN_INTEGRATION'
         $readme | Should Match '종료 코드 2'
     }
+
+    It 'README는 Claude Codex 및 Agent Skills 호환 도구의 설치 경로를 제공한다' {
+        $readme = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../README.md') -Raw -Encoding UTF8
+
+        $readme | Should Match 'npx\s+skills@latest\s+add\s+contentriumkorea/hwp-skill'
+        $readme | Should Match "--agent\s+'\*'"
+        $readme | Should Match 'claude\s+plugin\s+marketplace\s+add\s+contentriumkorea/hwp-skill'
+        $readme | Should Match 'claude\s+plugin\s+install\s+hwp-skill@contentrium'
+        $readme | Should Match '\.\\install\.ps1\s+-Target\s+Claude'
+        $readme | Should Match '\.\\install\.ps1\s+-Target\s+Universal'
+        $readme | Should Match '\.\\install\.ps1\s+-Target\s+All'
+        $readme | Should Match '\.\\package\.ps1'
+        $readme | Should Match '외부 스킬 설치 기능.*없는.*웹 채팅'
+        $readme | Should Not Match '(?<!s)skill/hwp-skill'
+        $readme | Should Not Match '(?<!s)skill\\hwp-skill'
+    }
 }
