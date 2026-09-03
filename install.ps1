@@ -1,5 +1,8 @@
 [CmdletBinding()]
 param(
+    [ValidateSet('Codex','Claude','Universal','All')]
+    [string]$Target = 'Codex',
+    [string]$ProfileRoot,
     [string]$DestinationRoot,
     [switch]$Update,
     [scriptblock]$InstallValidator
@@ -10,16 +13,19 @@ $ErrorActionPreference = 'Stop'
 
 function New-HwpNativeInstallResult {
     param(
+        [ValidateSet('Codex','Claude','Universal','All')][string]$Target = 'Codex',
         [ValidateSet('PASS','BLOCKED','FAILED')][string]$Status,
         [string]$InstallPath = '',
         [string]$BackupPath = '',
         [ValidateSet('NOT_REQUIRED','PASS','FAILED')][string]$RollbackStatus = 'NOT_REQUIRED',
         [string]$FailedInstallPath = '',
         [string[]]$Warnings = @(),
-        [string[]]$Errors = @()
+        [string[]]$Errors = @(),
+        [object[]]$Results = @()
     )
 
     [pscustomobject]@{
+        Target = $Target
         Status = $Status
         InstallPath = $InstallPath
         BackupPath = $BackupPath
@@ -27,6 +33,7 @@ function New-HwpNativeInstallResult {
         FailedInstallPath = $FailedInstallPath
         Warnings = @($Warnings | Where-Object { $null -ne $_ })
         Errors = @($Errors | Where-Object { $null -ne $_ })
+        Results = @($Results | Where-Object { $null -ne $_ })
     }
 }
 
@@ -135,6 +142,40 @@ function New-HwpNativeUniqueChildPath {
     return $candidate
 }
 
+function Resolve-HwpNativeDestinationRoot {
+    param(
+        [ValidateSet('Codex','Claude','Universal')]
+        [Parameter(Mandatory)][string]$Target,
+        [string]$ProfileRoot
+    )
+
+    $profileWasSpecified = -not [string]::IsNullOrWhiteSpace($ProfileRoot)
+    if (-not $profileWasSpecified) {
+        $ProfileRoot = [Environment]::GetFolderPath('UserProfile')
+    }
+    if ([string]::IsNullOrWhiteSpace($ProfileRoot)) {
+        throw '사용자 프로필 경로를 확인하지 못했습니다. -ProfileRoot 또는 -DestinationRoot를 지정해 주세요.'
+    }
+
+    switch ($Target) {
+        'Codex' {
+            if (-not $profileWasSpecified -and -not [string]::IsNullOrWhiteSpace($env:CODEX_HOME)) {
+                return Join-Path $env:CODEX_HOME 'skills'
+            }
+            return Join-Path (Join-Path $ProfileRoot '.codex') 'skills'
+        }
+        'Claude' {
+            if (-not $profileWasSpecified -and -not [string]::IsNullOrWhiteSpace($env:CLAUDE_CONFIG_DIR)) {
+                return Join-Path $env:CLAUDE_CONFIG_DIR 'skills'
+            }
+            return Join-Path (Join-Path $ProfileRoot '.claude') 'skills'
+        }
+        'Universal' {
+            return Join-Path (Join-Path $ProfileRoot '.agents') 'skills'
+        }
+    }
+}
+
 if ($null -eq $InstallValidator) {
     $InstallValidator = {
         param([string]$Path)
@@ -144,24 +185,48 @@ if ($null -eq $InstallValidator) {
 
 $sourcePath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'skills\hwp-skill'))
 if (-not (Test-Path -LiteralPath (Join-Path $sourcePath 'SKILL.md') -PathType Leaf)) {
-    return New-HwpNativeInstallResult -Status FAILED -Errors @('배포본에서 skills/hwp-skill/SKILL.md를 찾지 못했습니다.')
+    return New-HwpNativeInstallResult -Target $Target -Status FAILED -Errors @('배포본에서 skills/hwp-skill/SKILL.md를 찾지 못했습니다.')
 }
 if (Test-HwpNativeTreeHasReparsePoint -Root $sourcePath) {
-    return New-HwpNativeInstallResult -Status BLOCKED -Errors @(
+    return New-HwpNativeInstallResult -Target $Target -Status BLOCKED -Errors @(
         '배포 원본 경로에 reparse point, junction 또는 심볼릭 링크가 있어 설치를 중단했습니다.'
     )
 }
 
-if ([string]::IsNullOrWhiteSpace($DestinationRoot)) {
-    if (-not [string]::IsNullOrWhiteSpace($env:CODEX_HOME)) {
-        $DestinationRoot = Join-Path $env:CODEX_HOME 'skills'
+if ($Target -eq 'All') {
+    if (-not [string]::IsNullOrWhiteSpace($DestinationRoot)) {
+        return New-HwpNativeInstallResult -Target All -Status BLOCKED -Errors @(
+            '-DestinationRoot는 단일 설치 루트이므로 -Target All과 함께 사용할 수 없습니다.'
+        )
+    }
+
+    $targetResults = @(
+        foreach ($targetName in 'Codex','Claude','Universal') {
+            & $PSCommandPath -Target $targetName -ProfileRoot $ProfileRoot -Update:$Update `
+                -InstallValidator $InstallValidator
+        }
+    )
+    $aggregateStatus = if (@($targetResults | Where-Object { $_.Status -eq 'FAILED' }).Count -gt 0) {
+        'FAILED'
+    }
+    elseif (@($targetResults | Where-Object { $_.Status -eq 'BLOCKED' }).Count -gt 0) {
+        'BLOCKED'
     }
     else {
-        $userProfilePath = [Environment]::GetFolderPath('UserProfile')
-        if ([string]::IsNullOrWhiteSpace($userProfilePath)) {
-            return New-HwpNativeInstallResult -Status BLOCKED -Errors @('사용자 프로필 경로를 확인하지 못했습니다. -DestinationRoot를 지정해 주세요.')
-        }
-        $DestinationRoot = Join-Path (Join-Path $userProfilePath '.codex') 'skills'
+        'PASS'
+    }
+
+    return New-HwpNativeInstallResult -Target All -Status $aggregateStatus `
+        -Warnings @($targetResults | ForEach-Object { $_.Warnings }) `
+        -Errors @($targetResults | ForEach-Object { $_.Errors }) -Results $targetResults
+}
+
+if ([string]::IsNullOrWhiteSpace($DestinationRoot)) {
+    try {
+        $DestinationRoot = Resolve-HwpNativeDestinationRoot -Target $Target -ProfileRoot $ProfileRoot
+    }
+    catch {
+        return New-HwpNativeInstallResult -Target $Target -Status BLOCKED -Errors @($_.Exception.Message)
     }
 }
 
@@ -172,7 +237,7 @@ try {
     )
 }
 catch {
-    return New-HwpNativeInstallResult -Status BLOCKED -Errors @("설치 대상 경로가 올바르지 않습니다: $($_.Exception.Message)")
+    return New-HwpNativeInstallResult -Target $Target -Status BLOCKED -Errors @("설치 대상 경로가 올바르지 않습니다: $($_.Exception.Message)")
 }
 
 $driveRoot = [IO.Path]::GetPathRoot($rootPath).TrimEnd(
@@ -180,10 +245,10 @@ $driveRoot = [IO.Path]::GetPathRoot($rootPath).TrimEnd(
     [IO.Path]::AltDirectorySeparatorChar
 )
 if ([string]::Equals($rootPath, $driveRoot, [StringComparison]::OrdinalIgnoreCase)) {
-    return New-HwpNativeInstallResult -Status BLOCKED -Errors @('드라이브 루트는 설치 대상 폴더로 사용할 수 없습니다.')
+    return New-HwpNativeInstallResult -Target $Target -Status BLOCKED -Errors @('드라이브 루트는 설치 대상 폴더로 사용할 수 없습니다.')
 }
 if (Test-HwpNativePathHasReparsePoint -Path $rootPath) {
-    return New-HwpNativeInstallResult -Status BLOCKED -Errors @(
+    return New-HwpNativeInstallResult -Target $Target -Status BLOCKED -Errors @(
         '설치 대상 경로 또는 상위 경로에 reparse point, junction 또는 심볼릭 링크가 있어 설치를 중단했습니다.'
     )
 }
@@ -191,25 +256,25 @@ if (Test-HwpNativePathHasReparsePoint -Path $rootPath) {
 $installPath = [IO.Path]::GetFullPath((Join-Path $rootPath 'hwp-skill'))
 $backupRoot = [IO.Path]::GetFullPath((Join-Path $rootPath '.hwp-skill-backups'))
 if (-not (Test-HwpNativePathInsideRoot -Path $installPath -Root $rootPath)) {
-    return New-HwpNativeInstallResult -Status BLOCKED -Errors @('계산된 설치 경로가 설치 대상 폴더 밖에 있습니다.')
+    return New-HwpNativeInstallResult -Target $Target -Status BLOCKED -Errors @('계산된 설치 경로가 설치 대상 폴더 밖에 있습니다.')
 }
 if (-not (Test-HwpNativePathInsideRoot -Path $backupRoot -Root $rootPath)) {
-    return New-HwpNativeInstallResult -Status BLOCKED -Errors @('계산된 백업 경로가 설치 대상 폴더 밖에 있습니다.')
+    return New-HwpNativeInstallResult -Target $Target -Status BLOCKED -Errors @('계산된 백업 경로가 설치 대상 폴더 밖에 있습니다.')
 }
 if (Test-HwpNativePathHasReparsePoint -Path $installPath) {
-    return New-HwpNativeInstallResult -Status BLOCKED -InstallPath $installPath -Errors @(
+    return New-HwpNativeInstallResult -Target $Target -Status BLOCKED -InstallPath $installPath -Errors @(
         '설치 경로에 reparse point, junction 또는 심볼릭 링크가 있어 설치를 중단했습니다.'
     )
 }
 
 $hadExisting = Test-Path -LiteralPath $installPath
 if ($hadExisting -and -not $Update) {
-    return New-HwpNativeInstallResult -Status BLOCKED -InstallPath $installPath -Errors @(
+    return New-HwpNativeInstallResult -Target $Target -Status BLOCKED -InstallPath $installPath -Errors @(
         'hwp-skill이 이미 설치되어 있습니다. 기존 설치를 백업하고 갱신하려면 -Update를 지정하세요.'
     )
 }
 if ($hadExisting -and (Test-HwpNativePathHasReparsePoint -Path $backupRoot)) {
-    return New-HwpNativeInstallResult -Status BLOCKED -InstallPath $installPath -Errors @(
+    return New-HwpNativeInstallResult -Target $Target -Status BLOCKED -InstallPath $installPath -Errors @(
         '백업 경로에 reparse point, junction 또는 심볼릭 링크가 있어 업데이트를 중단했습니다.'
     )
 }
@@ -339,7 +404,7 @@ catch {
     foreach ($rollbackError in $rollbackErrors) {
         $allErrors.Add($rollbackError)
     }
-    return New-HwpNativeInstallResult -Status FAILED -InstallPath $installPath -BackupPath $backupPath `
+    return New-HwpNativeInstallResult -Target $Target -Status FAILED -InstallPath $installPath -BackupPath $backupPath `
         -RollbackStatus $rollbackStatus -FailedInstallPath $failedInstallPath `
         -Warnings @($rollbackWarnings) -Errors @($allErrors)
 }
@@ -350,4 +415,4 @@ $warnings = if ([string]::IsNullOrWhiteSpace($backupPath)) {
 else {
     @("기존 설치본을 삭제하지 않고 백업했습니다: $backupPath")
 }
-New-HwpNativeInstallResult -Status PASS -InstallPath $installPath -BackupPath $backupPath -Warnings $warnings
+New-HwpNativeInstallResult -Target $Target -Status PASS -InstallPath $installPath -BackupPath $backupPath -Warnings $warnings
