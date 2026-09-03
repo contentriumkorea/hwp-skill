@@ -176,6 +176,36 @@ function Resolve-HwpNativeDestinationRoot {
     }
 }
 
+function Select-HwpNativeUniqueDestinations {
+    param([Parameter(Mandatory)][object[]]$Destinations)
+
+    $seen = @{}
+    foreach ($destination in @($Destinations)) {
+        if ($null -eq $destination) {
+            continue
+        }
+
+        $targetName = [string]$destination.Target
+        $candidateRoot = [string]$destination.Root
+        if ([string]::IsNullOrWhiteSpace($targetName) -or [string]::IsNullOrWhiteSpace($candidateRoot)) {
+            throw '설치 대상 이름과 루트 경로가 모두 필요합니다.'
+        }
+
+        $fullRoot = [IO.Path]::GetFullPath($candidateRoot)
+        $rootKey = $fullRoot.TrimEnd(
+            [IO.Path]::DirectorySeparatorChar,
+            [IO.Path]::AltDirectorySeparatorChar
+        ).ToUpperInvariant()
+        if (-not $seen.ContainsKey($rootKey)) {
+            $seen[$rootKey] = $targetName
+            [pscustomobject]@{
+                Target = $targetName
+                Root = $fullRoot
+            }
+        }
+    }
+}
+
 if ($null -eq $InstallValidator) {
     $InstallValidator = {
         param([string]$Path)
@@ -200,12 +230,35 @@ if ($Target -eq 'All') {
         )
     }
 
-    $targetResults = @(
-        foreach ($targetName in 'Codex','Claude','Universal') {
-            & $PSCommandPath -Target $targetName -ProfileRoot $ProfileRoot -Update:$Update `
+    $resolvedDestinations = @()
+    $resolutionFailures = @()
+    foreach ($targetName in 'Codex','Claude','Universal') {
+        try {
+            $targetRoot = Resolve-HwpNativeDestinationRoot -Target $targetName -ProfileRoot $ProfileRoot
+            $resolvedDestinations += [pscustomobject]@{
+                Target = $targetName
+                Root = $targetRoot
+            }
+        }
+        catch {
+            $resolutionFailures += New-HwpNativeInstallResult -Target $targetName -Status BLOCKED `
+                -Errors @($_.Exception.Message)
+        }
+    }
+
+    $uniqueDestinations = @(Select-HwpNativeUniqueDestinations -Destinations $resolvedDestinations)
+    $targetResults = @($resolutionFailures) + @(
+        foreach ($destination in $uniqueDestinations) {
+            & $PSCommandPath -Target $destination.Target -DestinationRoot $destination.Root -Update:$Update `
                 -InstallValidator $InstallValidator
         }
     )
+    $duplicateWarnings = if ($resolvedDestinations.Count -gt $uniqueDestinations.Count) {
+        @('둘 이상의 대상이 같은 스킬 루트를 사용하여 중복 설치를 생략했습니다.')
+    }
+    else {
+        @()
+    }
     $aggregateStatus = if (@($targetResults | Where-Object { $_.Status -eq 'FAILED' }).Count -gt 0) {
         'FAILED'
     }
@@ -217,7 +270,7 @@ if ($Target -eq 'All') {
     }
 
     return New-HwpNativeInstallResult -Target All -Status $aggregateStatus `
-        -Warnings @($targetResults | ForEach-Object { $_.Warnings }) `
+        -Warnings (@($targetResults | ForEach-Object { $_.Warnings }) + $duplicateWarnings) `
         -Errors @($targetResults | ForEach-Object { $_.Errors }) -Results $targetResults
 }
 

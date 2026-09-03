@@ -122,6 +122,39 @@ Describe 'hwp-skill 설치 도구' {
         }
     }
 
+    It 'All 대상은 정규화한 동일 설치 루트를 한 번만 선택한다' {
+        $tokens = $null
+        $parseErrors = $null
+        $ast = [Management.Automation.Language.Parser]::ParseFile(
+            $installer,
+            [ref]$tokens,
+            [ref]$parseErrors
+        )
+        @($parseErrors).Count | Should Be 0
+        $functionAst = $ast.Find({
+            param($node)
+            $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -eq 'Select-HwpNativeUniqueDestinations'
+        }, $true)
+        $functionAst | Should Not BeNullOrEmpty
+        if ($null -eq $functionAst) {
+            return
+        }
+        . ([scriptblock]::Create($functionAst.Extent.Text))
+
+        $sharedRoot = Join-Path $TestDrive 'shared-skills'
+        $destinations = @(
+            [pscustomobject]@{ Target = 'Codex'; Root = $sharedRoot },
+            [pscustomobject]@{ Target = 'Claude'; Root = ($sharedRoot + [IO.Path]::DirectorySeparatorChar) },
+            [pscustomobject]@{ Target = 'Universal'; Root = (Join-Path $TestDrive 'universal-skills') }
+        )
+
+        $unique = @(Select-HwpNativeUniqueDestinations -Destinations $destinations)
+
+        $unique.Count | Should Be 2
+        @($unique.Target) | Should Be @('Codex','Universal')
+    }
+
     It 'All과 단일 DestinationRoot를 함께 지정하면 파일을 쓰기 전에 차단한다' {
         $customRoot = Join-Path $TestDrive ('custom-all-' + [guid]::NewGuid().ToString('n'))
 
