@@ -85,4 +85,50 @@ Describe 'hwp-skill 설치 도구' {
         @(Get-ChildItem -LiteralPath $outside -Force).Count | Should Be 0
         [IO.Directory]::Delete($backupLink)
     }
+
+    It 'Claude 대상은 임시 프로필의 .claude skills에 설치한다' {
+        $profile = Join-Path $TestDrive ('profile-claude-' + [guid]::NewGuid().ToString('n'))
+
+        $result = & $installer -Target Claude -ProfileRoot $profile
+
+        $result.Status | Should Be 'PASS'
+        $result.Target | Should Be 'Claude'
+        $result.InstallPath | Should Be ([IO.Path]::GetFullPath((Join-Path $profile '.claude/skills/hwp-skill')))
+        Test-Path (Join-Path $result.InstallPath 'SKILL.md') -PathType Leaf | Should Be $true
+    }
+
+    It 'Universal 대상은 임시 프로필의 .agents skills에 설치한다' {
+        $profile = Join-Path $TestDrive ('profile-agents-' + [guid]::NewGuid().ToString('n'))
+
+        $result = & $installer -Target Universal -ProfileRoot $profile
+
+        $result.Status | Should Be 'PASS'
+        $result.Target | Should Be 'Universal'
+        $result.InstallPath | Should Be ([IO.Path]::GetFullPath((Join-Path $profile '.agents/skills/hwp-skill')))
+        Test-Path (Join-Path $result.InstallPath 'SKILL.md') -PathType Leaf | Should Be $true
+    }
+
+    It 'All 대상은 Codex Claude Universal 세 경로를 설치한다' {
+        $profile = Join-Path $TestDrive ('profile-all-' + [guid]::NewGuid().ToString('n'))
+
+        $result = & $installer -Target All -ProfileRoot $profile
+
+        $result.Status | Should Be 'PASS'
+        @($result.Results).Count | Should Be 3
+        @($result.Results.Target) | Should Be @('Codex','Claude','Universal')
+        foreach ($targetResult in $result.Results) {
+            $targetResult.Status | Should Be 'PASS'
+            Test-Path (Join-Path $targetResult.InstallPath 'SKILL.md') -PathType Leaf | Should Be $true
+        }
+    }
+
+    It 'All과 단일 DestinationRoot를 함께 지정하면 파일을 쓰기 전에 차단한다' {
+        $customRoot = Join-Path $TestDrive ('custom-all-' + [guid]::NewGuid().ToString('n'))
+
+        $result = & $installer -Target All -DestinationRoot $customRoot
+
+        $result.Status | Should Be 'BLOCKED'
+        ($result.Errors -join ' ') | Should Match 'All|DestinationRoot|단일'
+        Test-Path -LiteralPath $customRoot | Should Be $false
+    }
 }
