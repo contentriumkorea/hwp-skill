@@ -1,5 +1,10 @@
 Import-Module (Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpHwpxObjects.psm1') -Force
 Describe 'Portable image decoding without GDI or application windows' {
+    It 'preserves user-site Pillow while ignoring Python environment overrides' {
+        $implementation=(Get-Command Test-HwpxPortableRasterIntegrity).Definition
+        $implementation | Should Not Match "'-(I|s)'"
+        $implementation | Should Match "'-E'"
+    }
     It 'fully decodes a PNG using the portable validator' -Skip:($PSVersionTable.PSVersion.Major -lt 7) {
         Test-HwpxPortableRasterIntegrity (Join-Path $PSScriptRoot 'fixtures/source/fixture-blue.png') | Should Be $true
     }

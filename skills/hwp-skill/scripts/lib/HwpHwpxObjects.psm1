@@ -46,7 +46,8 @@ function Test-HwpxPortableRasterIntegrity {
     $start.FileName=$python.Source
     $start.UseShellExecute=$false;$start.CreateNoWindow=$true
     $start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true
-    foreach ($argument in @('-I',(Join-Path $PSScriptRoot '../validate_raster.py'),$Path)) { $start.ArgumentList.Add($argument) }
+    # Ignore PYTHONPATH/PYTHONHOME overrides, but retain normal user-site installs.
+    foreach ($argument in @('-E','-B',(Join-Path $PSScriptRoot '../validate_raster.py'),$Path)) { $start.ArgumentList.Add($argument) }
     $process=[Diagnostics.Process]::new();$process.StartInfo=$start
     try {
         $null=$process.Start()
