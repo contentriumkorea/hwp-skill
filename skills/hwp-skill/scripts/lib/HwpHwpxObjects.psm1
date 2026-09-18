@@ -33,8 +33,38 @@ function Get-HwpxRasterSize {
     } finally {$stream.Dispose()}
 }
 
+function Test-HwpxPortableRasterIntegrity {
+    param([string]$Path)
+    $names = if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { @('python','python3') } else { @('python3','python') }
+    $python = $null
+    foreach ($name in $names) {
+        $python = Get-Command $name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($null -ne $python) { break }
+    }
+    if ($null -eq $python) { throw 'Image validation on this OS requires Python 3 and Pillow; no GUI fallback is allowed.' }
+    $start=[Diagnostics.ProcessStartInfo]::new()
+    $start.FileName=$python.Source
+    $start.UseShellExecute=$false;$start.CreateNoWindow=$true
+    $start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true
+    foreach ($argument in @('-I',(Join-Path $PSScriptRoot '../validate_raster.py'),$Path)) { $start.ArgumentList.Add($argument) }
+    $process=[Diagnostics.Process]::new();$process.StartInfo=$start
+    try {
+        $null=$process.Start()
+        $stdout=$process.StandardOutput.ReadToEndAsync();$stderr=$process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit(30000)) { $process.Kill();throw 'Image validation timed out.' }
+        $message=$stderr.GetAwaiter().GetResult()
+        if ($process.ExitCode -ne 0 -or $stdout.GetAwaiter().GetResult().Trim() -cne 'PASS') {
+            throw "Invalid or incomplete image asset (Python 3 + Pillow required): $message"
+        }
+        return $true
+    } finally { $process.Dispose() }
+}
+
 function Test-HwpxRasterIntegrity {
     param([string]$Path)
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+        return Test-HwpxPortableRasterIntegrity -Path $Path
+    }
     # Windows' built-in in-memory raster decoder; no application or display surface.
     Add-Type -AssemblyName System.Drawing -ErrorAction Stop
     $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
@@ -115,4 +145,4 @@ function New-HwpxBasicShapeXml {
     Set-HwpxObjectOptions -Xml $xml -Block $Block -Width $w -Height $h
 }
 
-Export-ModuleMember -Function @('Get-HwpxRasterSize','Test-HwpxRasterIntegrity','Set-HwpxObjectOptions','New-HwpxBasicShapeXml')
+Export-ModuleMember -Function @('Get-HwpxRasterSize','Test-HwpxRasterIntegrity','Test-HwpxPortableRasterIntegrity','Set-HwpxObjectOptions','New-HwpxBasicShapeXml')

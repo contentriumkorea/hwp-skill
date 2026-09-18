@@ -5,6 +5,11 @@ description: Use when AI 도구가 HWP, HWT, HWPX 또는 "한글 문서 파일"�
 
 # HWP Skill
 
+Linux·macOS의 새 이미지 삽입에는 Python 3 + Pillow가 필요하다. 누락 시 설치 방법을
+안내하고 중단하며, 이미지를 빼거나 GUI로 우회하지 않는다. HWP 읽기와 이미지 없는
+HWPX 작성에는 Python이 필요 없다. Unix 파일 잠금은 advisory이므로 작업 중 다른
+프로그램에서 원본을 수정하지 않는다. 편집 완료 전 원본 해시가 달라지면 결과 승격을 차단한다.
+
 기존 HWPX 부분 수정 시에는 `inspect`가 반환한 대상의 `address`를 그대로 사용한다.
 전체 문단 `index`를 편집용 `paragraphIndex`로 옮기지 않는다. 표 셀·머리말·꼬리말도
 내부 문단/run 주소로 수정하며, 재수정 전에는 출력 파일을 다시 검사한다.

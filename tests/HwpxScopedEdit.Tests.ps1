@@ -354,7 +354,7 @@ Describe 'Bounded HWPX scoped editing' {
         ($result.Data.ChangedParts -contains 'Contents/section0.xml') | Should Be $false
     }
 
-    It 'blocks a source already held for writing and leaves it unchanged' {
+    It 'blocks a source already held for writing on Windows and leaves it unchanged' -Skip:([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
         $before = (Get-FileHash -LiteralPath $source -ErrorAction Stop).Hash
         $writer = [IO.File]::Open($source,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::ReadWrite)
         try {
@@ -364,6 +364,21 @@ Describe 'Bounded HWPX scoped editing' {
         }
         finally { $writer.Dispose() }
         (Get-FileHash -LiteralPath $source -ErrorAction Stop).Hash | Should Be $before
+    }
+
+    It 'blocks promotion when the source hash changes on any OS' {
+        & (Get-Module HwpHwpxScopedEdit) { $script:scopedHashRead = $false }
+        Mock Get-HwpSha256 -ModuleName HwpHwpxScopedEdit {
+            param($LiteralPath)
+            if ($LiteralPath -like '*.partial.hwpx') { return ('1' * 64) }
+            if ($script:scopedHashRead) { return ('0' * 64) }
+            $script:scopedHashRead = $true
+            (Get-FileHash -LiteralPath $LiteralPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
+        $result = Invoke-HwpxScopedEdit -LiteralPath $source -OutputPath $output -Plan (New-ScopedTestPlan)
+        $result.Status | Should Be 'BLOCKED'
+        ($result.Errors -join ' ') | Should Match 'SHA-256 changed'
+        (Test-Path -LiteralPath $output) | Should Be $false
     }
 
     It 'preserves a competing destination and unrelated partial when atomic promotion fails' {

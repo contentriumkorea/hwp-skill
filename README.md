@@ -121,6 +121,7 @@ Phase 1은 HWP 바이너리를 직접 작성한다고 주장하지 않습니다.
 - 여러 에이전트에 한 번에 설치할 때는 Node.js와 npm 필요
 - HWP 5.x 읽기는 관리 코드 CFB 판독기를 사용하며 한컴 설치가 필요하지 않음
 - HWPX 직접 작성·검사는 추가 GUI 실행 없이 동작
+- Linux·macOS에서 새 이미지 삽입 시 Python 3와 Pillow가 필요함 (`python3 -m pip install Pillow`). 이미지 검사는 로컬에서만 수행하며 자동 설치하거나 GUI로 우회하지 않음
 - HWP 최종 변환은 별도 격리 변환 엔진이 필요하며 기본 배포에는 포함되지 않음
 - 근사 PDF 미리보기는 Windows에 설치된 Chromium 계열 브라우저를 headless로 사용
 - 새 HWPX 문서의 이미지 삽입에는 한컴 파일 경로 보안 모듈이 필요하지 않음

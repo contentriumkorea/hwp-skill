@@ -21,6 +21,7 @@
 - HWPX 읽기·미리보기에서 파일명 대신 문서에 저장된 구역 순서(spine)를 적용합니다.
 - 단순 비병합 본문 표의 빈 행·열 추가. 복잡한 구조는 보존을 위해 차단합니다.
 - 로컬 근사 HTML 미리보기와 Windows Chromium/Edge headless PDF.
+- Linux·macOS의 이미지 삽입 검사는 Python 3 + Pillow를 사용하며 Windows GDI에 의존하지 않습니다.
 - 버전 메타데이터, Windows/Linux/macOS 구조 테스트 CI, 태그 기반 ZIP·SHA-256 배포.
 
 ### 유지되는 경계

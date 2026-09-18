@@ -12,6 +12,11 @@ jobs:
         shell: pwsh
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install portable raster validator dependency
+        run: python -m pip install Pillow
       - name: Check version and run tests
         run: |
           $version=(Get-Content skills/hwp-skill/version.json -Raw | ConvertFrom-Json).version
