@@ -17,8 +17,8 @@ jobs:
           $version=(Get-Content skills/hwp-skill/version.json -Raw | ConvertFrom-Json).version
           if ($env:GITHUB_REF_NAME -cne "v$version") { throw 'Tag and packaged version differ.' }
           Set-PSRepository PSGallery -InstallationPolicy Trusted
-          Install-Module Pester -RequiredVersion 3.4.0 -Force -Scope CurrentUser -SkipPublisherCheck
-          Import-Module Pester -RequiredVersion 3.4.0 -Force
+          Install-Module Pester -RequiredVersion 4.10.1 -Force -Scope CurrentUser -SkipPublisherCheck
+          Import-Module Pester -RequiredVersion 4.10.1 -Force
           ./tests/run-tests.ps1 -Suite Static
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./package.ps1

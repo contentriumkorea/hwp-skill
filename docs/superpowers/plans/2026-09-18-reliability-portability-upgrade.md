@@ -4,7 +4,7 @@
 
 **구조:** 읽기 결과에 수정 가능한 안정된 주소를 제공한다. HWPX 작성·편집은 기존 ZIP/XML 경로를 유지한다. HWP 최종 변환은 현재 데스크톱 COM을 사용하지 않으며, 검증 가능한 무창 변환기가 없는 기본 환경에서는 작성된 HWPX를 보존하고 HWP 납품을 차단한다. 최종 변환 결과는 바이너리 시그니처뿐 아니라 실제 논리 내용을 다시 읽어 검사한다.
 
-**기술:** PowerShell 5.1/7, .NET 관리 코드 CFB 판독기, HWPX XML, Chromium 계열의 headless PDF 인쇄, Pester 3.4.
+**기술:** PowerShell 5.1/7, .NET 관리 코드 CFB 판독기, HWPX XML, Chromium 계열의 headless PDF 인쇄, CI Pester 4.10.1(Windows 기존 3.4도 회귀 검사).
 
 ## 공통 조건
 

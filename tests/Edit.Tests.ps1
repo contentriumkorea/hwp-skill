@@ -38,9 +38,13 @@ function New-FakeAtomicApplySession {
 }
 
 Describe 'Invoke-HwpApply 저장 후 재검사 컨텍스트' {
-    It '승인 컨텍스트와 기능 스냅샷을 save, reopen, promote 전체에 보존한다' {
+    It '승인 컨텍스트와 기능 스냅샷을 save, reopen, promote 전체에 보존한다 (<PathForm>)' -TestCases @(
+        @{ PathForm = 'Literal' }
+        @{ PathForm = 'Provider' }
+    ) {
+        param($PathForm)
         $sourcePath = Join-Path $TestDrive 'source.hwp'
-        $outputPath = Join-Path $TestDrive 'promoted.hwp'
+        $outputPath = Join-Path $TestDrive "promoted-$PathForm.hwp"
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'fixtures/source/native-fixture.hwp') -Destination $sourcePath
         $sourceBytes = [IO.File]::ReadAllBytes($sourcePath)
         $sourceHash = Get-HwpSha256 -LiteralPath $sourcePath
@@ -56,6 +60,7 @@ Describe 'Invoke-HwpApply 저장 후 재검사 컨텍스트' {
             )
         }
         $plan = New-ValidPlan -SourcePath $sourcePath -SourceSha256 $sourceHash
+        if ($PathForm -eq 'Provider') { $plan.source.path = 'TestDrive:\source.hwp' }
         $plan.operations = @((New-FieldOperation -Name '담당자' -Before '시험 담당자' -After '홍길동'))
         $observation = [pscustomobject]@{
             SessionContextPreserved = $false
@@ -92,6 +97,7 @@ Describe 'Invoke-HwpApply 저장 후 재검사 컨텍스트' {
             -ExecutionContext $approvedContext -Capabilities $capabilities `
             -SessionFactory $sessionFactory -Inspector $inspector
 
+        ($result.Errors -join '; ') | Should Be ''
         $result.Status | Should Be 'PASS'
         $observation.SessionContextPreserved | Should Be $true
         $observation.InspectionContextPreserved | Should Be $true

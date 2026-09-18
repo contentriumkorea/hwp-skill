@@ -10,7 +10,7 @@ function Resolve-HwpLiteralPath {
         [string]$LiteralPath
     )
 
-    $resolved = (Resolve-Path -LiteralPath $LiteralPath -ErrorAction Stop).Path
+    $resolved = (Resolve-Path -LiteralPath $LiteralPath -ErrorAction Stop).ProviderPath
     if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) {
         throw "문서 파일이 아닙니다: $resolved"
     }

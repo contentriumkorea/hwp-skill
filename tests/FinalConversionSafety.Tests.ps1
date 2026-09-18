@@ -60,7 +60,7 @@ Describe 'Final HWP conversion never trusts signatures or hidden local GUI' {
         $result.Status | Should Be 'PASS_WITH_WARNINGS'
         $result.After.DetectedKind | Should Be 'HWP-BINARY'
         $result.After.Sha256 | Should Be (Get-FileHash $fixture).Hash.ToLowerInvariant()
-        $result.After.Path | Should Be $output
+        $result.After.Path | Should Be (Resolve-Path -LiteralPath $output).Path
         $result.After.Tables[0].RowCount | Should Be 2
     }
 

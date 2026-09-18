@@ -2608,7 +2608,7 @@ function Invoke-HwpApply {
         )
     }
     try {
-        $plannedSourcePath = [IO.Path]::GetFullPath([string]$Plan.source.path)
+        $plannedSourcePath = Resolve-HwpLiteralPath -LiteralPath ([string]$Plan.source.path)
     }
     catch {
         return New-HwpApplyResult -Status BLOCKED -SourcePath $sourcePath -SourceSha256 $sourceHash -Errors @(
