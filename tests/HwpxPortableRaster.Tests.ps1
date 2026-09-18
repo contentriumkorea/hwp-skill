@@ -7,6 +7,6 @@ Describe 'Portable image decoding without GDI or application windows' {
         $bytes=[IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'fixtures/source/fixture-blue.png'))
         $path=Join-Path $TestDrive 'truncated.png'
         [IO.File]::WriteAllBytes($path,$bytes[0..30])
-        { Test-HwpxPortableRasterIntegrity $path } | Should Throw
+        { Test-HwpxPortableRasterIntegrity $path } | Should Throw 'Invalid or incomplete'
     }
 }

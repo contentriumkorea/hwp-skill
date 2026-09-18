@@ -25,6 +25,7 @@
     {"id":"equation-chart-trackchanges-ole","read":"conditional","create":"unsupported","edit":"unsupported","structure":"conditional","visual":"conditional"}
   ],
   "conditions": {
+    "imageValidation":"Linux/macOS의 새 이미지 삽입에는 Python 3 + Pillow가 필요합니다. Windows는 내장 메모리 디코더를 사용하며 어느 경로도 GUI나 한컴 보안 모듈을 사용하지 않습니다.",
     "visual":"준비된 별도 무창 렌더러가 필요합니다. 없으면 실제 페이지 수, 글꼴 대체와 픽셀 배치를 검증하지 않습니다.",
     "edit":"검사로 특정한 지원 작업만 별도 HWPX에서 수정합니다. 복잡하거나 모호한 기존 개체는 사전 차단합니다.",
     "hwpOutput":"격리 변환기는 기본 제공되지 않습니다. 기본 HWP 요청은 BLOCKED이며 검증한 HWPX 작업본을 보존합니다. 현재 세션에서 한컴을 실행하지 않습니다.",

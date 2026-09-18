@@ -22,8 +22,17 @@
 - [x] 운영체제 독립 읽기: `HwpCompoundFile.cs`를 FAT/DIFAT/miniFAT/디렉터리를 직접 해석하는 관리 코드로 전환한다. 정상 HWP/HWT, 체인 순환·범위 밖 섹터·절단 스트림을 검사한다.
 - [x] 무창 미리보기: `HwpPreview.psm1`의 `Export-HwpxPreview -LiteralPath -OutputDirectory`로 HTML과 Windows headless PDF를 생성한다. HTML 이스케이프·내장 이미지·병합 표·구역 방향·원본 해시를 검사한다. 한컴 조판 미검증 표시를 필수로 유지한다.
 - [x] 공개 CLI·기능표·한국어 안내를 구현과 일치시키고 버전 메타데이터를 제공한다.
-- [ ] GitHub Actions에서 Windows 검사 및 Linux/macOS 휴대형 검사·패키징을 실행한다. 태그 기반 배포에 ZIP·해시를 포함한다.
-- [ ] 전체 회귀 검사, 설치본 갱신, GitHub 게시와 원격 커밋/파일 검증을 완료한다.
+- [x] GitHub Actions에서 Windows 검사 및 Linux/macOS 휴대형 검사·패키징을 실행한다. 태그 기반 ZIP·해시 배포 워크플로를 추가한다.
+- [x] 전체 회귀 검사와 Codex·Claude 설치본 갱신 및 46개 파일 해시 대조를 완료한다.
+- [ ] GitHub 기본 브랜치 게시 및 v2.1.0 릴리스 파일 검증을 완료한다.
+
+## 검증 기록
+
+- 기능 커밋 `72d7ad0`: GitHub Actions 실행 `35313470736`에서 Windows 575개, Linux 428개, macOS 430개 통과, 실패 0.
+- Windows PowerShell 5.1 호환성 재검사: 변경 경로 관련 24개 통과, PowerShell 7 전용 이미지 보조 검사 2개 제외.
+- 실제 Edge 무창 PDF 미리보기: 29개 통과, 운영체제 전용 1개 제외. 한컴 조판 검증을 뜻하지 않는다.
+- Codex·Claude 설치 CLI: silent, 버전 2.1.0, 공개 HWP fixture 93자·2×2 표 및 원본 SHA-256 일치.
+- Linux/macOS 이미지 디코딩은 Python 3 + Pillow 의존성을 명시한다. Windows 전용 파일 공유 잠금 검사는 Unix에서 제외하고, 모든 OS에서 원본 해시 변경 시 승격 차단을 별도 검증한다.
 
 ## 알려진 구현 경계
 
