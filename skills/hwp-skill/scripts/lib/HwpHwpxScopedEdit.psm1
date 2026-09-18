@@ -750,6 +750,226 @@ function New-ScopedFormatResource {
     return @{Node=$copy;Collection=$collection;Kind=$Kind;Id=[string]$next}
 }
 
+function Get-ScopedNextParagraphId {
+    param($Package, $Allocation)
+    if (-not $Allocation.ContainsKey('NextParagraphId')) {
+        [long]$maximum = 0
+        foreach ($part in $Package.Sections) {
+            $xml = $Package.Xml[$part]
+            foreach ($p in $xml.SelectNodes('//hp:p[@id]',(New-ScopedNamespaces $xml))) {
+                $maximum = [Math]::Max($maximum,[long](Get-ScopedStyleId $p.GetAttribute('id') 'paragraph.id'))
+            }
+        }
+        $Allocation.NextParagraphId = $maximum+1
+    }
+    if ($Allocation.NextParagraphId -gt [uint32]::MaxValue) { throw 'No unique paragraph IDs remain.' }
+    $id = [string]$Allocation.NextParagraphId
+    $Allocation.NextParagraphId++
+    return $id
+}
+
+function New-ScopedEmptyCell {
+    param([Xml.XmlElement]$Template, $Content, $Package, $Allocation)
+    $xml = $Template.OwnerDocument
+    $ns = New-ScopedNamespaces $xml
+    $cell = $Template.CloneNode($false)
+    $cell.SetAttribute('header','0')
+    $sub = $Content.SubList.CloneNode($false)
+    $firstParagraph = $Content.Paragraphs[0]
+    $p = $xml.CreateElement('hp','p',$script:ScopedHp)
+    $p.SetAttribute('id',(Get-ScopedNextParagraphId $Package $Allocation))
+    $p.SetAttribute('paraPrIDRef',$firstParagraph.GetAttribute('paraPrIDRef'))
+    if ($firstParagraph.HasAttribute('styleIDRef')) { $p.SetAttribute('styleIDRef',$firstParagraph.GetAttribute('styleIDRef')) }
+    $p.SetAttribute('pageBreak','0'); $p.SetAttribute('columnBreak','0'); $p.SetAttribute('merged','0')
+    $run = $xml.CreateElement('hp','run',$script:ScopedHp)
+    $run.SetAttribute('charPrIDRef',$firstParagraph.SelectSingleNode('hp:run',$ns).GetAttribute('charPrIDRef'))
+    $null = $run.AppendChild($xml.CreateElement('hp','t',$script:ScopedHp))
+    $null = $p.AppendChild($run); $null = $sub.AppendChild($p); $null = $cell.AppendChild($sub)
+    foreach ($name in @('cellAddr','cellSpan','cellSz','cellMargin')) { $null = $cell.AppendChild((Get-ScopedOneChild $Template "hp:$name").CloneNode($true)) }
+    return ,$cell
+}
+
+function New-ScopedInsertedTable {
+    param([Xml.XmlElement]$Table, $Operation, $Package, $Allocation)
+    $ns = New-ScopedNamespaces $Table.OwnerDocument
+    if ($null -ne $Table.SelectSingleNode('ancestor::hp:tc | ancestor::hp:header | ancestor::hp:footer',$ns)) { throw 'Insertion requires a body table, not a nested/header/footer table.' }
+    $copy = $Table.CloneNode($true)
+    $grid = Get-ScopedTableGrid $copy
+    foreach ($node in $copy.ChildNodes) {
+        if ($node.NodeType -in @('Whitespace','SignificantWhitespace')) { continue }
+        if ($node.NodeType -ne 'Element' -or $node.NamespaceURI -cne $script:ScopedHp -or $node.LocalName -cnotin @('sz','pos','inMargin','outMargin','tr')) { throw 'Unknown table geometry cannot be updated for insertion.' }
+    }
+    foreach ($row in $grid.Rows) {
+        Assert-ScopedCellAttributes $row @()
+        foreach ($node in $row.ChildNodes) {
+            if ($node.NodeType -in @('Whitespace','SignificantWhitespace')) { continue }
+            if ($node.NodeType -ne 'Element' -or $node.NamespaceURI -cne $script:ScopedHp -or $node.LocalName -cne 'tc') { throw 'Unknown table row metadata cannot be duplicated.' }
+        }
+    }
+    $charIds = Get-ScopedStyleIds $Package.Xml['Contents/header.xml'] 'charPr'
+    $paraIds = Get-ScopedStyleIds $Package.Xml['Contents/header.xml'] 'paraPr'
+    $contents = @{}
+    foreach ($cell in $grid.Cells) {
+        if ($cell.RowSpan -ne 1 -or $cell.ColumnSpan -ne 1) { throw 'Insertion requires an unmerged rectangular table.' }
+        $contents["$($cell.Row),$($cell.Column)"] = Get-ScopedCellContent $cell.Node $charIds $paraIds
+    }
+    $isRow = $Operation['type'] -ceq 'insert-table-row'
+    $index = Get-ScopedIndex $Operation['index'] 'insert.index'
+    $count = if ($isRow) { $grid.RowCount } else { $grid.ColumnCount }
+    $tracks = if ($isRow) { $grid.Widths } else { $grid.Heights }
+    if ($index -gt $count -or $count -ge 256 -or ($count+1)*$tracks.Count -gt 4096) { throw 'Insertion index or resulting table exceeds grid limits.' }
+    $key = if ($isRow) { 'heightMm' } else { 'widthMm' }
+    $units = ConvertTo-ScopedMm $Operation[$key] "insert.$key"
+    if ($units -lt 1) { throw "insert.$key must round to a positive HWPUNIT value." }
+    $size = Get-ScopedOneChild $copy 'hp:sz'
+    if ($size.GetAttribute('widthRelTo') -cne 'ABSOLUTE' -or $size.GetAttribute('heightRelTo') -cne 'ABSOLUTE') { throw 'Insertion requires absolute table dimensions.' }
+    [long]$width = ($grid.Widths | Measure-Object -Sum).Sum
+    [long]$height = ($grid.Heights | Measure-Object -Sum).Sum
+    if ((Get-ScopedXmlInteger $size 'width' 1) -ne $width -or (Get-ScopedXmlInteger $size 'height' 1) -ne $height) { throw 'Table size must match the rectangular cell grid for insertion.' }
+    if ($isRow) { $height += $units } else { $width += $units }
+    if ($width -gt [int]::MaxValue -or $height -gt [int]::MaxValue) { throw 'Inserted table exceeds HWPUNIT dimensions.' }
+    $size.SetAttribute('width',[string]$width); $size.SetAttribute('height',[string]$height)
+    # Original cells retain content and metadata; only shifted addresses change.
+    foreach ($cell in $grid.Cells) {
+        $coordinate = if ($isRow) { $cell.Row } else { $cell.Column }
+        if ($coordinate -ge $index) {
+            $name = if ($isRow) { 'rowAddr' } else { 'colAddr' }
+            (Get-ScopedOneChild $cell.Node 'hp:cellAddr').SetAttribute($name,[string]($coordinate+1))
+        }
+    }
+    $templateIndex = [Math]::Max(0,$index-1)
+    if ($isRow) { $newRow = $copy.OwnerDocument.CreateElement('hp','tr',$script:ScopedHp) }
+    for ($track=0; $track -lt $tracks.Count; $track++) {
+        $templateKey = if ($isRow) { "$templateIndex,$track" } else { "$track,$templateIndex" }
+        $cell = New-ScopedEmptyCell $grid.Occupancy[$templateKey].Node $contents[$templateKey] $Package $Allocation
+        $addr = Get-ScopedOneChild $cell 'hp:cellAddr'
+        $addr.SetAttribute('rowAddr',[string]$(if ($isRow) {$index} else {$track}))
+        $addr.SetAttribute('colAddr',[string]$(if ($isRow) {$track} else {$index}))
+        $cellSize = Get-ScopedOneChild $cell 'hp:cellSz'
+        $cellSize.SetAttribute('width',[string]$(if ($isRow) {$tracks[$track]} else {$units}))
+        $cellSize.SetAttribute('height',[string]$(if ($isRow) {$units} else {$tracks[$track]}))
+        if ($isRow) { $null = $newRow.AppendChild($cell) }
+        elseif ($index -eq $count) { $null = $grid.Rows[$track].AppendChild($cell) }
+        else { $null = $grid.Rows[$track].InsertBefore($cell,$grid.Occupancy["$track,$index"].Node) }
+    }
+    if ($isRow) {
+        if ($index -eq $count) { $null = $copy.AppendChild($newRow) }
+        else { $null = $copy.InsertBefore($newRow,$grid.Rows[$index]) }
+        $copy.SetAttribute('rowCnt',[string]($count+1))
+    } else { $copy.SetAttribute('colCnt',[string]($count+1)) }
+    foreach ($cache in @($copy.SelectNodes('.//hp:p/hp:linesegarray',$ns))) { $null = $cache.ParentNode.RemoveChild($cache) }
+    $null = Get-ScopedTableGrid $copy
+    return ,$copy
+}
+
+function Get-ScopedRasterMediaType {
+    param([byte[]]$Bytes)
+    if ($Bytes.Length -ge 33 -and [BitConverter]::ToString($Bytes,0,8) -ceq '89-50-4E-47-0D-0A-1A-0A' -and
+        [Text.Encoding]::ASCII.GetString($Bytes,12,4) -ceq 'IHDR') { return 'image/png' }
+    if ($Bytes.Length -ge 4 -and $Bytes[0] -eq 255 -and $Bytes[1] -eq 216 -and $Bytes[2] -eq 255 -and
+        $Bytes[$Bytes.Length-2] -eq 255 -and $Bytes[$Bytes.Length-1] -eq 217) { return 'image/jpeg' }
+    if ($Bytes.Length -ge 14 -and [Text.Encoding]::ASCII.GetString($Bytes,0,6) -cin @('GIF87a','GIF89a')) { return 'image/gif' }
+    if ($Bytes.Length -ge 54 -and $Bytes[0] -eq 66 -and $Bytes[1] -eq 77) { return 'image/bmp' }
+    throw 'Replacement requires a supported PNG/JPEG/GIF/BMP signature; decoding/rendering is not performed.'
+}
+
+function New-ScopedImageBytes {
+    param([Xml.XmlElement]$Picture, $Operation, $Package)
+    if ($Picture.HasAttribute('lock') -and $Picture.GetAttribute('lock') -cnotin @('0','false')) { throw 'Locked picture cannot be replaced.' }
+    $image = Get-ScopedOneChild $Picture 'hc:img'
+    $id = $image.GetAttribute('binaryItemIDRef')
+    if ([string]::IsNullOrEmpty($id)) { throw 'Picture has no embedded image reference.' }
+    $hpf = $Package.Xml['Contents/content.hpf']
+    $items = @($hpf.SelectNodes('/opf:package/opf:manifest/opf:item',(New-ScopedNamespaces $hpf)) | Where-Object { $_.GetAttribute('id') -ceq $id })
+    if ($items.Count -ne 1) { throw 'Picture must reference exactly one manifest item.' }
+    $part = $items[0].GetAttribute('href')
+    if (-not $part.StartsWith('BinData/',[StringComparison]::Ordinal) -or -not $Package.Parts.ContainsKey($part)) { throw 'Picture must reference a local BinData part.' }
+    $aliases = @($hpf.SelectNodes('/opf:package/opf:manifest/opf:item',(New-ScopedNamespaces $hpf)) | Where-Object { $_.GetAttribute('href') -ceq $part })
+    if ($aliases.Count -ne 1) { throw 'Shared image manifest aliases are not supported.' }
+    $references = 0
+    foreach ($xml in $Package.Xml.Values) {
+        foreach ($attribute in $xml.SelectNodes('//@*[local-name()="binaryItemIDRef"]')) {
+            if ($attribute.Value -ceq $id) { $references++ }
+        }
+    }
+    if ($references -ne 1) { throw 'Shared image references are not replaced implicitly.' }
+    $expected = $Operation['expectedSha256']
+    if ($expected -isnot [string] -or $expected -notmatch '^[a-fA-F0-9]{64}$' -or
+        $expected -ine (Get-ScopedBytesHash $Package.Parts[$part].Bytes).Replace('-','')) { throw 'replace-image.expectedSha256 does not match the original image bytes.' }
+    $path = $Operation['path']
+    if ($path -isnot [string] -or [string]::IsNullOrWhiteSpace($path) -or $path -match '^[\\/]{2}|^[a-zA-Z]+://') { throw 'replace-image.path must be a local filesystem path.' }
+    $localPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($path)
+    if ($localPath.StartsWith('\\') -or $localPath.Substring([IO.Path]::GetPathRoot($localPath).Length).Contains(':')) { throw 'Network paths and alternate data streams are not supported.' }
+    $stream = [IO.File]::Open($localPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        if ($stream.Length -lt 1 -or $stream.Length -gt 64MB) { throw 'Replacement image must contain 1 byte to 64 MiB.' }
+        $memory = [IO.MemoryStream]::new()
+        try { $stream.CopyTo($memory); $bytes = $memory.ToArray() } finally { $memory.Dispose() }
+    } finally { $stream.Dispose() }
+    $mediaType = Get-ScopedRasterMediaType $bytes
+    if ($mediaType -cne $items[0].GetAttribute('media-type') -or $mediaType -cne (Get-ScopedRasterMediaType $Package.Parts[$part].Bytes)) { throw 'Replacement image format must match the original manifest media-type.' }
+    return @{ Part=$part; Bytes=$bytes }
+}
+
+function Get-ScopedNodeXPath {
+    param([Xml.XmlElement]$Node)
+    $segments = [Collections.Generic.List[string]]::new()
+    $current = $Node
+    while ($current.ParentNode -is [Xml.XmlElement]) {
+        $index = 1
+        $sibling = $current.PreviousSibling
+        while ($null -ne $sibling) {
+            if ($sibling.NodeType -eq [Xml.XmlNodeType]::Element) { $index++ }
+            $sibling = $sibling.PreviousSibling
+        }
+        $segments.Insert(0,"/*[$index]")
+        $current = $current.ParentNode
+    }
+    return '/*[1]' + ($segments -join '')
+}
+
+function Assert-ScopedEditContext {
+    param([Xml.XmlElement]$Node)
+    $current = $Node
+    while ($current.ParentNode -is [Xml.XmlElement]) {
+        if ($current.NamespaceURI -cne $script:ScopedHp -or
+            $current.LocalName -cnotin @('t','p','run','tbl','tr','tc','subList','ctrl','header','footer','pic')) {
+            throw 'Address crosses an unsupported or unknown container.'
+        }
+        if ($current.LocalName -cin @('tc','tbl')) {
+            foreach ($flag in @('protect','lock','editable')) {
+                if ($current.HasAttribute($flag) -and $current.GetAttribute($flag) -cnotin @('0','false')) {
+                    throw "Protected or special address ancestor: $flag."
+                }
+            }
+        }
+        $current = $current.ParentNode
+    }
+}
+
+function Resolve-ScopedAddress {
+    param($Value, $Package, [string]$Kind)
+    $address = ConvertTo-ScopedMap $Value 'address'
+    Assert-ScopedKeys $address @('version','sourceSha256','part','path','kind') 'address'
+    if ($address['version'] -isnot [string] -or $address['version'] -cne '1.0') { throw 'Unsupported address.version.' }
+    if ($address['sourceSha256'] -isnot [string] -or $address['sourceSha256'] -notmatch '^[a-fA-F0-9]{64}$' -or
+        $address['sourceSha256'] -ine $Package.SourceSha256) { throw 'address.sourceSha256 does not match the inspected original.' }
+    if ($address['part'] -isnot [string] -or -not $Package.Sections.Contains($address['part'])) { throw 'address.part is not a package section.' }
+    if ($address['kind'] -isnot [string] -or $address['kind'] -cne $Kind) { throw "address.kind must be $Kind for this operation." }
+    $path = $address['path']
+    if ($path -isnot [Collections.IList] -or $path.Count -lt 1 -or $path.Count -gt 64) { throw 'address.path must contain 1 to 64 element-child indexes.' }
+    $node = $Package.Xml[$address['part']].DocumentElement
+    foreach ($position in $path) {
+        $index = Get-ScopedIndex $position 'address.path'
+        $children = $node.SelectNodes('*')
+        if ($index -ge $children.Count) { throw 'address.path target is absent.' }
+        $node = $children[$index]
+    }
+    if ($node.NamespaceURI -cne $script:ScopedHp -or $node.LocalName -cne $Kind) { throw 'address.path resolves to the wrong node kind.' }
+    Assert-ScopedEditContext $node
+    return @{ Part=$address['part']; Node=$node }
+}
+
 function Get-ScopedSteps {
     param([AllowNull()][object]$Plan, $Package)
     $map = ConvertTo-ScopedMap $Plan 'plan'
@@ -767,6 +987,7 @@ function Get-ScopedSteps {
     $styles = @{}
     $allocation = @{}
     [long]$replacementCharacters = 0
+    [long]$replacementImageBytes = 0
     for ($i=0; $i -lt $map['operations'].Count; $i++) {
         $location = "plan.operations[$i]"
         $op = ConvertTo-ScopedMap $map['operations'][$i] $location
@@ -781,52 +1002,108 @@ function Get-ScopedSteps {
             'set-paragraph-format' { @('type','sectionIndex','paragraphIndex','paragraphStyle') }
             'merge-cells' { @('type','sectionIndex','tableIndex','row','column','rowSpan','columnSpan','contentOrder','expectedTexts') }
             'split-cell' { @('type','sectionIndex','tableIndex','row','column','expectedText') }
+            'set-table-cell' { @('type','sectionIndex','tableIndex','row','column','text','expectedText') }
+            'insert-table-row' { @('type','sectionIndex','tableIndex','index','heightMm') }
+            'insert-table-column' { @('type','sectionIndex','tableIndex','index','widthMm') }
+            'replace-image' { @('type','address','path','expectedSha256') }
             default { throw "Unsupported operation: $location.type=$type" }
         }
         $optional = if ($type -ceq 'set-page') { @('orientation','margins','paperWidthMm','paperHeightMm','page') } else { @() }
+        $addressed = $op.ContainsKey('address')
+        if ($addressed) {
+            if ($type -ceq 'set-page') { throw 'set-page requires an explicit sectionIndex.' }
+            $keys = @($keys | Where-Object { $_ -cnotin @('sectionIndex','paragraphIndex','runIndex','tableIndex','address') }) + @('address')
+            if ($type -ceq 'set-table-cell') { $keys = @($keys | Where-Object { $_ -cnotin @('row','column') }) }
+        }
         Assert-ScopedKeys $op $keys $location $optional
-        $index = Get-ScopedIndex $op['sectionIndex'] "$location.sectionIndex"
-        if ($index -ge $Package.Sections.Count) { throw "$location.sectionIndex is absent." }
-        $part = $Package.Sections[$index]
+        $addressTarget = $null
+        if ($addressed) {
+            $kind = if ($type -cin @('merge-cells','split-cell','insert-table-row','insert-table-column')) {'tbl'}
+                elseif ($type -ceq 'replace-image') {'pic'}
+                elseif ($type -ceq 'set-table-cell') {'tc'}
+                elseif ($type -cin @('set-paragraph-style','set-paragraph-format')) {'p'} else {'run'}
+            $resolved = Resolve-ScopedAddress $op['address'] $Package $kind
+            $part = $resolved.Part; $addressTarget = $resolved.Node
+        } else {
+            $index = Get-ScopedIndex $op['sectionIndex'] "$location.sectionIndex"
+            if ($index -ge $Package.Sections.Count) { throw "$location.sectionIndex is absent." }
+            $part = $Package.Sections[$index]
+        }
         $xml = $Package.Xml[$part]
         $ns = New-ScopedNamespaces $xml
         $paragraph = $null
         $attribute = ''
         $replacement = $null
         $resource = $null
-        if ($type -ceq 'set-page') {
+        $binary = $null
+        if ($type -ceq 'replace-image') {
+            $target = $addressTarget
+            $binary = New-ScopedImageBytes $target $op $Package
+            $replacementImageBytes += $binary.Bytes.Length
+            if ($replacementImageBytes -gt 256MB) { throw 'Cumulative replacement image bytes exceed 256 MiB.' }
+            $value = ''
+            if (-not $writes.Add('binary|'+$binary.Part)) { throw 'Duplicate image byte replacement.' }
+        } elseif ($type -ceq 'set-page') {
             $xpath = '/hs:sec/hp:p/hp:run/hp:secPr/hp:pagePr'
             $nodes = $xml.SelectNodes($xpath,$ns)
             if ($nodes.Count -ne 1) { throw "$location requires exactly one direct section pagePr." }
             $target = $nodes[0]
             $replacement = New-ScopedPageReplacement $target $op $location
             $value = ''
-        } elseif ($type -cin @('merge-cells','split-cell')) {
-            $tableIndex = Get-ScopedIndex $op['tableIndex'] "$location.tableIndex"
-            $tables = $xml.SelectNodes('/hs:sec/hp:tbl | /hs:sec/hp:p/hp:run/hp:tbl',$ns)
-            if ($tableIndex -ge $tables.Count) { throw "$location.tableIndex is absent (nested tables are not addressed)." }
-            $target = $tables[$tableIndex]
-            $xpath = '(/hs:sec/hp:tbl | /hs:sec/hp:p/hp:run/hp:tbl)[{0}]' -f ($tableIndex+1)
+        } elseif ($type -cin @('merge-cells','split-cell','insert-table-row','insert-table-column')) {
+            if ($addressed) { $target = $addressTarget }
+            else {
+                $tableIndex = Get-ScopedIndex $op['tableIndex'] "$location.tableIndex"
+                $tables = $xml.SelectNodes('/hs:sec/hp:tbl | /hs:sec/hp:p/hp:run/hp:tbl',$ns)
+                if ($tableIndex -ge $tables.Count) { throw "$location.tableIndex is absent (nested tables are not addressed)." }
+                $target = $tables[$tableIndex]
+            }
             if ($target.ParentNode.LocalName -ceq 'run') { $paragraph = $target.ParentNode.ParentNode }
             if ($type -ceq 'merge-cells') { $replacement = New-ScopedMergedTable $target $op $Package.Xml['Contents/header.xml'] }
-            else { $replacement = New-ScopedSplitTable $target $op $Package $allocation }
+            elseif ($type -ceq 'split-cell') { $replacement = New-ScopedSplitTable $target $op $Package $allocation }
+            else { $replacement = New-ScopedInsertedTable $target $op $Package $allocation }
             $value = ''
         } else {
-            $paragraphIndex = Get-ScopedIndex $op['paragraphIndex'] "$location.paragraphIndex"
-            $paragraphs = $xml.SelectNodes('/hs:sec/hp:p',$ns)
-            if ($paragraphIndex -ge $paragraphs.Count) { throw "$location.paragraphIndex is absent." }
-            $paragraph = $paragraphs[$paragraphIndex]
-            $xpath = '/hs:sec/hp:p[{0}]' -f ($paragraphIndex+1)
-            $target = $paragraph
-            if ($type -cnotin @('set-paragraph-style','set-paragraph-format')) {
-                $runIndex = Get-ScopedIndex $op['runIndex'] "$location.runIndex"
-                $runs = $paragraph.SelectNodes('hp:run',$ns)
-                if ($runIndex -ge $runs.Count) { throw "$location.runIndex is absent." }
-                $target = $runs[$runIndex]
-                $textElement = Get-ScopedTextElement $target $location
-                $xpath += '/hp:run[{0}]' -f ($runIndex+1)
+            if ($type -ceq 'set-table-cell') {
+                if ($addressed) { $cell = $addressTarget }
+                else {
+                    $tables = $xml.SelectNodes('/hs:sec/hp:tbl | /hs:sec/hp:p/hp:run/hp:tbl',$ns)
+                    $tableIndex = Get-ScopedIndex $op['tableIndex'] "$location.tableIndex"
+                    if ($tableIndex -ge $tables.Count) { throw "$location.tableIndex is absent." }
+                    $grid = Get-ScopedTableGrid $tables[$tableIndex]
+                    $row = Get-ScopedIndex $op['row'] "$location.row"
+                    $column = Get-ScopedIndex $op['column'] "$location.column"
+                    $record = $grid.Occupancy["$row,$column"]
+                    if ($null -eq $record -or $record.Row -ne $row -or $record.Column -ne $column) { throw 'Cell address must select a real anchor.' }
+                    $cell = $record.Node
+                }
+                Assert-ScopedEditContext $cell
+                $content = Get-ScopedCellContent $cell (Get-ScopedStyleIds $Package.Xml['Contents/header.xml'] 'charPr') (Get-ScopedStyleIds $Package.Xml['Contents/header.xml'] 'paraPr')
+                if ($content.Paragraphs.Count -ne 1 -or $content.Paragraphs[0].SelectNodes('hp:run',$ns).Count -ne 1) { throw 'set-table-cell requires a single text-only paragraph/run; use inspected run addresses for richer cells.' }
+                $paragraph = $content.Paragraphs[0]
+                $target = $paragraph.SelectSingleNode('hp:run',$ns)
+            } elseif ($addressed) {
+                $target = $addressTarget
+                $paragraph = if ($target.LocalName -ceq 'p') { $target } else { $target.ParentNode }
+                if ($paragraph.LocalName -cne 'p' -or $paragraph.NamespaceURI -cne $script:ScopedHp) { throw 'Run must belong to a paragraph.' }
+            } else {
+                $paragraphIndex = Get-ScopedIndex $op['paragraphIndex'] "$location.paragraphIndex"
+                $paragraphs = $xml.SelectNodes('/hs:sec/hp:p',$ns)
+                if ($paragraphIndex -ge $paragraphs.Count) { throw "$location.paragraphIndex is absent." }
+                $paragraph = $paragraphs[$paragraphIndex]
+                $target = $paragraph
+                if ($type -cnotin @('set-paragraph-style','set-paragraph-format')) {
+                    $runIndex = Get-ScopedIndex $op['runIndex'] "$location.runIndex"
+                    $runs = $paragraph.SelectNodes('hp:run',$ns)
+                    if ($runIndex -ge $runs.Count) { throw "$location.runIndex is absent." }
+                    $target = $runs[$runIndex]
+                }
             }
-            if ($type -ceq 'replace-run-text') {
+            Assert-ScopedEditContext $target
+            if ($type -cnotin @('set-paragraph-style','set-paragraph-format')) {
+                $textElement = Get-ScopedTextElement $target $location
+            }
+            if ($type -cin @('replace-run-text','set-table-cell')) {
                 foreach ($key in @('text','expectedText')) {
                     if ($op[$key] -isnot [string] -or $op[$key].Length -gt 1MB) { throw "$location.$key must be a string up to 1 MiB characters." }
                     $null = [Xml.XmlConvert]::VerifyXmlChars($op[$key])
@@ -835,7 +1112,6 @@ function Get-ScopedSteps {
                 $replacementCharacters += $op['text'].Length
                 if ($replacementCharacters -gt 16MB) { throw 'Cumulative replacement text exceeds 16 MiB characters.' }
                 $target = $textElement
-                $xpath += '/hp:t'
                 $value = $op['text']
             } else {
                 $kind = if ($type -cin @('set-run-style','set-run-format')) { 'charPr' } else { 'paraPr' }
@@ -851,8 +1127,16 @@ function Get-ScopedSteps {
                 }
             }
         }
+        $xpath = Get-ScopedNodeXPath $target
         if (-not $writes.Add("$part|$xpath|$attribute")) { throw "Duplicate target property: $location" }
-        $steps.Add([pscustomobject]@{Part=$part; XPath=$xpath; Target=$target; Paragraph=$paragraph; Attribute=$attribute; Value=$value; Type=$type; Replacement=$replacement; Resource=$resource})
+        foreach ($previous in $steps) {
+            if ($previous.Part -cne $part) { continue }
+            if (($null -ne $previous.Replacement -and ($xpath.StartsWith($previous.XPath+'/') -or $xpath -ceq $previous.XPath)) -or
+                ($null -ne $replacement -and ($previous.XPath.StartsWith($xpath+'/') -or $previous.XPath -ceq $xpath))) {
+                throw 'Overlapping subtree replacement and edit; use separate inspect/edit passes.'
+            }
+        }
+        $steps.Add([pscustomobject]@{Part=$part; XPath=$xpath; Target=$target; Paragraph=$paragraph; Attribute=$attribute; Value=$value; Type=$type; Replacement=$replacement; Resource=$resource; Binary=$binary})
     }
     return ,$steps
 }
@@ -886,6 +1170,16 @@ function Invoke-HwpxScopedEdit {
     Optional sourceSha256 is a 64-digit expected original hash (case-insensitive).
     sectionIndex follows the package spine; paragraphIndex selects direct hs:sec
     hp:p children; runIndex selects direct hp:run children. Indices are zero-based.
+    Inspector paragraph/index and table/index are inventory ordinals, NOT these
+    legacy edit indexes. Prefer the inspector's address objects:
+    {version:"1.0",sourceSha256:<hex>,part:<section ZIP entry>,path:[0,...],kind:"p"}.
+    path holds zero-based element-child indexes beneath the section root (1..64
+    levels); whitespace/comments are excluded. Every address requires the exact
+    original file hash and binds to a part, independently of spine/inventory order.
+    Address and legacy selectors cannot be mixed. Paragraph operations take a p
+    address; run operations take paragraphs[].charShapeRuns[].address (kind run).
+    Plain runs inside cells, nested tables, headers and footers are supported;
+    unknown containers and protected cell/table ancestors are blocked.
     replace-run-text requires exact expectedText. set-run-style and
     set-paragraph-style reference existing header IDs. set-run-format/textStyle
     and set-paragraph-format/paragraphStyle clone the original resource to a new,
@@ -921,14 +1215,39 @@ function Invoke-HwpxScopedEdit {
     zero cell spacing, and known, unprotected, unlinked text-only target cells
     are supported. Unknown target cell metadata blocks; outside cells survive.
     Merge inputs must be unmerged. One structural operation per table per plan.
+    merge-cells/split-cell alternatively take a tbl address instead of the section
+    and table indexes, with the same row/column and expected-text arguments.
+
+    set-table-cell takes a tc address (or sectionIndex/tableIndex/row/column),
+    expectedText and text. It changes only the text in a single plain paragraph
+    and single run, preserving the cell geometry and style. For richer cells use
+    individual inspected run/paragraph addresses; no content is flattened.
+
+    insert-table-row and insert-table-column take a tbl address (or sectionIndex/
+    tableIndex), index (0..count, count appends) and heightMm or widthMm respectively.
+    Each inserts one blank track into an unmerged rectangular body table with
+    absolute size equal to its cell grid. New cells inherit margins/border and
+    first paragraph/run style from the preceding track (first track at index 0),
+    have unique paragraph IDs and header=0. Stored extent grows by the explicit
+    dimension; this does not guarantee page fit. Nested/header/footer tables,
+    unknown geometry/cell metadata, controls, links and protected cells block.
+    A table replacement cannot overlap another edit within its subtree.
+
+    replace-image requires a pic address, local path and expectedSha256 of the
+    original BinData payload. The unshared manifest resource must match the new
+    PNG/JPEG/GIF/BMP signature/media-type. Only bytes change: picture geometry,
+    crops, rotation, IDs and section XML are preserved. No image decoding or pixel
+    validation; at most 64 MiB/image and 256 MiB cumulative replacement bytes.
 
     All addresses and expected text bind to the original. Duplicate writes to
     one property (including format versus ID-reference writes) are rejected.
     One set-page operation per section per plan. No unsupported key is ignored.
     All operations, clones and table occupancy are preflighted before any output.
     Page changes
-    invalidate all paragraph line caches in that section; other edits clear only
-    the target paragraph cache. Preview/ entries are removed on success.
+    invalidate all paragraph line caches in that section; other XML edits clear
+    target and ancestor paragraph caches. Insertions also clear table paragraph
+    caches; image-only replacement preserves line caches. Preview/ entries are
+    removed on success.
     This is structural verification, never native rendering/page-cache validation.
     Output must be a nonexistent .hwpx in an existing local directory.
     #>
@@ -970,7 +1289,13 @@ function Invoke-HwpxScopedEdit {
         $steps = Get-ScopedSteps $Plan $package
         # Preflight above uses only the original tree; no filesystem writes yet.
         $changed = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        $binaryPayloads = @{}
         foreach ($step in $steps) {
+            if ($null -ne $step.Binary) {
+                $binaryPayloads[$step.Binary.Part] = $step.Binary.Bytes
+                $null = $changed.Add($step.Binary.Part)
+                continue
+            }
             if ($null -ne $step.Resource) {
                 $collection = $step.Resource.Collection
                 $null = $collection.AppendChild($step.Resource.Node)
@@ -978,7 +1303,10 @@ function Invoke-HwpxScopedEdit {
                 $collection.SetAttribute('itemCnt',[string]$nodes.Count)
                 $null = $changed.Add('Contents/header.xml')
             }
-            if ($null -ne $step.Replacement) { $null = $step.Target.ParentNode.ReplaceChild($step.Replacement,$step.Target) }
+            if ($null -ne $step.Replacement) {
+                $null = $step.Target.ParentNode.ReplaceChild($step.Replacement,$step.Target)
+                $step.Target = $step.Replacement
+            }
             elseif ($step.Attribute -ceq '') { $step.Target.InnerText = $step.Value }
             else { $step.Target.SetAttribute($step.Attribute,$step.Value) }
             $null = $changed.Add($step.Part)
@@ -986,19 +1314,22 @@ function Invoke-HwpxScopedEdit {
         # Invalidate caches after all prepared subtrees are installed: a later
         # table replacement must not restore caches cleared by an earlier page edit.
         foreach ($step in $steps) {
+            # Raster bytes cannot change saved placement or paragraph geometry.
+            if ($null -ne $step.Binary) { continue }
             $xml = $package.Xml[$step.Part]
             $ns = New-ScopedNamespaces $xml
             $caches = if ($step.Type -ceq 'set-page') { @($xml.SelectNodes('//hp:p/hp:linesegarray',$ns)) }
-                elseif ($null -ne $step.Paragraph) { @($step.Paragraph.SelectNodes('hp:linesegarray',$ns)) }
-                else { @() }
+                else { @($step.Target.SelectNodes('ancestor-or-self::hp:p/hp:linesegarray',$ns)) }
             foreach ($cache in $caches) { $null = $cache.ParentNode.RemoveChild($cache) }
         }
+        foreach ($step in $steps) { $step.XPath = Get-ScopedNodeXPath $step.Target }
         $payloads = [Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
         $removed = @($package.Order | Where-Object { $_ -match '(?i)^Preview/' })
         [long]$payloadBytes = 0
         foreach ($name in $package.Order) {
             if ($removed -ccontains $name) { continue }
-            if ($changed.Contains($name)) {
+            if ($binaryPayloads.ContainsKey($name)) { $bytes = $binaryPayloads[$name] }
+            elseif ($changed.Contains($name)) {
                 $bytes = ConvertTo-ScopedXmlBytes $package.Xml[$name]
                 if ($bytes.Length -gt 16MB) { throw "Edited XML part exceeds 16 MiB: $name" }
             }
@@ -1042,6 +1373,7 @@ function Invoke-HwpxScopedEdit {
                 }
             }
             foreach ($step in $steps) {
+                if ($null -ne $step.Binary) { continue } # All payload bytes were compared above.
                 $xml = $verified.Xml[$step.Part]
                 $node = $xml.SelectSingleNode($step.XPath,(New-ScopedNamespaces $xml))
                 if ($null -eq $node) { throw "Reopened output target absent: $($step.Part)" }

@@ -10,6 +10,12 @@
     "backends"
   ],
   "properties": {
+    "skillVersion": {"type":"string", "pattern":"^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "finalConversion": {
+      "type":"object", "additionalProperties":false,
+      "required":["available","reason"],
+      "properties":{"available":{"type":"boolean"},"reason":{"type":"string"}}
+    },
     "authoring": {
       "type": "object",
       "additionalProperties": false,
@@ -24,6 +30,9 @@
         "generateCommand": {"const":"generate -NewDocument"},
         "validateCommand": {"const":"validate-generate-plan"},
         "scopedEditCommand": {"const":"edit-hwpx"},
+        "previewCommand": {"const":"preview"},
+        "previewFidelity": {"const":"approximate"},
+        "editAddressVersion": {"const":"1.0"},
         "features": {"type":"array", "items":{"$ref":"#/definitions/authoringFeature"}},
         "conditions": {"type":"object", "additionalProperties":{"type":"string"}}
       }
@@ -177,7 +186,7 @@
           "const": "none"
         },
         "reason": {
-          "const": "Built-in read-only HWP 5.x inspection uses the Windows OLE compound-file API and does not require Hancom."
+          "const": "Built-in read-only HWP 5.x inspection uses a managed compound-file reader and does not require Hancom."
         }
       }
     },

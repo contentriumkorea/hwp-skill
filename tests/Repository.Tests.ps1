@@ -84,7 +84,7 @@
 
         $content = Get-Content -LiteralPath $cliPath -Raw -Encoding UTF8
 
-        $content | Should Match '\[ValidateSet\(''capabilities'',''preflight'',''inspect'',''validate-plan'',''validate-generate-plan'',''edit-hwpx'',''apply'',''generate'',''batch'',''compare'',''verify'',''export''\)\]'
+        $content | Should Match '\[ValidateSet\(''capabilities'',''preflight'',''inspect'',''validate-plan'',''validate-generate-plan'',''edit-hwpx'',''preview'',''apply'',''generate'',''batch'',''compare'',''verify'',''export''\)\]'
         $content | Should Match '\[ValidateSet\(''silent'',''isolated-native'',''interactive''\)\]\s*\[string\]\$ExecutionMode\s*=\s*''silent'''
         $content | Should Match '\[switch\]\$AllowInteractiveWindow'
         $content | Should Match "'capabilities'\s*\{"
@@ -144,7 +144,7 @@
 
     It 'README가 HWP 휴대형 읽기와 네이티브 편집의 경계를 정확히 설명한다' {
         $readme = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../README.md') -Raw -Encoding UTF8
-        $readme | Should Match 'hwp-portable.*Windows 기본 OLE'
+        $readme | Should Match 'hwp-portable.*관리 코드'
         $readme | Should Match 'HWP 5\.x.*한컴.*필요하지'
         $readme | Should Match 'HWP/HWT 기존 양식 편집.*현재 차단'
         $readme | Should Match '한글 문서 파일 형식 5\.0 공개 문서'

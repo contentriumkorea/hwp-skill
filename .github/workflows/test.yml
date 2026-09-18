@@ -1,0 +1,35 @@
+name: Skill tests
+on:
+  push:
+    branches: [main, feat/reliability-portability-upgrade]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the repository's test runner
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module Pester -RequiredVersion 3.4.0 -Force -Scope CurrentUser -SkipPublisherCheck
+          Import-Module Pester -RequiredVersion 3.4.0 -Force
+      - name: Run tests without Hancom
+        run: |
+          Import-Module Pester -RequiredVersion 3.4.0 -Force
+          ./tests/run-tests.ps1 -Suite $(if ($IsWindows) { 'Static' } else { 'Portable' })
+      - name: Build the standalone skill package
+        run: ./package.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hwp-skill-${{ matrix.os }}
+          path: dist/hwp-skill.zip

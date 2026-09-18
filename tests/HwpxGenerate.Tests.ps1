@@ -179,7 +179,7 @@ Describe 'HWPX 직접 작성 및 최종 변환 경계' {
         ($validation.Errors -join ' ') | Should Match 'textColor'
     }
 
-    It '최종 HWP 변환은 별도 작업자 계약으로만 결과를 승격한다' {
+    It '최종 HWP 변환은 OLE 시그니처만 있는 손상 결과를 거부한다' {
         $input = Join-Path $TestDrive 'input.hwpx'
         $output = Join-Path $TestDrive 'output.hwp'
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../skills/hwp-skill/templates/default.hwpx') -Destination $input
@@ -189,11 +189,9 @@ Describe 'HWPX 직접 작성 및 최종 변환 경계' {
             [pscustomobject]@{ Status = 'PASS'; ContentWrittenByHancom = $false; WorkerProcess = $true }
         }
 
-        $result = Invoke-HwpFinalHwpxToHwp -InputPath $input -OutputPath $output -WorkerLauncher $worker
-
-        $result.Status | Should Be 'PASS'
-        $result.ContentWrittenByHancom | Should Be $false
-        Test-Path -LiteralPath $output | Should Be $true
-        (Get-HwpFileKind -LiteralPath $output).DetectedKind | Should Be 'HWP-BINARY'
+        $failure = ''
+        try { HwpConvert\Invoke-HwpFinalHwpxToHwp -InputPath $input -OutputPath $output -WorkerLauncher $worker }
+        catch { $failure = $_.Exception.Message }
+        $failure | Should Match 'readable HWP'
     }
 }

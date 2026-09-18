@@ -194,25 +194,43 @@ XML 요소·속성과 변경하지 않은 파트의 비압축 바이트를 보�
 
 쪽 방향처럼 구조를 바꾸는 작업은 대상·변경값에 대한 사용자 요청을 확인하고
 `-ApproveAdvanced`를 함께 지정한다. 지원하지 않는 대상은 GUI로 우회하지 않는다.
-단순 텍스트 변경 예:
+검사 결과의 `paragraphs[].charShapeRuns[].address`를 복사한 텍스트 변경 예:
 
 ```json
-{"version":"2.0","operations":[{"type":"replace-run-text","sectionIndex":0,"paragraphIndex":1,"runIndex":0,"expectedText":"기존 문구","text":"새 문구"}]}
+{"version":"2.0","operations":[{"type":"replace-run-text","address":{"version":"1.0","sourceSha256":"<검사한 원본의 SHA-256>","part":"Contents/section0.xml","path":[1,0],"kind":"run"},"expectedText":"기존 문구","text":"새 문구"}]}
 ```
 
 계획 최상위 `sourceSha256`에 검사한 원본 해시를 넣으면 오래된 원본을 잘못 수정하지 않는다.
 모든 주소와 `expectedText/expectedTexts`는 수정 전 원본 기준이다.
 
+주소는 해당 파일의 해시, XML 파트, 요소 자식 기준 경로와 종류를 함께 담는다.
+`path`나 문단 번호를 추정하지 말고 검사 결과의 `address`를 그대로 사용한다.
+일반 본문뿐 아니라 표 셀과 머리말·꼬리말 내부 문단/run에도 적용한다. 출력 파일을 다시
+수정할 때는 재검사하여 새 해시가 들어간 주소를 받아야 한다. 주소와 옛 인덱스 선택자는
+한 작업에 섞지 않는다. 옛 `paragraphIndex`는 구역 바로 아래 문단 순서이며 검사 결과의
+전체 `paragraphs[].index`와 다르므로 새 계획에서는 사용하지 않는다.
+
 | 작업 | 지정 속성 |
 |---|---|
 | `set-page` | `sectionIndex`, `orientation?`, 쌍인 `paperWidthMm/paperHeightMm?`, `margins?` |
-| `replace-run-text` | `sectionIndex`, `paragraphIndex`, `runIndex`, `expectedText`, `text` |
+| `replace-run-text` | run의 `address`, `expectedText`, `text` |
 | `set-run-style` | 문단/run 주소와 검사한 기존 `charPrIDRef` |
 | `set-paragraph-style` | 문단 주소와 검사한 기존 `paraPrIDRef` |
 | `set-run-format` | 문단/run 주소와 `textStyle` |
 | `set-paragraph-format` | 문단 주소와 `paragraphStyle` |
 | `merge-cells` | `sectionIndex/tableIndex/row/column`, `rowSpan/columnSpan`, `contentOrder:"row-major"`, `expectedTexts` |
 | `split-cell` | `sectionIndex/tableIndex/row/column`, 병합 기준 셀의 `expectedText` |
+| `set-table-cell` | 셀(`tc`)의 `address`, `expectedText`, `text` |
+| `replace-image` | 그림(`pic`)의 `address`, 새 로컬 이미지 `path`, 원래 이미지 바이트의 `expectedSha256` |
+| `insert-table-row` | 표(`tbl`)의 `address`, 0부터 시작하는 삽입 `index`, `heightMm` |
+| `insert-table-column` | 표(`tbl`)의 `address`, 0부터 시작하는 삽입 `index`, `widthMm` |
+
+표 병합/해제도 `sectionIndex/tableIndex` 대신 표의 `address`를 받을 수 있다.
+`set-table-cell`은 일반 문단/run 하나인 셀만 전체 교체한다. 서식이 섞인 셀은 내부 run
+주소로 부분 수정한다. 행·열 추가는 병합되지 않은 단순 본문 표만 지원하며 지정 위치에
+빈 셀을 삽입한다. 표가 넓어지므로 요청 치수와 본문 폭을 확인하고 `-ApproveAdvanced`로 실행한다.
+이미지는 공유되지 않은 PNG/JPEG/GIF/BMP 리소스만 동일 형식으로 교체하며 원래 배치·크기·
+자르기 XML을 보존한다. 이미지 디코딩과 실제 조판 결과는 별도 미리보기로 확인한다.
 
 format 작업은 기존 공유 서식을 새 ID로 복제해 대상만 바꾼다. 기존 서식의 다른 사용자는
 변하지 않는다. `textStyle`은 크기·굵게·기울임·색·밑줄을, `paragraphStyle`은 정렬·비율 줄 간격·
@@ -227,7 +245,21 @@ format 작업은 기존 공유 서식을 새 ID로 복제해 대상만 바꾼다
 한 계획에서 같은 표의 구조 변경은 한 번만 허용한다. 최대 4,096칸의 완전한 표,
 셀 간격 0, 알려진 텍스트 전용 셀만 처리한다. 중첩 표·보호 셀·모호한 기하 정보는 차단한다.
 텍스트/글자 서식 대상이 여러 텍스트 요소나 컨트롤을 가로지르면 차단한다.
-검사 없이 문단/run 번호를 추정하지 않는다.
+검사 없이 문단/run 번호나 주소를 추정하지 않는다.
+
+## 근사 미리보기와 최종 HWP 변환
+
+[preview](preview.md)는 로컬 HTML과 선택적인 headless PDF를 생성한다. 표·이미지·문단
+배치를 빠르게 점검하는 용도이며 한컴 실제 조판 검증이 아니다.
+
+기본 배포에는 격리 HWP 변환기가 없다. HWP를 요청하면 검증한 HWPX를
+`WorkingHwpxPath`에 보존하고 `BLOCKED`로 끝낸다. 라이브러리의 `FinalConverter`/
+`WorkerLauncher`는 관리자가 격리 환경을 명시적으로 통합하는 경계이며 JSON 계획이나
+기본 CLI에서 임의 명령을 실행하도록 노출하지 않는다. 통합 시 실제 HWP를 재판독하여
+본문, 표의 셀/병합, 포함 이미지 바이트를 비교한다. 현재는 그림별 바이너리 참조 대응을
+검증하지 못하므로 이미지가 있는 HWP의 변환 승격은 차단한다. HWPX의 이미지 작성·교체는
+그대로 지원한다. 이 검사도 실제 글꼴·페이지 조판의 동일성을 보장하지 않는다.
+현재 사용자 세션의 COM 창을 숨기는 방법으로 대체하지 않는다.
 
 ## 검증 수준
 

@@ -1,6 +1,6 @@
 ﻿[CmdletBinding()]
 param(
-    [ValidateSet('Static','Native','All')]
+    [ValidateSet('Static','Portable','Native','All')]
     [string]$Suite = 'Static',
     [switch]$AllowInteractiveNative
 )
@@ -8,6 +8,15 @@ param(
 $allTests = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.Tests.ps1' -File)
 $nativeTests = @($allTests | Where-Object Name -Like '*.Integration.Tests.ps1')
 $staticTests = @($allTests | Where-Object Name -NotLike '*.Integration.Tests.ps1')
+$portableNames = @(
+    'PortableCompoundFile.Tests.ps1', 'TableStructure.Tests.ps1',
+    'Inspect.Tests.ps1', 'AuthoringPlan.Tests.ps1', 'AuthoringPlanSafety.Tests.ps1',
+    'HwpxGenerate.Tests.ps1', 'HwpxPortraitSpacingRegression.Tests.ps1',
+    'HwpxEditableSpacing.Tests.ps1', 'HwpxAddressing.Tests.ps1',
+    'HwpxScopedEdit.Tests.ps1', 'HwpxPreview.Tests.ps1', 'HwpxSpine.Tests.ps1',
+    'HwpxPromotionGate.Tests.ps1', 'HwpxAuthoringVerify.Tests.ps1',
+    'FinalConversionSafety.Tests.ps1', 'FinalImageCorrespondence.Tests.ps1', 'UpgradeCli.Tests.ps1', 'Distribution.Tests.ps1'
+)
 
 if ($Suite -in @('Native', 'All') -and -not $AllowInteractiveNative) {
     Write-Error '네이티브 시험은 -AllowInteractiveNative의 명시적 승인이 필요합니다.'
@@ -16,6 +25,7 @@ if ($Suite -in @('Native', 'All') -and -not $AllowInteractiveNative) {
 
 $selected = switch ($Suite) {
     'Static' { $staticTests }
+    'Portable' { @($allTests | Where-Object { $_.Name -in $portableNames -or $_.Name -like 'Hwpx*.Tests.ps1' }) }
     'Native' { $nativeTests }
     default { $allTests }
 }

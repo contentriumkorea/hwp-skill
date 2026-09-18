@@ -94,6 +94,14 @@ function Invoke-SilentCliJson {
 function Assert-NoHwpActivity {
     param([Parameter(Mandatory)][object]$Observation)
 
+    if (@($Observation.NewVisibleWindowProcessIds).Count -gt 0) {
+        $processes = @($Observation.NewVisibleWindowProcessIds | ForEach-Object {
+            $idValue = $_
+            $process = Get-Process -Id $idValue -ErrorAction SilentlyContinue
+            if ($null -ne $process) { '{0}:{1}' -f $idValue,$process.ProcessName } else { '{0}:exited' -f $idValue }
+        })
+        Write-Warning ('New visible windows during desktop-wide observation; attribution requires review: ' + ($processes -join ', '))
+    }
     @($Observation.NewProcessIds).Count | Should Be 0
     @($Observation.NewHwpProcessIds).Count | Should Be 0
     @($Observation.NewWinwordProcessIds).Count | Should Be 0
@@ -197,7 +205,7 @@ Describe 'test runner safety gate' {
     It '기본 실행 계약은 Static 기본값과 Native 분리를 선언한다' {
         $content = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'run-tests.ps1') -Raw -Encoding UTF8
 
-        $content | Should Match '\[ValidateSet\(''Static'',''Native'',''All''\)\]'
+        $content | Should Match '\[ValidateSet\(''Static'',''Portable'',''Native'',''All''\)\]'
         $content | Should Match '\[string\]\$Suite = ''Static'''
         $content | Should Match '\[switch\]\$AllowInteractiveNative'
         $content | Should Match '''Static''\s*\{\s*\$staticTests\s*\}'

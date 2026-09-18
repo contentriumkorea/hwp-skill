@@ -1,8 +1,9 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "hwp-skill",
+  "version": "2.1.0",
   "displayName": "HWP Skill",
-  "description": "Windows에서 HWP, HWT, HWPX 문서를 안전하게 읽고 작성하는 스킬",
+  "description": "Windows, macOS, Linux에서 한컴 없이 HWP를 읽고 HWPX를 작성·편집하는 스킬",
   "author": {
     "name": "contentrium",
     "url": "https://github.com/contentriumkorea"

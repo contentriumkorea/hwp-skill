@@ -1,5 +1,5 @@
 Describe 'Public authoring validation and scoped editing commands' {
-    It 'loads scoped editing in a fresh Windows PowerShell 5.1 process' {
+    It 'loads scoped editing in a fresh Windows PowerShell 5.1 process' -Skip:($null -eq (Get-Command powershell -ErrorAction SilentlyContinue)) {
         $cli=Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/Invoke-HwpSkill.ps1'
         $source=Join-Path $PSScriptRoot '../skills/hwp-skill/templates/default.hwpx'
         $plan=Join-Path $TestDrive 'fresh-ps51.json'

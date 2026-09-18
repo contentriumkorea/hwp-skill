@@ -678,12 +678,37 @@ function Get-HwpxRunText {
     Get-HwpxInlineText -Root $Run -Paragraph $Paragraph
 }
 
+function New-HwpxNodeAddress {
+    param([Xml.XmlNode]$Node, [string]$Part, [string]$SourceSha256)
+    if ([string]::IsNullOrEmpty($SourceSha256)) { return $null }
+    # Zero-based element-child positions, never global paragraph ordinals or IDs.
+    # IDs need not be unique in real documents. Bind the path to these exact bytes.
+    $path = [Collections.Generic.List[int]]::new()
+    $current = $Node
+    while ($current.ParentNode -is [Xml.XmlElement]) {
+        $index = 0
+        $sibling = $current.PreviousSibling
+        while ($null -ne $sibling) {
+            if ($sibling.NodeType -eq [Xml.XmlNodeType]::Element) { $index++ }
+            $sibling = $sibling.PreviousSibling
+        }
+        $path.Insert(0,$index)
+        $current = $current.ParentNode
+    }
+    if ($current.LocalName -cne 'sec' -or $current.NamespaceURI -cne 'http://www.hancom.co.kr/hwpml/2011/section') { return $null }
+    [pscustomobject][ordered]@{
+        version = '1.0'; sourceSha256 = $SourceSha256; part = $Part
+        path = @($path); kind = $Node.LocalName
+    }
+}
+
 function Get-HwpxSectionLayoutData {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][Xml.XmlDocument]$Document,
         [Parameter(Mandatory)][string]$SectionName,
-        [Parameter(Mandatory)][int]$ParagraphStartIndex
+        [Parameter(Mandatory)][int]$ParagraphStartIndex,
+        [string]$SourceSha256 = ''
     )
 
     $paragraphModels = [Collections.Generic.List[object]]::new()
@@ -693,6 +718,9 @@ function Get-HwpxSectionLayoutData {
         $runTextPosition = 0
         foreach ($run in @($paragraph.SelectNodes("./*[local-name()='run']"))) {
             $charRuns.Add([pscustomobject][ordered]@{
+                index = $charRuns.Count
+                text = Get-HwpxRunText -Run $run -Paragraph $paragraph
+                address = New-HwpxNodeAddress $run $SectionName $SourceSha256
                 start = $runTextPosition
                 charShapeId = Get-HwpxNodeIntegerAttribute -Node $run -LocalName 'charPrIDRef'
             })
@@ -729,6 +757,7 @@ function Get-HwpxSectionLayoutData {
         }
         $paragraphModels.Add([pscustomobject][ordered]@{
             index = $ParagraphStartIndex + $paragraphModels.Count
+            address = New-HwpxNodeAddress $paragraph $SectionName $SourceSha256
             section = $SectionName
             recordLevel = $null
             text = $text
@@ -825,7 +854,8 @@ function Get-HwpxTableStructures {
         [Parameter(Mandatory)][string]$SectionName,
         [Parameter(Mandatory)][AllowEmptyCollection()][Collections.Generic.List[object]]$Tables,
         [Parameter(Mandatory)][AllowEmptyCollection()][Collections.Generic.List[string]]$StructureWarnings,
-        [ValidateRange(1, 100000000)][long]$MaximumGridSlots = 5000000
+        [ValidateRange(1, 100000000)][long]$MaximumGridSlots = 5000000,
+        [string]$SourceSha256 = ''
     )
 
     foreach ($tableNode in @($Document.SelectNodes("//*[local-name()='tbl']"))) {
@@ -872,6 +902,7 @@ function Get-HwpxTableStructures {
                 $paragraphArray = @($paragraphs)
                 $cells.Add([pscustomobject][ordered]@{
                     index = $cells.Count
+                    address = New-HwpxNodeAddress $cellNode $SectionName $SourceSha256
                     id = ('table-{0}-cell-{1}' -f $tableIndex, $cells.Count)
                     name = Get-HwpxNodeAttribute -Node $cellNode -LocalName 'name'
                     rowAddress = $rowAddress
@@ -949,6 +980,7 @@ function Get-HwpxTableStructures {
 
         $Tables.Add([pscustomobject][ordered]@{
             index = $tableIndex
+            address = New-HwpxNodeAddress $tableNode $SectionName $SourceSha256
             section = $SectionName
             source = 'hwpx-package'
             recordLevel = $null
@@ -1003,7 +1035,8 @@ function Get-HwpxSectionData {
 
         [Parameter(Mandatory)]
         [AllowEmptyCollection()]
-        [Collections.Generic.List[string]]$StructureWarnings
+        [Collections.Generic.List[string]]$StructureWarnings,
+        [string]$SourceSha256 = ''
     )
 
     $paragraphs = [Collections.Generic.List[string]]::new()
@@ -1033,6 +1066,7 @@ function Get-HwpxSectionData {
     ))) {
         $controls.Add([pscustomobject]@{
             index = $Controls.Count
+            address = New-HwpxNodeAddress $node $SectionName $SourceSha256
             ctrlId = [string]$controlMap[$node.LocalName]
             userDesc = $node.LocalName
             instanceId = (Get-HwpxNodeAttribute -Node $node -LocalName 'id')
@@ -1092,9 +1126,45 @@ function Get-HwpxSectionData {
     }
 
     Get-HwpxTableStructures -Document $Document -SectionName $SectionName -Tables $Tables `
-        -StructureWarnings $StructureWarnings
+        -StructureWarnings $StructureWarnings -SourceSha256 $SourceSha256
 
     @($paragraphs)
+}
+
+function Get-HwpxSpineSectionEntries {
+    param($EntryMap,[long]$MaximumCharacters)
+    $manifest = Read-HwpxXmlEntry -Entry $EntryMap['Contents/content.hpf'] -MaximumCharacters $MaximumCharacters
+    $ns = [Xml.XmlNamespaceManager]::new($manifest.NameTable)
+    $ns.AddNamespace('opf','http://www.idpf.org/2007/opf/')
+    if ($null -eq $manifest.SelectSingleNode('/opf:package/opf:spine',$ns)) {
+        throw [IO.InvalidDataException]::new('HWPX manifest spine is missing or invalid.')
+    }
+    $items = [Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
+    foreach ($item in $manifest.SelectNodes('/opf:package/opf:manifest/opf:item',$ns)) {
+        $id=$item.GetAttribute('id'); $href=$item.GetAttribute('href')
+        if ([string]::IsNullOrWhiteSpace($id) -or $items.ContainsKey($id)) {
+            throw [IO.InvalidDataException]::new('HWPX manifest IDs are missing or duplicated.')
+        }
+        $items.Add($id,$href)
+    }
+    $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $sections = [Collections.Generic.List[object]]::new()
+    foreach ($reference in $manifest.SelectNodes('/opf:package/opf:spine/opf:itemref',$ns)) {
+        $id=$reference.GetAttribute('idref')
+        if (-not $items.ContainsKey($id)) { throw [IO.InvalidDataException]::new('HWPX spine references a missing manifest item.') }
+        $path=$items[$id]
+        if (-not (Test-HwpxEntryPath $path) -or -not $EntryMap.ContainsKey($path) -or -not $seen.Add($path)) {
+            throw [IO.InvalidDataException]::new('HWPX spine path is missing, unsafe or duplicated.')
+        }
+        $entry=$EntryMap[$path]
+        $xml=Read-HwpxXmlEntry -Entry $entry -MaximumCharacters $MaximumCharacters
+        if ($xml.DocumentElement.LocalName -ceq 'sec' -and
+            $xml.DocumentElement.NamespaceURI -ceq 'http://www.hancom.co.kr/hwpml/2011/section') {
+            $sections.Add($entry)
+        }
+    }
+    if ($sections.Count -eq 0) { throw [IO.InvalidDataException]::new('HWPX spine contains no section documents.') }
+    return $sections.ToArray()
 }
 
 function Get-HwpxPackageInspection {
@@ -1117,8 +1187,12 @@ function Get-HwpxPackageInspection {
     Add-Type -AssemblyName System.IO.Compression
     $resolvedPath = Resolve-HwpLiteralPath -LiteralPath $LiteralPath
     $warnings = [Collections.Generic.List[string]]::new()
-    $stream = [IO.File]::Open($resolvedPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+    $stream = [IO.File]::Open($resolvedPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
     try {
+        $hasher = [Security.Cryptography.SHA256]::Create()
+        try { $sourceHash = [BitConverter]::ToString($hasher.ComputeHash($stream)).Replace('-','').ToLowerInvariant() }
+        finally { $hasher.Dispose() }
+        $stream.Position = 0
         $archive = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Read, $true)
         try {
             if ($archive.Entries.Count -gt $MaximumEntries) {
@@ -1182,13 +1256,19 @@ function Get-HwpxPackageInspection {
                 $warnings.Add('HWPX mimetype 항목이 ZIP의 첫 번째 항목이 아닙니다.')
             }
 
-            $sectionEntries = @(
+            $sectionEntries = if ($entryMap.ContainsKey('Contents/content.hpf')) {
+                @(Get-HwpxSpineSectionEntries -EntryMap $entryMap -MaximumCharacters $MaximumXmlCharacters)
+            } else {
+                $warnings.Add('HWPX content.hpf가 없어 구역 파일명 순서로 제한적으로 읽었습니다. 문서의 실제 읽기 순서는 검증되지 않았습니다.')
+                @(
                 $archive.Entries |
                     Where-Object { $_.FullName -match '^Contents/(?:section|sec)(?<number>\d+)\.xml$' } |
                     Sort-Object @{ Expression = {
                         if ($_.FullName -match '(?<number>\d+)\.xml$') { [int]$Matches.number } else { [int]::MaxValue }
                     } }, FullName
-            )
+                )
+            }
+            $sectionEntries = @($sectionEntries)
             if ($sectionEntries.Count -eq 0) {
                 return New-HwpResult -Status BLOCKED -Command inspect-hwpx-package -Errors @(
                     'HWPX ZIP에 Contents/sectionN.xml 본문이 없습니다.'
@@ -1214,11 +1294,11 @@ function Get-HwpxPackageInspection {
             foreach ($sectionEntry in $sectionEntries) {
                 $document = Read-HwpxXmlEntry -Entry $sectionEntry -MaximumCharacters $MaximumXmlCharacters
                 foreach ($paragraph in @(Get-HwpxSectionData -Document $document -SectionName $sectionEntry.FullName `
-                    -Controls $controls -FieldMap $fields -Tables $tables -StructureWarnings $structureWarnings)) {
+                    -Controls $controls -FieldMap $fields -Tables $tables -StructureWarnings $structureWarnings -SourceSha256 $sourceHash)) {
                     $paragraphs.Add([string]$paragraph)
                 }
                 $layoutData = Get-HwpxSectionLayoutData -Document $document -SectionName $sectionEntry.FullName `
-                    -ParagraphStartIndex $layoutParagraphs.Count
+                    -ParagraphStartIndex $layoutParagraphs.Count -SourceSha256 $sourceHash
                 foreach ($layoutParagraph in @($layoutData.Paragraphs)) { $layoutParagraphs.Add($layoutParagraph) }
                 $sections.Add([pscustomobject][ordered]@{
                     index = $sections.Count
@@ -1237,6 +1317,7 @@ function Get-HwpxPackageInspection {
             foreach ($structureWarning in $structureWarnings) { $warnings.Add($structureWarning) }
             New-HwpResult -Status PASS_WITH_WARNINGS -Command inspect-hwpx-package -Data ([pscustomobject]@{
                 Path = $resolvedPath
+                SourceSha256 = $sourceHash
                 Text = $paragraphs -join "`r`n"
                 Fields = [pscustomobject]$fields
                 Controls = @($controls)
@@ -1326,7 +1407,7 @@ function Get-HwpInspection {
                 -DetectedKind $detectedKind -Warnings @($package.Warnings) -Errors @($package.Errors)
         }
 
-        return New-HwpInspectionRecord -Status $package.Status -Path $resolvedPath -Sha256 $sha256 `
+        return New-HwpInspectionRecord -Status $package.Status -Path $resolvedPath -Sha256 $package.Data.SourceSha256 `
             -DetectedKind $detectedKind -Text ([string]$package.Data.Text) -Fields $package.Data.Fields `
             -Controls @($package.Data.Controls) -Tables @($package.Data.Tables) `
             -Resources $package.Data.Resources -Paragraphs @($package.Data.Paragraphs) `

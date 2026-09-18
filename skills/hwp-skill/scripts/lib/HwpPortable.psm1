@@ -16,32 +16,7 @@ function Expand-HwpPortableDeflate {
         [ValidateRange(1, 1073741824)][long]$MaximumBytes = 268435456
     )
 
-    $input = [IO.MemoryStream]::new($Bytes, $false)
-    $output = [IO.MemoryStream]::new()
-    try {
-        $deflate = [IO.Compression.DeflateStream]::new(
-            $input,
-            [IO.Compression.CompressionMode]::Decompress,
-            $true
-        )
-        try {
-            $buffer = [byte[]]::new(81920)
-            while (($read = $deflate.Read($buffer, 0, $buffer.Length)) -gt 0) {
-                $output.Write($buffer, 0, $read)
-                if ($output.Length -gt $MaximumBytes) {
-                    throw [IO.InvalidDataException]::new('압축 해제된 HWP 스트림이 안전 한도를 초과했습니다.')
-                }
-            }
-        }
-        finally {
-            $deflate.Dispose()
-        }
-        return ,$output.ToArray()
-    }
-    finally {
-        $output.Dispose()
-        $input.Dispose()
-    }
+    return ,([Contentrium.HwpSkill.CompoundFileReader]::ExpandDeflate($Bytes, $MaximumBytes))
 }
 
 function ConvertFrom-HwpPortableParagraphText {
@@ -546,6 +521,163 @@ function Get-HwpPortableSectionData {
     }
 }
 
+function Get-HwpPortableByteHash {
+    param([Parameter(Mandatory)][AllowEmptyCollection()][byte[]]$Bytes)
+    $hash = [Security.Cryptography.SHA256]::Create()
+    try { [BitConverter]::ToString($hash.ComputeHash($Bytes)).Replace('-', '').ToLowerInvariant() }
+    finally { $hash.Dispose() }
+}
+
+function New-HwpPortableBinaryAsset {
+    param([string]$StreamName = '')
+    [pscustomobject][ordered]@{
+        Id = $null
+        StreamName = $StreamName
+        Extension = ''
+        StorageType = 'UNKNOWN'
+        Flags = $null
+        CompressionMode = $null
+        Compressed = $null
+        StoredBytes = $null
+        StoredSha256 = $null
+        DecodedBytes = $null
+        Sha256 = $null
+        VerificationStatus = 'UNVERIFIED'
+        VerificationLimitation = ''
+    }
+}
+
+function Get-HwpPortableBinaryAssets {
+    param(
+        [Parameter(Mandatory)]$Session,
+        [Parameter(Mandatory)][byte[]]$DocInfoBytes,
+        [bool]$DocumentCompressed,
+        [int]$MaximumStreamBytes,
+        [long]$RemainingExpandedBytes
+    )
+    $assets = [Collections.Generic.List[object]]::new()
+    $byName = @{}
+    # Scan just BIN_DATA records; do not duplicate all DocInfo payloads.
+    $offset = 0
+    while ($offset -lt $DocInfoBytes.Length) {
+        if ($DocInfoBytes.Length - $offset -lt 4) { throw [IO.InvalidDataException]::new('BinData 레코드 헤더가 잘렸습니다.') }
+        $record = [BitConverter]::ToUInt32($DocInfoBytes, $offset)
+        $offset += 4
+        [long]$size = ($record -shr 20) -band 0xFFF
+        if ($size -eq 0xFFF) {
+            if ($DocInfoBytes.Length - $offset -lt 4) { throw [IO.InvalidDataException]::new('BinData 확장 헤더가 잘렸습니다.') }
+            $size = [BitConverter]::ToUInt32($DocInfoBytes, $offset)
+            $offset += 4
+        }
+        if ($size -gt ($DocInfoBytes.Length - $offset)) { throw [IO.InvalidDataException]::new('BinData 레코드가 범위를 벗어났습니다.') }
+        if (($record -band 0x3FF) -eq 0x12) {
+            if ($assets.Count -ge 65536) { throw [IO.InvalidDataException]::new('BinData 개수 안전 한도를 초과했습니다.') }
+            if ($size -lt 2) { throw [IO.InvalidDataException]::new('BinData 속성이 잘렸습니다.') }
+            $asset = New-HwpPortableBinaryAsset
+            $flags = [int][BitConverter]::ToUInt16($DocInfoBytes, $offset)
+            $asset.Flags = $flags
+            $kind = $flags -band 0xF
+            $mode = ($flags -shr 4) -band 3
+            $asset.CompressionMode = $mode
+            $asset.Compressed = if ($mode -eq 0) { $DocumentCompressed } elseif ($mode -eq 1) { $true } elseif ($mode -eq 2) { $false } else { $null }
+            if ($kind -eq 0) {
+                $asset.StorageType = 'LINK'
+                $asset.VerificationLimitation = '외부 연결 자산은 읽지 않아 원본 바이트 해시를 검증할 수 없습니다.'
+            }
+            elseif ($kind -in @(1,2)) {
+                if ($size -lt 4) { throw [IO.InvalidDataException]::new('BinData ID가 잘렸습니다.') }
+                $asset.Id = [int][BitConverter]::ToUInt16($DocInfoBytes, $offset + 2)
+                $asset.StorageType = if ($kind -eq 1) { 'EMBEDDING' } else { 'STORAGE' }
+                $asset.StreamName = 'BIN{0:X4}' -f $asset.Id
+                if ($kind -eq 1) {
+                    if ($size -lt 6) { throw [IO.InvalidDataException]::new('BinData 확장자 길이가 잘렸습니다.') }
+                    $length = [int][BitConverter]::ToUInt16($DocInfoBytes, $offset + 4)
+                    if (6 + 2 * $length -gt $size) { throw [IO.InvalidDataException]::new('BinData 확장자가 범위를 벗어났습니다.') }
+                    $asset.Extension = [Text.Encoding]::Unicode.GetString($DocInfoBytes, $offset + 6, 2 * $length).ToLowerInvariant()
+                    $asset.StreamName += '.' + $asset.Extension
+                    if ($asset.Extension -notmatch '^[a-z0-9]{1,31}$') {
+                        $asset.VerificationLimitation = 'BinData 확장자를 안전하게 식별할 수 없습니다.'
+                    }
+                }
+                if ($mode -eq 3) { $asset.VerificationLimitation = '예약된 BinData 압축 모드는 해석하지 않습니다.' }
+                if ($byName.ContainsKey($asset.StreamName)) { throw [IO.InvalidDataException]::new('BinData 스트림 메타데이터가 중복되었습니다.') }
+                $byName[$asset.StreamName] = $asset
+            }
+            else { $asset.VerificationLimitation = '알 수 없는 BinData 저장 유형입니다.' }
+            $assets.Add($asset)
+        }
+        $offset += [int]$size
+    }
+    $binaryStorage = @($Session.ListElements('') | Where-Object { $_.Name -eq 'BinData' -and $_.Type -eq 1 })
+    $found = @{}
+    [long]$expanded = 0
+    [long]$budgetUsed = 0
+    if ($binaryStorage.Count -gt 0) {
+        foreach ($element in $Session.ListElements('BinData')) {
+            $name = [string]$element.Name
+            $asset = if ($byName.ContainsKey($name)) { $byName[$name] } else {
+                $unknown = New-HwpPortableBinaryAsset -StreamName $name
+                $unknown.VerificationLimitation = 'DocInfo BinData 메타데이터가 없어 압축 여부를 검증할 수 없습니다.'
+                $assets.Add($unknown)
+                $unknown
+            }
+            $found[$name] = $true
+            $asset.StoredBytes = [long]$element.Size
+            if ($element.Type -ne 2) {
+                $asset.VerificationLimitation = '중첩 BinData 저장소의 바이트 검증은 지원하지 않습니다.'
+                continue
+            }
+            if ($element.Size -gt $MaximumStreamBytes) {
+                $asset.VerificationLimitation = 'BinData 스트림이 읽기 안전 한도를 초과했습니다.'
+                continue
+            }
+            [byte[]]$stored = $Session.ReadStream('BinData', $name, $MaximumStreamBytes)
+            $asset.StoredSha256 = Get-HwpPortableByteHash -Bytes $stored
+            if ($asset.VerificationLimitation) { continue }
+            $remaining = $RemainingExpandedBytes - $budgetUsed
+            if ($remaining -lt 1) {
+                $asset.VerificationLimitation = 'BinData 문서 전체 압축 해제 안전 한도가 소진되었습니다.'
+                continue
+            }
+            try {
+                [byte[]]$decoded = $stored
+                if ($asset.Compressed) {
+                    $decoded = Expand-HwpPortableDeflate -Bytes $stored -MaximumBytes ([Math]::Min($remaining, $MaximumStreamBytes))
+                }
+                elseif ($stored.Length -gt $remaining) {
+                    throw [IO.InvalidDataException]::new('BinData 문서 전체 안전 한도를 초과했습니다.')
+                }
+                if ($decoded.Length -eq 0) { throw [IO.InvalidDataException]::new('BinData 원본 바이트가 비어 있어 검증할 수 없습니다.') }
+                $asset.DecodedBytes = $decoded.Length
+                $asset.Sha256 = Get-HwpPortableByteHash -Bytes $decoded
+                $asset.VerificationStatus = 'HASHED'
+                $expanded += $decoded.Length
+                $budgetUsed += $decoded.Length
+            }
+            catch [IO.InvalidDataException] {
+                $asset.VerificationLimitation = 'BinData 원본 바이트를 해석할 수 없습니다: ' + $_.Exception.Message
+                # Failed inflation may consume the remaining budget. Prevent
+                # repeated failures from multiplying bounded inflation work.
+                $budgetUsed = $RemainingExpandedBytes
+            }
+        }
+    }
+    foreach ($asset in $assets) {
+        if ($asset.StreamName -and -not $found.ContainsKey($asset.StreamName)) {
+            $asset.VerificationLimitation = 'DocInfo에 선언된 BinData 스트림을 찾을 수 없습니다.'
+        }
+    }
+    $limitations = @($assets | Where-Object { $_.VerificationStatus -ne 'HASHED' } | ForEach-Object {
+        'BinData {0}: {1}' -f $_.StreamName, $_.VerificationLimitation
+    })
+    [pscustomobject]@{
+        Assets = @($assets)
+        Verified = ($limitations.Count -eq 0)
+        Warnings = $limitations
+        ExpandedBytes = $expanded
+    }
+}
+
 function Get-HwpPortableInspection {
     [CmdletBinding()]
     param(
@@ -563,12 +695,6 @@ function Get-HwpPortableInspection {
         [ValidatePattern('^$|^[0-9a-fA-F]{64}$')][string]$ExpectedSha256 = ''
     )
 
-    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
-        return New-HwpResult -Status BLOCKED -Command inspect-hwp-portable -Errors @(
-            '현재 hwp-portable 읽기 엔진은 Windows 기본 OLE 복합파일 API가 필요합니다.'
-        )
-    }
-
     $resolvedPath = Resolve-HwpLiteralPath -LiteralPath $LiteralPath
     if ((Get-Item -LiteralPath $resolvedPath).Length -gt $MaximumFileBytes) {
         return New-HwpResult -Status BLOCKED -Command inspect-hwp-portable -Errors @(
@@ -578,8 +704,8 @@ function Get-HwpPortableInspection {
 
     $compoundSession = $null
     try {
-        $compoundSession = [Contentrium.HwpSkill.CompoundFileReader]::Open($resolvedPath)
-        $lockedHash = Get-HwpSha256 -LiteralPath $resolvedPath
+        $compoundSession = [Contentrium.HwpSkill.CompoundFileReader]::Open($resolvedPath, $MaximumFileBytes)
+        $lockedHash = $compoundSession.ComputeSha256()
         if (-not [string]::IsNullOrWhiteSpace($ExpectedSha256) -and
                 $lockedHash -ne $ExpectedSha256.ToLowerInvariant()) {
             return New-HwpResult -Status BLOCKED -Command inspect-hwp-portable -Errors @(
@@ -637,7 +763,15 @@ function Get-HwpPortableInspection {
         [long]$expandedByteCount = 0
         [byte[]]$docInfoBytes = $compoundSession.ReadStream('', 'DocInfo', $MaximumStreamBytes)
         if ($compressed) {
-            [byte[]]$docInfoBytes = Expand-HwpPortableDeflate -Bytes $docInfoBytes -MaximumBytes $MaximumExpandedBytes
+            try {
+                [byte[]]$docInfoBytes = Expand-HwpPortableDeflate -Bytes $docInfoBytes -MaximumBytes $MaximumExpandedBytes
+            }
+            catch [IO.InvalidDataException] {
+                throw [IO.InvalidDataException]::new(
+                    'HWP 문서 전체 압축 해제 데이터가 잘못되었거나 안전 한도를 초과했습니다.',
+                    $_.Exception
+                )
+            }
         }
         $expandedByteCount += $docInfoBytes.Length
         if ($expandedByteCount -gt $MaximumExpandedBytes) {
@@ -729,19 +863,24 @@ function Get-HwpPortableInspection {
             $textCharacterCount += [long]$section.TextCharacterCount
         }
 
+        $binaryAssets = Get-HwpPortableBinaryAssets -Session $compoundSession -DocInfoBytes $docInfoBytes `
+            -DocumentCompressed $compressed -MaximumStreamBytes $MaximumStreamBytes `
+            -RemainingExpandedBytes ($MaximumExpandedBytes - $expandedByteCount)
+
         $finalHash = Get-HwpSha256 -LiteralPath $resolvedPath
-        if ($finalHash -ne $lockedHash) {
+        if ($finalHash -ne $lockedHash -or $compoundSession.ComputeSha256() -ne $lockedHash) {
             return New-HwpResult -Status BLOCKED -Command inspect-hwp-portable -Errors @(
                 'HWP 파일이 읽는 동안 변경되어 일관된 결과를 만들 수 없습니다.'
             )
         }
 
         $warnings = @(
-            'HWP 5.x를 Windows 기본 OLE 복합파일 API로 읽었으며 한컴오피스는 실행하지 않았습니다.',
+            'HWP 5.x를 관리형 .NET 복합파일 읽기 엔진으로 읽었으며 한컴오피스는 실행하지 않았습니다.',
             '글꼴·글자 모양·문단 모양·테두리/배경·저장된 줄 좌표·용지 설정과 표 구조를 읽었습니다.',
             '줄 배치와 페이지 수는 HWP에 저장된 레이아웃 캐시 기준이며, 설치 글꼴 대체까지 반영한 최종 픽셀 렌더링은 별도 렌더러로 확인해야 합니다.'
         )
         $warnings += @($structureWarnings)
+        $warnings += @($binaryAssets.Warnings)
         New-HwpResult -Status PASS_WITH_WARNINGS -Command inspect-hwp-portable -Data ([pscustomobject]@{
             Path = $resolvedPath
             Version = $version
@@ -751,6 +890,10 @@ function Get-HwpPortableInspection {
             Controls = @($controls)
             Tables = @($tables)
             Resources = $docInfo.Resources
+            # HASHED means decoded binary identity, not visual/image rendering.
+            BinaryAssets = @($binaryAssets.Assets)
+            BinaryAssetsVerified = [bool]$binaryAssets.Verified
+            BinaryAssetExpandedBytes = [long]$binaryAssets.ExpandedBytes
             Paragraphs = @($layoutParagraphs)
             Sections = @($sections)
             Layout = [pscustomobject][ordered]@{
@@ -773,9 +916,9 @@ function Get-HwpPortableInspection {
             "HWP 복합파일 구조를 안전하게 읽을 수 없습니다: $($_.Exception.Message)"
         )
     }
-    catch [Runtime.InteropServices.COMException] {
+    catch [IO.IOException] {
         New-HwpResult -Status BLOCKED -Command inspect-hwp-portable -Errors @(
-            "HWP OLE 스트림을 읽을 수 없습니다: $($_.Exception.Message)"
+            "HWP 복합파일 스트림을 읽을 수 없습니다: $($_.Exception.Message)"
         )
     }
     catch {

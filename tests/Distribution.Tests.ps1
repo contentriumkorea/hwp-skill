@@ -17,7 +17,9 @@
 
         $plugin.name | Should Be 'hwp-skill'
         $plugin.displayName | Should Be 'HWP Skill'
-        (@($plugin.PSObject.Properties.Name) -contains 'version') | Should Be $false
+        $version = Get-Content -LiteralPath (Join-Path $skillRoot 'version.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $plugin.version | Should Be $version.version
+        $plugin.version | Should Match '^\d+\.\d+\.\d+$'
         $marketplace.name | Should Be 'contentrium'
         @($marketplace.plugins).Count | Should Be 1
         $marketplace.plugins[0].name | Should Be 'hwp-skill'

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/contentriumkorea/hwp-skill/blob/main/skill/hwp-skill/schemas/inspection.schema.json",
+  "$id": "https://github.com/contentriumkorea/hwp-skill/blob/main/skills/hwp-skill/schemas/inspection.schema.json",
   "title": "HWP 스킬 검사 결과",
   "type": "object",
   "additionalProperties": true,
@@ -25,6 +25,7 @@
         "required": ["ctrlId"],
         "properties": {
           "ctrlId": { "type": "string" },
+          "address": { "$ref": "#/$defs/editAddress" },
           "userDesc": { "type": "string" },
           "instanceId": {}
         },
@@ -52,6 +53,18 @@
     }
   },
   "$defs": {
+    "editAddress": {
+      "type": "object",
+      "required": ["version", "sourceSha256", "part", "path", "kind"],
+      "properties": {
+        "version": { "const": "1.0" },
+        "sourceSha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" },
+        "part": { "type": "string", "minLength": 1 },
+        "path": { "type": "array", "minItems": 1, "items": { "type": "integer", "minimum": 0 } },
+        "kind": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
     "measurement": {
       "type": "object",
       "required": ["raw", "point", "millimeter"],
@@ -77,6 +90,9 @@
       "type": "object",
       "required": ["start", "charShapeId"],
       "properties": {
+        "index": { "type": "integer", "minimum": 0 },
+        "text": { "type": "string" },
+        "address": { "$ref": "#/$defs/editAddress" },
         "start": { "type": "integer", "minimum": 0 },
         "charShapeId": { "type": "integer", "minimum": 0 }
       },
@@ -127,6 +143,7 @@
         "paraShapeId", "styleId", "charShapeRuns", "lineSegments", "storedLines"
       ],
       "properties": {
+        "address": { "$ref": "#/$defs/editAddress" },
         "index": { "type": "integer", "minimum": 0 },
         "section": { "type": "string", "minLength": 1 },
         "recordLevel": { "type": ["integer", "null"], "minimum": 0 },
@@ -226,6 +243,7 @@
         "lineWrapCode", "lineWrap", "verticalAlignmentCode", "verticalAlignment", "dirty"
       ],
       "properties": {
+        "address": { "$ref": "#/$defs/editAddress" },
         "index": { "type": "integer", "minimum": 0 },
         "id": { "type": "string", "minLength": 1 },
         "name": { "type": "string" },
@@ -291,6 +309,7 @@
         "validZones", "cells", "grid"
       ],
       "properties": {
+        "address": { "$ref": "#/$defs/editAddress" },
         "index": { "type": "integer", "minimum": 0 },
         "section": { "type": "string", "minLength": 1 },
         "source": { "enum": ["hwp-portable", "hwpx-package"] },

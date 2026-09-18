@@ -1,6 +1,6 @@
 Describe 'Stored HWPX mimetype on both Windows runtimes' {
     foreach ($shell in @('pwsh','powershell')) {
-        It ("writes and edits a stored first mimetype using $shell") {
+        It ("writes and edits a stored first mimetype using $shell") -Skip:($null -eq (Get-Command $shell -ErrorAction SilentlyContinue)) {
             $cli=Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/Invoke-HwpSkill.ps1'
             $plan=Join-Path $TestDrive ($shell+'.json')
             [IO.File]::WriteAllText($plan,'{"version":"2.0","content":[{"type":"paragraph","text":"stored"}]}')

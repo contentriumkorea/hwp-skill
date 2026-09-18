@@ -59,7 +59,7 @@ Describe 'HWP 엔진 기능 스냅샷' {
                 operations = @('inspect')
                 requiresGui = $false
                 isolation = 'none'
-                reason = 'Built-in read-only HWP 5.x inspection uses the Windows OLE compound-file API and does not require Hancom.'
+                reason = 'Built-in read-only HWP 5.x inspection uses a managed compound-file reader and does not require Hancom.'
             },
             [pscustomobject][ordered]@{
                 id = 'hancom-isolated'

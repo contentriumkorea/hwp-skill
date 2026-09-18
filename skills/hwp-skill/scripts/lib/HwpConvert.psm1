@@ -1,18 +1,7 @@
 ﻿Set-StrictMode -Version Latest
 
 Import-Module (Join-Path $PSScriptRoot 'HwpCommon.psm1') -ErrorAction Stop
-
-function Get-HwpWorkerPowerShellPath {
-    $command = Get-Command pwsh -ErrorAction SilentlyContinue
-    if ($null -ne $command -and -not [string]::IsNullOrWhiteSpace([string]$command.Source)) {
-        return [string]$command.Source
-    }
-    $candidate = Join-Path $PSHOME 'pwsh.exe'
-    if (Test-Path -LiteralPath $candidate -PathType Leaf) {
-        return $candidate
-    }
-    throw '최종 HWP 변환 작업자를 실행할 PowerShell을 찾지 못했습니다.'
-}
+Import-Module (Join-Path $PSScriptRoot 'HwpConversionVerify.psm1') -ErrorAction Stop
 
 function Invoke-HwpFinalHwpxToHwp {
     [CmdletBinding()]
@@ -39,72 +28,29 @@ function Invoke-HwpFinalHwpxToHwp {
     }
 
     if ($null -ne $WorkerLauncher) {
+        $sourceHash = Get-HwpSha256 -LiteralPath $resolvedInput
         $workerResult = & $WorkerLauncher $resolvedInput $resolvedOutput
         if ($null -eq $workerResult) { throw '최종 HWP 변환 작업자가 결과를 반환하지 않았습니다.' }
         if ($workerResult.PSObject.Properties.Name -contains 'Status' -and [string]$workerResult.Status -ne 'PASS') {
             throw (($workerResult.Errors | ForEach-Object { [string]$_ }) -join ' ')
         }
-        return $workerResult
-    }
-
-    $workerPath = Join-Path $PSScriptRoot '../workers/Convert-HwpxToHwp.ps1'
-    if (-not (Test-Path -LiteralPath $workerPath -PathType Leaf)) {
-        throw "최종 HWP 변환 작업자가 없습니다: $workerPath"
-    }
-
-    $startInfo = [Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = Get-HwpWorkerPowerShellPath
-    $startInfo.UseShellExecute = $false
-    $startInfo.CreateNoWindow = $true
-    $startInfo.RedirectStandardOutput = $true
-    $startInfo.RedirectStandardError = $true
-    if ($startInfo.PSObject.Properties.Name -contains 'ArgumentList') {
-        foreach ($argument in @('-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-File', $workerPath, '-InputPath', $resolvedInput, '-OutputPath', $resolvedOutput)) {
-            $null = $startInfo.ArgumentList.Add([string]$argument)
-        }
-    }
-    else {
-        $quote = { param([string]$value) '\"{0}\"' -f ($value -replace '\"', '\\\"') }
-        $startInfo.Arguments = '-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -File {0} -InputPath {1} -OutputPath {2}' -f (& $quote $workerPath), (& $quote $resolvedInput), (& $quote $resolvedOutput)
-    }
-
-    $process = [Diagnostics.Process]::new()
-    $process.StartInfo = $startInfo
-    try {
-        if (-not $process.Start()) { throw '최종 HWP 변환 작업자를 시작하지 못했습니다.' }
-        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-        $stderrTask = $process.StandardError.ReadToEndAsync()
-        if (-not $process.WaitForExit(180000)) {
-            try { $process.Kill($true) } catch { }
-            throw '최종 HWP 변환이 제한 시간 180초를 초과했습니다.'
-        }
-        $stdout = $stdoutTask.GetAwaiter().GetResult()
-        $stderr = $stderrTask.GetAwaiter().GetResult()
-        if ($process.ExitCode -ne 0) {
-            $details = (($stderr, $stdout) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }) -join ' '
-            throw "최종 HWP 변환 작업자가 실패했습니다: $details"
-        }
         if (-not (Test-Path -LiteralPath $resolvedOutput -PathType Leaf)) {
-            throw '최종 HWP 변환 작업자가 HWP 결과를 만들지 못했습니다.'
+            throw 'The converter did not create an HWP output.'
         }
-        $kind = Get-HwpFileKind -LiteralPath $resolvedOutput
-        if (-not $kind.ExtensionMatches -or $kind.DetectedKind -ne 'HWP-BINARY') {
-            throw '최종 변환 결과의 HWP 바이너리 형식 검증에 실패했습니다.'
-        }
-        [pscustomobject]@{
-            Status = 'PASS'
-            InputPath = $resolvedInput
-            OutputPath = $resolvedOutput
-            OutputSha256 = Get-HwpSha256 -LiteralPath $resolvedOutput
-            ByteLength = (Get-Item -LiteralPath $resolvedOutput).Length
-            WorkerProcess = $true
-            HancomUsedOnlyForFinalConversion = $true
-            ContentWrittenByHancom = $false
+        if ((Get-HwpSha256 -LiteralPath $resolvedInput) -ne $sourceHash) { throw 'Converter changed the HWPX source content.' }
+        $verification = Test-HwpConvertedContent -InputPath $resolvedInput -OutputPath $resolvedOutput
+        if ($verification.Status -ne 'PASS') { throw ($verification.Errors -join ' ') }
+        return [pscustomobject]@{
+            Status='PASS'; InputPath=$resolvedInput; OutputPath=$resolvedOutput
+            OutputSha256=Get-HwpSha256 -LiteralPath $resolvedOutput
+            ByteLength=(Get-Item -LiteralPath $resolvedOutput).Length
+            ContentWrittenByHancom=$false; WorkerProcess=$true
+            Verification=$verification
         }
     }
-    finally {
-        $process.Dispose()
-    }
+    # Hiding a PowerShell process does not isolate the COM server desktop.
+    # No current-session Hancom fallback is allowed for final conversion.
+    throw [NotSupportedException]::new('No isolated HWP converter is configured. The HWPX work file is preserved; local Hancom will not be started.')
 }
 
 Export-ModuleMember -Function @(
