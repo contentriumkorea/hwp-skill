@@ -1,0 +1,532 @@
+# HWP Skill 상세 사용 안내
+
+[← 첫 페이지로](README.md)
+
+Windows·macOS·Linux에서 `.hwp`, `.hwt`, `.hwpx`를 다루기 위한 Agent Skills 표준 호환 스킬
+저장소입니다. Codex, Claude Code, Cursor, OpenCode, Gemini CLI, GitHub Copilot CLI 등
+Agent Skills를 지원하는 여러 AI 에이전트에서 같은 `hwp-skill`을 사용할 수 있습니다.
+현재 버전은 **2.1.1**이며 **Phase 1 무창 계약**과 한글 문서 작업의 단일 오케스트레이션 흐름을 제공하며,
+기본 실행 모드는 `silent`입니다. 공문,
+보고서, 계획서, 회의록, 제안서, 스토리보드처럼 원본 보존과 사용자
+포커스 유지가 중요한 한글 문서 파일 요청을 대상으로 합니다.
+
+[최신 스킬 ZIP 다운로드](https://github.com/contentriumkorea/hwp-skill/releases/latest/download/hwp-skill.zip) · [설치 방법](#설치)
+
+핵심 원칙은 간단합니다. **원본을 덮어쓰지 않고, 내부 계획·명령·엔진 상태를 사용자
+대화에 노출하지 않으며, 기본 `silent` 모드에서 처리하고 준비되지 않은 엔진이면 GUI로
+자동 전환하지 않습니다.**
+
+2.1.0에서는 **정확한 수정 대상 주소, 셀·이미지·단순 표 확장 편집, 운영체제 독립 HWP
+읽기, 무창 근사 미리보기**를 추가했습니다. [변경 기록](CHANGELOG.md)에서 상세 범위를
+확인할 수 있습니다. 자동 테스트는 Windows/Linux/macOS에서 실행합니다.
+
+2.1.1에서는 설치된 한컴오피스 2024의 자동화 API·변환 후보를 실행하지 않고 조사한
+[정적 분석 기록](skills/hwp-skill/references/hancom-2024-runtime-audit.md)을 추가했습니다.
+API 목록과 실제 무창 지원 기능을 혼동하지 않으며, 한컴 실행이나 COM 호출 없이 기존
+HWPX 직접 처리·HWP 5.x 읽기 경계를 유지합니다.
+
+```powershell
+# 한컴 없이 HWPX를 근사 HTML로 확인. Windows의 지원 브라우저가 있으면 headless PDF도 생성.
+pwsh -NoProfile -File ./skills/hwp-skill/scripts/Invoke-HwpSkill.ps1 preview `
+  -LiteralPath "문서.hwpx" -OutputDirectory "새 미리보기 폴더"
+```
+
+미리보기는 자동으로 열리지 않으며 한컴 실제 조판과 동일한 결과가 아닙니다.
+자세한 사용법은 [미리보기 안내](skills/hwp-skill/references/preview.md)를 참고하세요.
+
+## Contentrium에서 만든 이유
+
+HWP Skill은 콘텐츠리움(Contentrium)이 공공기관·교육기관 콘텐츠를 제작하며 반복해서
+마주친 한글 문서 작업을 더 안전하고 재현 가능하게 만들기 위해 시작한 오픈소스
+프로젝트입니다. 기존 HWP 5.x는 한컴 없이 읽고 글꼴·문단 모양·테두리·저장된 줄 배치·
+용지 설정과 표의 행·열·병합·셀 문단까지 구조로 복원합니다. 새 본문·표·이미지와 문서
+서식은 HWPX 직접 엔진으로 만들고 검사하며, HWP
+납품이 필요한 경우에만 별도 격리 변환기를 연결하는 업무 흐름을 담았습니다.
+기본 배포에는 변환기가 없으며 HWPX 작업본을 보존합니다.
+
+Contentrium은 영상·디자인·웹·AI 기술을 연결해 공공 콘텐츠의 기획과 제작 과정을
+개선합니다. 이 저장소도 현장에서 얻은 경험을 누구나 검토하고 확장할 수 있는 도구로
+공유한다는 방향으로 운영합니다.
+
+> 중요: 이 저장소의 MIT 라이선스는 이 프로젝트 코드에만 적용됩니다. 한컴오피스와
+> HWP 자동화 API의 이용 조건은 별개입니다. 한컴 공식 안내는 개인의 비상업적 이용과
+> 상업적 이용 조건을 구분하고 있으므로, 회사·기관·납품 등 상업적 이용 전에는
+> [한컴 HWP 자동화 공식 안내](https://developer.hancom.com/hwpautomation)에서 최신
+> 조건과 필요한 승인·계약을 반드시 확인하세요.
+
+## Phase 1에서 실제로 되는 일
+
+현재 문서화된 계약은 다음과 같습니다.
+
+1. 기본 `silent`는 현재 사용자 세션의 `Hwp.exe`를 실행하지 않고, 사용자 포커스를
+   바꾸지 않으며, 결과 파일도 자동으로 열지 않습니다.
+2. `silent`는 `.hwpx`를 직접 엔진으로 읽고 새 문서를 작성할 수 있습니다. 문단·표·필드와
+   글꼴·문단 정렬·줄 간격·표 테두리/배경·용지 설정은 ZIP/XML에 직접 기록하고,
+   이미지는 BinData에 넣어 보안모듈 경고 없이 연결합니다. 형식을 지정하지 않은 새
+   한글 문서 요청은 HWPX를 기본 결과로 사용합니다.
+3. 보호되지 않은 HWP 5.x `.hwp`와 `.hwt`는 내장 `hwp-portable`이 운영체제 독립 관리 코드
+   복합파일 판독기로 읽습니다. 언어별 글꼴, 글자·문단 모양, 테두리/배경, 저장된 줄 좌표,
+   용지 크기·방향·여백과 표의 행·열, 병합 범위, 셀 주소·셀별 문단을 함께 복원하며
+   한컴오피스, 한컴 COM 등록, 보안 모듈을 사용하지 않습니다.
+4. 최종 확장자가 HWP일 때만 별도 무창 변환기를 사용할 수 있습니다. 기본 배포에는
+   변환기가 없으므로 HWP 결과는 차단하고 정상 HWPX 작업본을 보존합니다. 현재 사용자
+   세션에서 한컴을 실행한 뒤 숨기는 방식은 제거했습니다.
+5. HWPX 직접 작성은 한컴 설치 없이도 동작합니다. HWP 최종 변환은 HWP 호환
+   변환 엔진이 필요하며, 사용할 수 없으면 HWPX를 가짜 HWP로 이름만 바꾸지 않고
+   안전하게 중단합니다.
+6. HWP/HWT 기존 양식 편집은 직접 HWPX 가져오기·편집기가 준비될 때까지 자동
+   한컴 실행을 막고 HWPX 양식을 요구합니다.
+7. 준비되지 않은 기능을 만나도 GUI로 자동 전환하지 않습니다.
+
+## 현재 지원 상태
+
+### V2 작성 제어
+
+새 계획 `version: "2.0"`은 세로·가로 혼합 구역, 용지 프리셋/사용자 용지, 다단,
+부분 글자 서식, 표 병합·열 너비·반복 제목행, 이미지 배치, 머리말·쪽 번호·필드·참조를
+HWPX에 직접 기록합니다. 기존 V1 계획과 HWP 5.x 읽기는 유지합니다.
+미지원 속성을 조용히 무시하지 않고 작성 전에 거부하며, 구조 검증과 실제 렌더링은 구분합니다.
+
+일반 새 서류의 기본값은 **A4 세로, 줄 간격 160%, 문단 위·아래 간격 0**입니다.
+제목·소제목·본문 사이의 추가 공간은 엔터에 해당하는 빈 문단으로 만들고, 빈 문단의
+글자 크기로 조절해 문단 모양 메뉴를 열지 않고도 수정하기 쉽게 구성합니다.
+사용자가 지정한 서식과 기존 양식의 간격은 유지합니다.
+
+- [작성 규격과 명령](skills/hwp-skill/references/authoring.md)
+- [읽기·작성·수정·검증별 기능표](skills/hwp-skill/references/feature-support.md)
+- [세로 → 가로 → 세로 예제](skills/hwp-skill/examples/authoring-v2.plan.json)
+- [방향·문단 단위 수정 검증](docs/superpowers/reports/2026-09-03-hwpx-portrait-spacing-qa.md)
+- [빈 문단 작성 방식 검증과 화면 감시 한계](docs/superpowers/reports/2026-09-03-hwpx-editable-spacing-qa.md)
+
+`edit-hwpx`는 별도 결과에서 지정한 XML만 부분 수정하고, 변경하지 않은 포함 파일과
+알 수 없는 XML 확장 요소를 보존합니다. 한컴오피스 전체 기능의 완전한 대체나
+렌더링 없는 픽셀 호환을 의미하지는 않습니다.
+
+| 항목 | 상태 | 설명 |
+|---|---|---|
+| `silent` HWP/HWT 읽기·검사 | 지원 | HWP 5.x 본문·글꼴·문단·테두리·저장 줄·용지·표 구조 직접 판독, 한컴 불필요 |
+| `silent` HWPX 읽기·검사 | 지원 | ZIP/XML 직접 엔진 기반 |
+| `silent` 새 문서 HWPX 작성 | 지원 | 문단·표·필드·이미지·글꼴·문단/표 서식·용지 설정 직접 패키징 |
+| `silent` 새 문서 HWP 작성 | 기본 배포에서 차단 | 별도 격리 변환기 필요, 정상 HWPX 작업본 보존 |
+| HWP/HWT 기존 양식 편집 | 현재 차단 | 한컴을 작업 중 실행하지 않도록 HWPX 양식 요구 |
+| 이미지 삽입 | 지원 | HWPX BinData 직접 삽입, 보안모듈 불필요 |
+| `interactive` 네이티브 실행 | 예외 | 사용자가 창 표시를 명시한 경우만 |
+| 근사 HTML/PDF 미리보기 | 지원/조건부 | HTML은 여러 OS, PDF는 Windows headless Chromium; 한컴 조판과 구분 |
+| 한컴 조판 PDF·페이지 이미지 | 조건부 | 별도 호환 렌더러가 필요하며 기본 무창 경로에서 제공하지 않음 |
+| 기존에 열린 한글 문서 제어 | 제외 | 현재 사용자 세션 보호를 위한 의도적 제한 |
+
+Phase 1은 HWP 바이너리를 직접 작성한다고 주장하지 않습니다. 기존 HWP 5.x 읽기는
+내장 엔진으로 가능하지만, HWP 결과가 필요할 때는 HWPX를 먼저 완성·검사한 다음 마지막
+변환만 별도 작업자에 맡깁니다. 한컴오피스가 없는 컴퓨터에서도 HWP/HWT 읽기와 HWPX
+작성은 가능하며, 새 HWP 납품 파일이 꼭 필요하면 별도 HWP 변환 엔진이 필요합니다.
+
+자세한 제한은 [지원 환경과 제한 사항](skills/hwp-skill/references/limitations.md)을
+확인하세요.
+
+## 요구 환경
+
+- Windows PowerShell 5.1 또는 Windows·macOS·Linux의 PowerShell 7.2 이상
+- Agent Skills를 지원하는 AI 에이전트. Codex와 Claude Code는 전용 설치 경로도 제공
+- 여러 에이전트에 한 번에 설치할 때는 Node.js와 npm 필요
+- HWP 5.x 읽기는 관리 코드 CFB 판독기를 사용하며 한컴 설치가 필요하지 않음
+- HWPX 직접 작성·검사는 추가 GUI 실행 없이 동작
+- Linux·macOS에서 새 이미지 삽입 시 Python 3와 Pillow가 필요함 (`python3 -m pip install Pillow`). 이미지 검사는 로컬에서만 수행하며 자동 설치하거나 GUI로 우회하지 않음
+- HWP 최종 변환은 별도 격리 변환 엔진이 필요하며 기본 배포에는 포함되지 않음
+- 근사 PDF 미리보기는 Windows에 설치된 Chromium 계열 브라우저를 headless로 사용
+- 새 HWPX 문서의 이미지 삽입에는 한컴 파일 경로 보안 모듈이 필요하지 않음
+- HWP/HWT 원본의 네이티브 편집·PDF·페이지 이미지 기능에는 사용자가 공식 절차로
+  등록한 한컴 파일 경로 보안 모듈이 필요할 수 있음
+
+저장소에는 읽기 전용 `hwp-portable` 소스가 포함됩니다. 한컴오피스, 보안 DLL, 모든
+경로를 허용하는 예제 모듈은 포함하거나 자동 설치하지 않습니다. 휴대형 읽기는 암호,
+배포용 문서, DRM 등 보호 제한을 우회하지 않으며 HWP 3.x와 페이지 렌더링은 지원하지
+않습니다.
+
+> HWP 바이너리 판독 기능은 (주)한글과컴퓨터의
+> [한글 문서 파일 형식 5.0 공개 문서](https://cdn.hancom.com/link/docs/%ED%95%9C%EA%B8%80%EB%AC%B8%EC%84%9C%ED%8C%8C%EC%9D%BC%ED%98%95%EC%8B%9D_5.0_revision1.3.pdf)를
+> 참고하여 개발하였습니다. OLE 복합파일 컨테이너는 Microsoft의
+> [MS-CFB 공개 규격](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/53989ce4-7b05-4f8d-829b-d08d6148375b)을 따릅니다.
+
+## 설치
+
+### 1. 여러 AI 에이전트에 한 번에 설치하기(권장)
+
+Node.js와 npm이 있다면 `skills` CLI로 현재 지원되는 여러 AI 에이전트의 전역 스킬
+경로에 한 번에 복사할 수 있습니다. 심볼릭 링크 대신 실제 파일을 복사하므로 Windows의
+도구별 링크 처리 차이도 피합니다.
+
+```powershell
+npx skills@latest add contentriumkorea/hwp-skill --skill hwp-skill --global --agent '*' --copy --yes
+```
+
+이 경로는 Claude Code, Codex, Cursor, OpenCode를 비롯해 `skills` CLI가 지원하는
+Agent Skills 호환 도구를 자동 탐지합니다. 특정 도구만 설치하려면 `--agent` 값을 해당
+도구로 제한하면 됩니다.
+
+### 2. Claude Code 공식 플러그인으로 설치하기
+
+Claude Code에서는 이 GitHub 저장소를 플러그인 마켓플레이스로 등록한 뒤 설치할 수도
+있습니다.
+
+```powershell
+claude plugin marketplace add https://github.com/contentriumkorea/hwp-skill.git
+claude plugin install hwp-skill@contentrium
+```
+
+플러그인 설치 후에는 자연어로 한글 문서 작업을 요청하거나
+`/hwp-skill:hwp-skill`로 직접 호출할 수 있습니다.
+
+### 3. Windows PowerShell로 직접 설치하기
+
+Node.js가 없거나 설치 위치를 직접 통제하려면 GitHub 저장소를 내려받아 설치 스크립트를
+사용합니다.
+
+```powershell
+git clone https://github.com/contentriumkorea/hwp-skill.git
+Set-Location .\hwp-skill
+.\install.ps1 -Target Codex
+.\install.ps1 -Target Claude
+.\install.ps1 -Target Universal
+.\install.ps1 -Target All
+```
+
+대상별 기본 설치 위치는 다음과 같습니다.
+
+| `-Target` | 설치 위치 | 용도 |
+|---|---|---|
+| `Codex` | `CODEX_HOME\skills\hwp-skill` 또는 `%USERPROFILE%\.codex\skills\hwp-skill` | Codex 전용, 기본값 |
+| `Claude` | `CLAUDE_CONFIG_DIR\skills\hwp-skill` 또는 `%USERPROFILE%\.claude\skills\hwp-skill` | Claude Code 개인 스킬 |
+| `Universal` | `%USERPROFILE%\.agents\skills\hwp-skill` | 공용 Agent Skills 경로를 읽는 도구 |
+| `All` | 위 세 위치 모두 | Codex·Claude Code·공용 경로 동시 설치 |
+
+인수 없이 `.\install.ps1`을 실행하면 이전 버전과 같이 Codex에 설치합니다.
+
+원하는 스킬 루트를 직접 지정할 수도 있습니다.
+
+```powershell
+.\install.ps1 -DestinationRoot "D:\Codex\skills"
+```
+
+기존 설치가 있으면 자동으로 덮어쓰지 않습니다. 새 버전으로 갱신할 때만 `-Update`를
+사용합니다.
+
+```powershell
+git pull
+.\install.ps1 -Target All -Update
+```
+
+업데이트 시 기존 `hwp-skill` 폴더는 스킬 루트의 `.hwp-skill-backups` 아래에 시간표가
+붙은 백업으로 이동됩니다. 새 설치본의 최종 검증이 실패하면 실패한 설치본을 같은
+백업 폴더에 별도로 격리하고 기존 설치본을 원위치로 복원합니다. 설치 대상·백업 경로에
+junction, 심볼릭 링크 같은 재분석 지점이 발견되면 기존 설치를 옮기기 전에 중단합니다.
+
+### 4. 독립 ZIP 패키지 만들기
+
+도구별 관리 화면이나 수동 업로드에서 폴더·ZIP을 요구하면 표준
+`hwp-skill/SKILL.md` 구조의 독립 패키지를 만듭니다.
+
+```powershell
+.\package.ps1
+.\package.ps1 -OutputPath "D:\배포\hwp-skill.zip" -Force
+```
+
+기본 결과는 `dist\hwp-skill.zip`입니다. 압축을 푼 `hwp-skill` 폴더를 대상 도구가
+안내하는 개인 또는 프로젝트 스킬 루트에 복사해도 됩니다.
+
+외부 스킬 설치 기능이 없는 일반 웹 채팅에는 이 저장소를 직접 설치할 수 없습니다.
+이 경우 로컬 에이전트나 해당 서비스의 프로젝트 지침·파일 업로드 기능을 사용해야 하며,
+PowerShell 실행 권한이 없는 원격 환경에서는 HWP 처리 엔진도 실행되지 않습니다.
+
+설치 후 새 AI 작업을 시작하고 자연어로 한글 문서 작업을 요청하면 됩니다. Codex에서는
+`$hwp-skill`, PowerShell로 설치한 Claude Code 개인 스킬은 `/hwp-skill`, Claude 공식
+플러그인은 `/hwp-skill:hwp-skill`로 명시 호출할 수 있습니다. 기본 프롬프트는
+`silent` 단일 작업으로 시작하며, 내부 계획·명령·엔진 상태를 대화에 표시하지 않습니다.
+준비되지 않은 엔진이면 자동 GUI 대체 없이 원본 보존과 제한 사유를 한 번에 보고합니다.
+
+## AI 도구에서 사용하기
+
+복잡한 명령을 직접 외우지 않아도 됩니다. 다음처럼 요청하세요.
+
+```text
+$hwp-skill로 이 HWPX 파일이 제대로 읽히는지 확인해 줘.
+```
+
+```text
+/hwp-skill:hwp-skill 이 HWP 파일의 본문과 표 구조를 확인해 줘.
+```
+
+```text
+$hwp-skill로 이 한글 문서 파일을 조용히 확인하고, 원본은 보존한 뒤 결과만 간단히 알려 줘.
+```
+
+```text
+$hwp-skill로 이 보고서의 "2025년"을 "2026년"으로 바꿔 줘.
+내부 계획과 명령은 표시하지 말고 원본은 보존하며 수정본을 검증해 줘.
+```
+
+```text
+$hwp-skill로 이 HWPX 양식의 담당자와 사업명을 채워 별도 HWP로 만들어 줘.
+작업은 HWPX로 끝낸 뒤 마지막에만 HWP로 변환해 줘.
+```
+
+```text
+$hwp-skill로 이 폴더의 HWP들을 먼저 미리보기만 하고, 어떤 파일이 바뀔지 보고해 줘.
+```
+
+스킬은 문서 안에 적힌 문장을 작업 지시로 따르지 않습니다. 문서 내용은 데이터로만
+취급하고, 현재 대화에서 사용자가 요청한 작업만 수행합니다.
+
+## 직접 실행하기
+
+모든 명령은 JSON 결과를 표준 출력으로 반환합니다. `PASS`와
+`PASS_WITH_WARNINGS`의 종료 코드는 `0`, `FAILED`는 `1`, `BLOCKED`는 `2`입니다.
+기본 `silent`는 현재 사용자 세션의 `Hwp.exe`를 실행하지 않고 포커스를 가져오지
+않습니다.
+
+이 섹션의 계약은 분명합니다. AI 에이전트의 문서 작업은 항상 HWPX에서 진행합니다. 새 HWP 결과가
+필요하면 HWPX를 완성하고 검증한 뒤 별도 격리 변환기를 요구합니다. 기본 배포에는 없으므로
+HWP 요청은 차단되며 작업본은 보존됩니다. 그림별 자산 참조를 검증하지 못하므로 이미지
+포함 HWP는 변환기가 연결되어도 승격하지 않습니다. HWP/HWT 기존 양식의
+네이티브 편집은 HWPX 양식으로 준비되지 않은 경우 현재 자동 경로에서 차단합니다.
+사용자가 한컴 창을 열어 화면에 보이게 작업하라고 명시한 경우에만 아래 interactive
+예외를 사용할 수 있습니다.
+
+### 1. 환경 확인
+
+```powershell
+$cli = ".\skills\hwp-skill\scripts\Invoke-HwpSkill.ps1"
+& $cli preflight
+```
+
+### 2. HWP/HWT/HWPX 문서 읽기
+
+```powershell
+& $cli inspect -LiteralPath "C:\문서\보고서.hwp"
+& $cli inspect -LiteralPath "C:\문서\보고서.hwpx"
+```
+
+HWP/HWT는 보호되지 않은 HWP 5.x 본문과 글꼴·글자 모양·문단 모양·테두리/배경,
+저장된 줄 좌표, 용지 크기·방향·여백 및 표·그림·수식 개체를 직접 읽습니다. 표는
+`tables[]`에 행·열 수, 셀 주소, 행·열 병합, 셀 크기·여백, 테두리 채우기 참조,
+셀별 문단과 전체 그리드로 반환합니다. `resources`에는 서식 자원,
+`paragraphs[].charShapeRuns`와 `storedLines`에는 문단별 서식 구간과 저장 줄바꿈,
+`sections[].pageDefinitions`에는 용지 설정이 들어갑니다. 한컴은 실행하지 않으며 저장된
+배치 캐시는 읽되 최종 픽셀 렌더링은 검증하지 않았다는 경고를 함께 반환합니다.
+
+표 셀의 `rowAddress`와 `columnAddress`는 0부터 시작합니다. `rowSpan`과
+`columnSpan`은 병합 범위이며, `grid`의 병합된 칸은 원본 셀을 `mergedInto`로
+가리킵니다. 셀이 겹치거나 주소 범위를 벗어나면 임의로 추측하지 않고 구조 경고에
+기록합니다. `borderFillId`는 문서 내부 서식 참조값이며 화면 픽셀 렌더링 결과는
+아닙니다.
+
+### 3. 계획 검증
+
+[편집 예제](skills/hwp-skill/examples/replace-text.plan.json)의 경로, 원본 SHA-256,
+기준 문구와 값을 실제 검사 결과에 맞게 바꿉니다.
+
+```powershell
+& $cli validate-plan -PlanPath "C:\작업\replace.plan.json"
+```
+
+### 4. HWPX 새 문서 작성
+
+```powershell
+& $cli generate -NewDocument `
+  -PlanPath ".\skills\hwp-skill\examples\generate-new.plan.json" `
+  -OutputPath "C:\문서\새문서.hwpx"
+```
+
+이 경로는 한컴 창을 열지 않고 HWPX ZIP/XML에 직접 작성합니다. 문단·표·필드·이미지와
+`document.page`, `textStyle`, `paragraphStyle`, `tableStyle` 서식이 모두 HWPX 작업본에
+들어간 뒤 구조 검사를 통과해야 결과를 승격합니다. 출력 형식을 따로 말하지 않은 한글
+문서 작성은 이 HWPX 경로가 기본입니다.
+
+### 5. HWP 최종 결과 만들기
+
+출력 확장자를 HWP로 지정해도 내부 작업은 HWPX로 고정됩니다. 기본 배포에서는 격리된
+변환기가 없어 HWP 납품을 차단하며 `WorkingHwpxPath`에 검증된 HWPX를 남깁니다.
+한컴 COM을 현재 데스크톱에 실행하는 이전 작업자는 더 이상 동작하지 않습니다.
+
+```powershell
+& $cli generate -NewDocument `
+  -PlanPath ".\skills\hwp-skill\examples\generate-new.plan.json" `
+  -OutputPath "C:\문서\새문서.hwp"
+```
+
+변환 엔진을 사용할 수 없으면 HWPX 중간 결과를 보존하고 HWP를 만들지 않습니다. HWPX
+확장자만 HWP로 바꾸는 방식은 사용하지 않습니다.
+
+### 6. HWP/HWT 기존 양식 편집
+
+HWP/HWT 원본을 직접 열어 내용을 채우는 자동 경로는 현재 차단합니다. 한컴 창을
+보이게 열어 작업하라는 명시적 요청이 있거나, 먼저 HWPX 양식으로 변환해 준비된 경우에
+한해 별도 경로를 검토합니다.
+
+### 7. 명시적 interactive 예외
+
+사용자가 현재 요청에서 한컴 창을 열어 화면에 보이게 작업하라고 명시한 경우에만 다음
+예외를 사용합니다. 단순한 `승인`이나 `진행`은 이 예외가 아닙니다.
+
+```powershell
+& $cli apply `
+  -LiteralPath "C:\문서\보고서.hwp" `
+  -PlanPath "C:\작업\replace.plan.json" `
+  -OutputPath "C:\문서\보고서_수정본.hwp" `
+  -ExecutionMode interactive `
+  -AllowInteractiveWindow
+```
+
+이 예외는 HWP/HWT 원본을 직접 수정할 때만 사용합니다. `OutputPath`를 생략하면
+원본 폴더에 `_수정본_날짜시간`이 붙은 새 이름을 만듭니다. 원본과 같은 경로는
+거부합니다.
+
+### 8. HWP/HWT batch 예외
+
+`-Apply`가 없으면 실제 파일을 만들지 않는 미리보기입니다.
+
+```powershell
+& $cli batch `
+  -InputDirectory "C:\문서\입력" `
+  -OutputDirectory "C:\문서\입력\결과" `
+  -PlanPath "C:\작업\replace.plan.json" `
+  -ExecutionMode interactive `
+  -AllowInteractiveWindow
+```
+
+미리보기 확인 후 실제 적용:
+
+```powershell
+& $cli batch `
+  -InputDirectory "C:\문서\입력" `
+  -OutputDirectory "C:\문서\입력\결과" `
+  -PlanPath "C:\작업\replace.plan.json" `
+  -Apply `
+  -ExecutionMode interactive `
+  -AllowInteractiveWindow
+```
+
+### 9. HWP/HWT verify 예외
+
+```powershell
+& $cli verify `
+  -LiteralPath "C:\문서\보고서_수정본.hwp" `
+  -OutputDirectory "C:\문서\검증" `
+  -ExecutionMode interactive `
+  -AllowInteractiveWindow
+```
+
+이 예외도 한컴을 열 수 있습니다. 보안 모듈이 없으면 본문·구조 재검사 결과와 함께
+PDF·페이지 이미지가 생성되지 않았다는 경고가 반환됩니다.
+
+전체 명령과 편집 필드는 [편집 작업 규격](skills/hwp-skill/references/operations.md)에
+정리되어 있습니다.
+
+## 안전 설계
+
+### Phase 1 계약
+
+- 기본 `silent`는 현재 사용자 세션의 `Hwp.exe`를 실행하지 않는다.
+- `silent`는 보호되지 않은 HWP 5.x HWP/HWT를 OLE 구조에서 직접 읽고 표의 행·열,
+  병합 범위와 셀별 문단을 전체 그리드로 복원하며 글꼴·문단·테두리·저장 줄·용지
+  설정도 반환한다.
+- `silent`는 HWPX 읽기·작성·표·이미지·구조 검사를 GUI 없이 수행하며 동일한 표 구조
+  계약을 반환한다.
+- 새 HWP 결과는 HWPX 작업본을 완성하고 별도 격리 엔진이 있을 때만 마지막 숨김 변환한다.
+  변환 후 실제 HWP 본문·표·이미지를 다시 검사하며 기본 배포는 변환기 부재를 명시한다.
+- HWP/HWT 기존 양식의 네이티브 편집은 HWPX 양식이 준비되지 않으면 자동 실행하지 않는다.
+- 준비되지 않은 엔진을 만나도 GUI로 자동 전환하지 않는다.
+- 결과 파일 자동 열기와 포커스 탈취를 하지 않는다.
+- HWPX ZIP 경로 탈출, 압축 폭탄, XML 외부 개체를 차단한다.
+- HWP는 하나의 읽기 세션으로 잠그고, 레코드·개체·텍스트·압축 해제 크기에 문서 전체
+  누적 한도를 적용하며 보호 문서를 우회하지 않는다.
+- 사용자 한글 프로세스 일괄 종료를 하지 않는다.
+- 외부 업로드와 매크로 실행을 하지 않는다.
+
+### 명시적으로 승인된 interactive 또는 향후 구현 설계
+
+- 원본 작업 전후 SHA-256 확인
+- 확장자뿐 아니라 실제 파일 시그니처 검사
+- 명시적으로 승인된 interactive에서만 HWP/HWT 원본을 열고 편집하거나 저장
+- 임시 파일 저장 → 재열기 검사 → 최종 결과 승격
+- 실패 결과와 완성 결과 분리
+- 고급 작업의 명시적 승인 요구
+- 고급 작업은 계획 기록과 실행 시 `-ApproveAdvanced`를 모두 요구
+- 반복 문구가 둘 이상이면 추측하지 않고 중단
+
+위 native 편집 흐름은 HWPX 직접 작업의 기본 경로가 아니라, 사용자가 창 표시를
+명시한 경우에만 허용되는 예외입니다.
+
+세부 정책과 복구 절차는 [안전 및 복구 정책](skills/hwp-skill/references/safety.md)을
+참조하세요.
+
+## 개발과 시험
+
+기본 시험은 정적 안전 시험만 실행합니다.
+
+```powershell
+.\tests\run-tests.ps1
+# 다음 명령도 같은 범위를 실행합니다.
+.\tests\run-tests.ps1 -Suite Static
+```
+
+명시적 네이티브 편집 통합 시험은 실제 한컴오피스를 시작할 수 있으므로 기본 `silent` 공개
+계약과 분리해서 봐야 합니다. HWPX 직접 작업과 현재 사용자 세션의 `Hwp.exe`를
+실행하지 않는 기본 동작을 검증할 때는 정적 시험과 `silent` 스모크를 우선 사용합니다. `Native`와 `All`은
+`-AllowInteractiveNative`가 없으면 시험 수집 전에 종료 코드 2로 차단되며, 승인되지
+않은 네이티브 시험을 단순히 건너뛰는 방식으로 처리하지 않습니다.
+
+실제 한컴 통합 시나리오는 실행기 승인과 별개로 `HWP_NATIVE_RUN_INTEGRATION=1` 환경
+변수도 설정해야 합니다. 즉, 아래 두 승인은 모두 있어야 합니다.
+
+```powershell
+$env:HWP_NATIVE_RUN_INTEGRATION = '1'
+try {
+  .\tests\run-tests.ps1 -Suite Native -AllowInteractiveNative
+}
+finally {
+  Remove-Item Env:HWP_NATIVE_RUN_INTEGRATION -ErrorAction SilentlyContinue
+}
+```
+
+정적 시험과 승인된 네이티브 시험을 함께 실행하려면 다음과 같이 합니다.
+
+```powershell
+$env:HWP_NATIVE_RUN_INTEGRATION = '1'
+try {
+  .\tests\run-tests.ps1 -Suite All -AllowInteractiveNative
+}
+finally {
+  Remove-Item Env:HWP_NATIVE_RUN_INTEGRATION -ErrorAction SilentlyContinue
+}
+```
+
+시험 자료는 저장소가 직접 만든 가상 HWP/HWT와 이미지입니다. 사용자의 경북교육청
+문서나 다른 실제 업무 문서는 저장소와 시험에 포함하지 않습니다.
+
+## 프로젝트 구조
+
+```text
+skills/hwp-skill/
+├─ SKILL.md
+├─ agents/openai.yaml
+├─ scripts/Invoke-HwpSkill.ps1
+├─ scripts/workers/Convert-HwpxToHwp.ps1
+├─ scripts/lib/*.psm1
+├─ templates/default.hwpx
+├─ schemas/*.schema.json
+├─ examples/*.json
+└─ references/*.md
+```
+
+## 라이선스와 상표
+
+프로젝트 코드는 [MIT 라이선스](LICENSE)로 공개합니다. 한글, 한컴오피스, HWP는
+각 권리자의 제품명 또는 상표일 수 있습니다. 이 프로젝트는 한컴의 공식 제품이 아니며
+한컴오피스나 한컴 자동화 사용 권리를 제공하지 않습니다.
+
+- [한컴 HWP 자동화 공식 안내](https://developer.hancom.com/hwpautomation)
+- [한컴 HWPX 모델 공식 저장소](https://github.com/hancom-io/hwpx-owpml-model)
+
+---
+
+[![contentrium 홈페이지](https://img.shields.io/badge/contentrium-%ED%99%88%ED%8E%98%EC%9D%B4%EC%A7%80-263248?style=for-the-badge)](https://contentrium.com/)

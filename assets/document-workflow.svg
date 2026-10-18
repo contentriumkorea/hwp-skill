@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="440" viewBox="0 0 1100 440" role="img" aria-label="HWP 읽기와 HWPX 작성의 기능 흐름">
+<rect width="1100" height="440" rx="18" fill="#101b27"/>
+<g font-family="Segoe UI,Malgun Gothic,sans-serif">
+<text x="48" y="57" font-size="14" letter-spacing="3" fill="#89aabd">DOCUMENT WORKFLOW</text>
+<text x="48" y="105" font-size="29" fill="#f2f6f8">원본은 그대로. 작업은 별도 결과로.</text>
+<g fill="#1b3042" stroke="#405e73"><rect x="48" y="151" width="280" height="178" rx="12"/><rect x="410" y="151" width="280" height="178" rx="12"/><rect x="772" y="151" width="280" height="178" rx="12"/></g>
+<g fill="#7faac2" font-size="13"><text x="72" y="183">01 / READ</text><text x="434" y="183">02 / WRITE</text><text x="796" y="183">03 / CHECK</text></g>
+<g fill="#eef5f8" font-size="24"><text x="72" y="227">본문과 표 읽기</text><text x="434" y="227">HWPX 작업하기</text><text x="796" y="227">구조와 결과 확인</text></g>
+<g fill="#b0c4d2" font-size="16"><text x="72" y="267">HWP 5.x · HWT · HWPX</text><text x="72" y="295">원본의 내용을 확인합니다.</text><text x="434" y="267">새 문서 · 표 · 이미지 · 서식</text><text x="434" y="295">기존 HWPX를 수정합니다.</text><text x="796" y="267">구조 검사 · 근사 미리보기</text><text x="796" y="295">실제 한컴 조판과 구분합니다.</text></g>
+<g fill="none" stroke="#7ca4bd" stroke-width="2"><path d="M349 240H387m-9-9 9 9-9 9M711 240H749m-9-9 9 9-9 9"/></g>
+<text x="48" y="385" fill="#8ca7ba" font-size="15">기능 흐름을 설명하는 도식입니다. HWP 최종 출력은 별도 변환기가 필요합니다.</text></g></svg>
