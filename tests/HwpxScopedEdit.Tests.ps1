@@ -810,7 +810,7 @@ Describe 'Scoped cloned character and paragraph formatting' {
     }
 
     It 'rejects unsupported or malformed formatting and conflicting reference edits' {
-        foreach($style in @(@{},@{fontFamily='Arial'},@{bold='false'},@{fontSizePt=0},@{fontSizePt=[double]::Infinity},@{textColor='red'},@{underline='DOUBLE'})) {
+        foreach($style in @(@{},@{fontFamily=''},@{bold='false'},@{fontSizePt=0},@{fontSizePt=[double]::Infinity},@{textColor='red'},@{underline='DOUBLE'})) {
             Assert-ScopedTestBlocked $source $output (New-ScopedTestPlan @(@{type='set-run-format';sectionIndex=0;paragraphIndex=1;runIndex=0;textStyle=$style}))
         }
         foreach($style in @(@{},@{alignment='diagonal'},@{lineSpacingPercent=0},@{lineSpacingPercent=120.5},@{leftMarginMm=-1},@{keepLines='true'},@{unsupported=1})) {
@@ -826,5 +826,198 @@ Describe 'Scoped cloned character and paragraph formatting' {
         $header=[Text.Encoding]::UTF8.GetString((Read-ScopedTestPart $source 'Contents/header.xml')).Replace('<hh:paraPr id="1"','<hh:paraPr id="0"')
         Set-ScopedTestPart $source 'Contents/header.xml' ([Text.Encoding]::UTF8.GetBytes($header))
         Assert-ScopedTestBlocked $source $output (New-ScopedTestPlan @(@{type='set-paragraph-format';sectionIndex=0;paragraphIndex=1;paragraphStyle=@{alignment='CENTER'}}))
+    }
+}
+
+Describe 'Integrated HWPX table and cell authoring' {
+    BeforeEach {
+        $caseDir=Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        $null=New-Item -ItemType Directory -Path $caseDir
+        $source=Join-Path $caseDir 'source.hwpx'; $output=Join-Path $caseDir 'copy.hwpx'
+        New-ScopedTestFixture $source
+        Add-ScopedTestTable $source
+    }
+
+    It 'formats one cell without changing shared styles or neighboring cells' {
+        $before=Read-ScopedTestXml $source
+        $neighbor=(Get-ScopedTestCell $before 1 0).OuterXml
+        $headerBefore=Read-ScopedTestXml $source 'Contents/header.xml'
+        $originalChar=$headerBefore.SelectSingleNode('//*[local-name()="charPr" and @id="0"]').OuterXml
+        $plan=New-ScopedTestPlan @(@{type='set-cell-format';sectionIndex=0;tableIndex=0;row=1;column=1;verticalAlignment='BOTTOM';style=@{fillColor='#EAF3FA';borderType='DOUBLE';borderWidthMm=0.3;borderColor='#315B77';cellMargins=@{leftMm=1;rightMm=1;topMm=0.5;bottomMm=0.5}};textStyle=@{fontFamily='Table Test Font';fontSizePt=12;bold=$true;widthPercent=90;letterSpacingPercent=-5;strikeout=$false};paragraphStyle=@{alignment='CENTER';lineSpacingPercent=160;widowOrphan=$true}})
+        $result=Invoke-HwpxScopedEdit -LiteralPath $source -OutputPath $output -Plan $plan
+        ($result.Errors -join '; ') | Should Be ''
+        $xml=Read-ScopedTestXml $output; $cell=Get-ScopedTestCell $xml 1 1
+        (Get-ScopedTestCell $xml 1 0).OuterXml | Should Be $neighbor
+        $cell.SelectSingleNode('*[local-name()="subList"]').GetAttribute('vertAlign') | Should Be 'BOTTOM'
+        $cell.SelectSingleNode('*[local-name()="cellMargin"]').GetAttribute('left') | Should Be '283'
+        $header=Read-ScopedTestXml $output 'Contents/header.xml'
+        $header.SelectSingleNode('//*[local-name()="charPr" and @id="0"]').OuterXml | Should Be $originalChar
+        $run=$cell.SelectSingleNode('.//*[local-name()="run"]')
+        $style=$header.SelectSingleNode('//*[local-name()="charPr" and @id="'+$run.GetAttribute('charPrIDRef')+'"]')
+        $style.GetAttribute('height') | Should Be '1200'
+        $style.SelectSingleNode('*[local-name()="ratio"]').GetAttribute('hangul') | Should Be '90'
+        $style.SelectSingleNode('*[local-name()="spacing"]').GetAttribute('latin') | Should Be '-5'
+        $header.SelectNodes('//*[local-name()="font" and @face="Table Test Font"]').Count | Should Be 7
+        $header.SelectNodes('//*[local-name()="font" and @face="Table Test Font"]/*[local-name()="typeInfo"]').Count | Should Be 7
+        $border=$header.SelectSingleNode('//*[local-name()="borderFill" and @id="'+$cell.GetAttribute('borderFillIDRef')+'"]')
+        $border.SelectSingleNode('*[local-name()="leftBorder"]').GetAttribute('type') | Should Be 'DOUBLE'
+        $border.SelectSingleNode('.//*[local-name()="winBrush"]').GetAttribute('faceColor') | Should Be '#EAF3FA'
+        [Convert]::ToBase64String((Read-ScopedTestPart $output 'BinData/opaque.bin')) | Should Be ([Convert]::ToBase64String((Read-ScopedTestPart $source 'BinData/opaque.bin')))
+    }
+
+    It 'replaces rich cell content with independent paragraphs runs empty lines tabs and line breaks' {
+        $op=@{type='set-cell-content';sectionIndex=0;tableIndex=0;row=1;column=1;expectedText='E';paragraphs=@(
+            @{type='paragraph';textStyle=@{fontSizePt=11;bold=$true};paragraphStyle=@{alignment='LEFT'};runs=@(@{text='Label: '},@{text='Value';textStyle=@{bold=$false;textColor='#123456'}})},
+            @{text='';textStyle=@{fontSizePt=6}},
+            @{text="First`nSecond`tThird"}
+        )}
+        $result=Invoke-HwpxScopedEdit -LiteralPath $source -OutputPath $output -Plan (New-ScopedTestPlan @($op))
+        ($result.Errors -join '; ') | Should Be ''
+        $xml=Read-ScopedTestXml $output; $cell=Get-ScopedTestCell $xml 1 1
+        $paragraphs=$cell.SelectNodes('*[local-name()="subList"]/*[local-name()="p"]')
+        $paragraphs.Count | Should Be 3
+        $paragraphs[0].SelectNodes('*[local-name()="run"]').Count | Should Be 2
+        $paragraphs[0].InnerText | Should Be 'Label: Value'
+        $paragraphs[1].InnerText | Should Be ''
+        $paragraphs[2].SelectNodes('.//*[local-name()="lineBreak"]').Count | Should Be 1
+        $paragraphs[2].SelectNodes('.//*[local-name()="tab"]').Count | Should Be 1
+        $ids=@($xml.SelectNodes('//*[local-name()="p" and @id]') | ForEach-Object {$_.GetAttribute('id')})
+        @($ids|Select-Object -Unique).Count | Should Be $ids.Count
+        $header=Read-ScopedTestXml $output 'Contents/header.xml'
+        $runs=$paragraphs[0].SelectNodes('*[local-name()="run"]')
+        $header.SelectSingleNode('//*[local-name()="charPr" and @id="'+$runs[0].GetAttribute('charPrIDRef')+'"]').SelectNodes('*[local-name()="bold"]').Count | Should Be 1
+        $header.SelectSingleNode('//*[local-name()="charPr" and @id="'+$runs[1].GetAttribute('charPrIDRef')+'"]').SelectNodes('*[local-name()="bold"]').Count | Should Be 0
+        Import-Module (Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/lib/HwpInspect.psm1') -Force
+        $inspection=Get-HwpxPackageInspection -LiteralPath $output
+        ($inspection.Errors -join '; ') | Should Be ''
+        $record=@($inspection.Data.Tables[0].cells|Where-Object {$_.rowAddress -eq 1 -and $_.columnAddress -eq 1})[0]
+        $second=Join-Path $caseDir 'second.hwpx'
+        $edited=Invoke-HwpxScopedEdit -LiteralPath $output -OutputPath $second -Plan (New-ScopedTestPlan @(@{type='set-cell-format';address=$record.address;textStyle=@{italic=$true}}))
+        ($edited.Errors -join '; ') | Should Be ''
+        (Get-ScopedTestCell (Read-ScopedTestXml $second) 1 1).SelectNodes('.//*[local-name()="lineBreak"]').Count | Should Be 1
+        $record=@((Get-HwpxPackageInspection -LiteralPath $second).Data.Tables[0].cells|Where-Object {$_.rowAddress -eq 1 -and $_.columnAddress -eq 1})[0]
+        $third=Join-Path $caseDir 'third.hwpx'
+        $edited=Invoke-HwpxScopedEdit -LiteralPath $second -OutputPath $third -Plan (New-ScopedTestPlan @(@{type='set-cell-content';address=$record.address;expectedText=$record.text;paragraphs=@(@{text='Re-edited from inspection'})}))
+        ($edited.Errors -join '; ') | Should Be ''
+        (Get-ScopedTestCell (Read-ScopedTestXml $third) 1 1).InnerText | Should Be 'Re-edited from inspection'
+    }
+
+    It 'sets table dimensions header pagination and common cell styles with reused resources' {
+        $result=Invoke-HwpxScopedEdit -LiteralPath $source -OutputPath $output -Plan (New-ScopedTestPlan @(@{type='set-table-format';sectionIndex=0;tableIndex=0;columnWidthsMm=@(30,40,50);rowHeightsMm=@(10,12,14);repeatHeader=$true;pageBreak='CELL';verticalAlignment='CENTER';style=@{fillColor='#FFFFFF';borders=@{bottom=@{type='SOLID';widthMm=0.2;color='#111111'}}};textStyle=@{fontFamily='Shared Table Font';fontSizePt=10};paragraphStyle=@{alignment='CENTER'}}))
+        ($result.Errors -join '; ') | Should Be ''
+        $xml=Read-ScopedTestXml $output; $table=$xml.SelectSingleNode('//*[local-name()="tbl"]')
+        $table.GetAttribute('repeatHeader') | Should Be '1'; $table.GetAttribute('pageBreak') | Should Be 'CELL'
+        $table.SelectSingleNode('*[local-name()="sz"]').GetAttribute('width') | Should Be '34016'
+        (Get-ScopedTestCell $xml 0 0).GetAttribute('header') | Should Be '1'
+        (Get-ScopedTestCell $xml 1 0).GetAttribute('header') | Should Be '0'
+        $header=Read-ScopedTestXml $output 'Contents/header.xml'
+        $header.SelectNodes('//*[local-name()="font" and @face="Shared Table Font"]').Count | Should Be 7
+        $refs=@($table.SelectNodes('.//*[local-name()="run"]')|ForEach-Object {$_.GetAttribute('charPrIDRef')})
+        @($refs|Select-Object -Unique).Count | Should Be 2
+        $table.SelectSingleNode('.//*[@*[namespace-uri()="urn:scoped-test"]]').GetAttribute('p','urn:scoped-test') | Should Be 'preserve'
+    }
+
+    It 'resizes merged cells by summing the explicitly supplied tracks' {
+        Set-ScopedTestMergedFixture $source
+        $result=Invoke-HwpxScopedEdit -LiteralPath $source -OutputPath $output -Plan (New-ScopedTestPlan @(@{type='set-table-format';sectionIndex=0;tableIndex=0;columnWidthsMm=@(20,30,40);rowHeightsMm=@(10,20,30)}))
+        ($result.Errors -join '; ') | Should Be ''
+        $size=(Get-ScopedTestCell (Read-ScopedTestXml $output) 0 0).SelectSingleNode('*[local-name()="cellSz"]')
+        $size.GetAttribute('width') | Should Be '14173'
+        $size.GetAttribute('height') | Should Be '8504'
+    }
+
+    It 'deletes a guarded row and a column without rewriting surviving cell content' {
+        foreach ($case in @(@{type='delete-table-row';index=2;expectedTexts=@('G','H','I');rowCnt='2';colCnt='3'},@{type='delete-table-column';index=1;expectedTexts=@('B','E','H');rowCnt='3';colCnt='2'})) {
+            $destination=Join-Path $caseDir ($case.type+'.hwpx')
+            $op=@{type=$case.type;sectionIndex=0;tableIndex=0;index=$case.index;expectedTexts=$case.expectedTexts}
+            $result=Invoke-HwpxScopedEdit -LiteralPath $source -OutputPath $destination -Plan (New-ScopedTestPlan @($op))
+            ($result.Errors -join '; ') | Should Be ''
+            $table=(Read-ScopedTestXml $destination).SelectSingleNode('//*[local-name()="tbl"]')
+            $table.GetAttribute('rowCnt') | Should Be $case.rowCnt
+            $table.GetAttribute('colCnt') | Should Be $case.colCnt
+            $table.SelectSingleNode('.//*[local-name()="t"]').InnerText | Should Be 'A'
+        }
+    }
+
+    It 'updates fixed line spacing in both compatibility branches and script flags without touching originals' {
+        $result=Invoke-HwpxScopedEdit -LiteralPath $source -OutputPath $output -Plan (New-ScopedTestPlan @(@{type='set-cell-format';sectionIndex=0;tableIndex=0;row=1;column=1;textStyle=@{superscript=$true;subscript=$false;strikeout=$true};paragraphStyle=@{alignment='DISTRIBUTE';lineSpacing=@{type='FIXED';valuePt=14};widowOrphan=$false}}))
+        ($result.Errors -join '; ') | Should Be ''
+        $header=Read-ScopedTestXml $output 'Contents/header.xml'; $cell=Get-ScopedTestCell (Read-ScopedTestXml $output) 1 1
+        $p=$cell.SelectSingleNode('.//*[local-name()="p"]'); $run=$p.SelectSingleNode('*[local-name()="run"]')
+        $char=$header.SelectSingleNode('//*[local-name()="charPr" and @id="'+$run.GetAttribute('charPrIDRef')+'"]')
+        $char.SelectNodes('*[local-name()="supscript"]').Count | Should Be 1
+        $char.SelectNodes('*[local-name()="subscript"]').Count | Should Be 0
+        $char.SelectSingleNode('*[local-name()="strikeout"]').GetAttribute('shape') | Should Be 'SOLID'
+        $para=$header.SelectSingleNode('//*[local-name()="paraPr" and @id="'+$p.GetAttribute('paraPrIDRef')+'"]')
+        $para.SelectSingleNode('.//*[local-name()="case"]/*[local-name()="lineSpacing"]').GetAttribute('value') | Should Be '1400'
+        $para.SelectSingleNode('.//*[local-name()="default"]/*[local-name()="lineSpacing"]').GetAttribute('value') | Should Be '2800'
+    }
+
+    It 'rejects invalid dimensions margins flags and unexpected cell text before output' {
+        $cases=@(
+            @{type='set-table-format';sectionIndex=0;tableIndex=0;columnWidthsMm=@(10,20)},
+            @{type='set-table-format';sectionIndex=0;tableIndex=0;rowHeightsMm=@(10,0,10)},
+            @{type='set-table-format';sectionIndex=0;tableIndex=0;repeatHeader='true'},
+            @{type='set-cell-format';sectionIndex=0;tableIndex=0;row=1;column=1;style=@{cellPaddingMm=100}},
+            @{type='set-cell-format';sectionIndex=0;tableIndex=0;row=1;column=1;style=@{borderWidthMm=0.13}},
+            @{type='set-cell-format';sectionIndex=0;tableIndex=0;row=1;column=1;textStyle=@{superscript=$true;subscript=$true}},
+            @{type='set-cell-content';sectionIndex=0;tableIndex=0;row=1;column=1;expectedText='wrong';paragraphs=@(@{text='New'})},
+            @{type='set-cell-content';sectionIndex=0;tableIndex=0;row=1;column=1;expectedText='E';paragraphs=@(@{text='New';runs=@(@{text='Ambiguous'})})},
+            @{type='delete-table-row';sectionIndex=0;tableIndex=0;index=2;expectedTexts=@('wrong','H','I')}
+        )
+        foreach ($op in $cases) {Assert-ScopedTestBlocked $source $output (New-ScopedTestPlan @($op))}
+    }
+
+    It 'blocks overlapping cell and table replacements and protected target cells' {
+        $cell=@{type='set-cell-format';sectionIndex=0;tableIndex=0;row=1;column=1;verticalAlignment='BOTTOM'}
+        $table=@{type='set-table-format';sectionIndex=0;tableIndex=0;repeatHeader=$true}
+        Assert-ScopedTestBlocked $source $output (New-ScopedTestPlan @($cell,$table))
+        $xml=Read-ScopedTestXml $source; (Get-ScopedTestCell $xml 1 1).SetAttribute('protect','1')
+        Set-ScopedTestPart $source 'Contents/section0.xml' ([Text.Encoding]::UTF8.GetBytes($xml.OuterXml))
+        Assert-ScopedTestBlocked $source $output (New-ScopedTestPlan @($cell))
+    }
+
+    It 'preserves named cells and vendor cell metadata while applying known text formats' {
+        $xml=Read-ScopedTestXml $source; $cell=Get-ScopedTestCell $xml 1 1
+        $cell.SetAttribute('name','NamedField'); $cell.SetAttribute('vendor','urn:vendor','keep') | Out-Null
+        Set-ScopedTestPart $source 'Contents/section0.xml' ([Text.Encoding]::UTF8.GetBytes($xml.OuterXml))
+        $result=Invoke-HwpxScopedEdit -LiteralPath $source -OutputPath $output -Plan (New-ScopedTestPlan @(@{type='set-cell-format';sectionIndex=0;tableIndex=0;row=1;column=1;textStyle=@{bold=$true}}))
+        ($result.Errors -join '; ') | Should Be ''
+        $cell=Get-ScopedTestCell (Read-ScopedTestXml $output) 1 1
+        $cell.GetAttribute('name') | Should Be 'NamedField'
+        $cell.GetAttribute('vendor','urn:vendor') | Should Be 'keep'
+    }
+
+    It 'runs the new cell command in fresh PowerShell processes including Windows 5.1' {
+        $cli=Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/Invoke-HwpSkill.ps1'
+        $planPath=Join-Path $caseDir 'edit.json'
+        $plan=New-ScopedTestPlan @(@{type='set-cell-content';sectionIndex=0;tableIndex=0;row=1;column=1;expectedText='E';paragraphs=@(@{text='New content';textStyle=@{fontFamily='CLI Font';bold=$true}})})
+        [IO.File]::WriteAllText($planPath,($plan|ConvertTo-Json -Depth 20),[Text.UTF8Encoding]::new($false))
+        foreach ($shellName in @('pwsh','powershell')) {
+            $shell=Get-Command $shellName -ErrorAction SilentlyContinue
+            if ($null -eq $shell) {continue}
+            $destination=Join-Path $caseDir ($shellName+'.hwpx')
+            $raw=& $shell.Source -NoProfile -File $cli edit-hwpx -LiteralPath $source -PlanPath $planPath -OutputPath $destination
+            $LASTEXITCODE | Should Be 0
+            (($raw -join "`n")|ConvertFrom-Json).status | Should Be 'PASS_WITH_WARNINGS'
+            (Get-ScopedTestCell (Read-ScopedTestXml $destination) 1 1).InnerText | Should Be 'New content'
+        }
+    }
+
+    It 'sets table alignment while retaining position offsets and rejects protected dimensions' {
+        $xml=Read-ScopedTestXml $source
+        $table=$xml.SelectSingleNode('//*[local-name()="tbl"]')
+        $pos=$xml.CreateElement('hp','pos','http://www.hancom.co.kr/hwpml/2011/paragraph')
+        $pos.SetAttribute('horzAlign','LEFT'); $pos.SetAttribute('horzOffset','37')
+        $null=$table.InsertAfter($pos,$table.SelectSingleNode('*[local-name()="sz"]'))
+        Set-ScopedTestPart $source 'Contents/section0.xml' ([Text.Encoding]::UTF8.GetBytes($xml.OuterXml))
+        $result=Invoke-HwpxScopedEdit -LiteralPath $source -OutputPath $output -Plan (New-ScopedTestPlan @(@{type='set-table-format';sectionIndex=0;tableIndex=0;alignment='RIGHT'}))
+        ($result.Errors -join '; ') | Should Be ''
+        $pos=(Read-ScopedTestXml $output).SelectSingleNode('//*[local-name()="tbl"]/*[local-name()="pos"]')
+        $pos.GetAttribute('horzAlign') | Should Be 'RIGHT'; $pos.GetAttribute('horzOffset') | Should Be '37'
+        $table.SelectSingleNode('*[local-name()="sz"]').SetAttribute('protect','1')
+        Set-ScopedTestPart $source 'Contents/section0.xml' ([Text.Encoding]::UTF8.GetBytes($xml.OuterXml))
+        $blocked=Join-Path $caseDir 'blocked.hwpx'
+        Assert-ScopedTestBlocked $source $blocked (New-ScopedTestPlan @(@{type='set-table-format';sectionIndex=0;tableIndex=0;columnWidthsMm=@(10,10,10)}))
     }
 }

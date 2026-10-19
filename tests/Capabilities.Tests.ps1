@@ -47,7 +47,7 @@ Describe 'HWP 엔진 기능 스냅샷' {
                 id = 'hwpx-direct'
                 available = $true
                 formats = @('HWPX-ZIP')
-                operations = @('inspect', 'generate')
+                operations = @('inspect', 'generate', 'edit-hwpx', 'preview')
                 requiresGui = $false
                 isolation = 'none'
                 reason = 'HWPX ZIP/XML direct inspection and generation are built in; Hancom is not used for content writing.'
@@ -143,6 +143,9 @@ Describe 'HWP 엔진 기능 스냅샷' {
         $snapshot.authoring.defaultPlanVersion | Should Be '2.0'
         $snapshot.authoring.requiresHancomForHwpx | Should Be $false
         $snapshot.authoring.nativeRenderingVerified | Should Be $false
+        $snapshot.authoring.coverageAudit.semanticAuditComplete | Should Be $false
+        $snapshot.authoring.coverageAudit.allHancomFeaturesSupported | Should Be $false
+        $snapshot.authoring.scopedEditOperations | Should Contain 'sort-table-rows'
         ($snapshot.authoring.features|Where-Object {$_.id -eq 'printed-page-toc'}).create | Should Be unsupported
         ($snapshot|ConvertTo-Json -Depth 20) | Test-CapabilityJson -SchemaFile $capabilitySchema | Should Be $true
     }

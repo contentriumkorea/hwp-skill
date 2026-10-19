@@ -183,6 +183,14 @@ V2 테두리 두께(mm)는 한컴 규격의 `0.1, 0.12, 0.15, 0.2, 0.25, 0.3, 0.
 
 ## 기존 HWPX 부분 수정
 
+탭·채움선, 머리말/꼬리말 삽입·교체, 각주/미주 설정은 [참조·탭 편집](reference-editing.md)을
+따른다. 구역 정의가 겹치는 변경은 AI가 내부적으로 여러 번 저장·검사하고 최종 파일을 전달한다.
+
+확장 편집의 정확한 입력은 [공식 모델 조회와 확장 편집](format-model.md)을 따른다.
+`replace-paragraph-text`는 서식을 유지한 여러 run 리터럴 교체, `set-object-format`은
+기본 그림/도형 편집, `set-section-settings`는 정규 구역의 시작 번호·격자·표시·쪽 번호다.
+공식 속성 목록에 있다는 이유만으로 미지원 XML 기능을 임의 삽입하지 않는다.
+
 `edit-hwpx`는 ZIP을 전체 문서 모델로 재생성하지 않는다. 지정한 노드만 바꾸고 미지의
 XML 요소·속성과 변경하지 않은 파트의 비압축 바이트를 보존한다. 좌표는 모두 0부터다.
 사용자가 지정한 변경과 원본 검사 결과로만 계획을 만든다.
@@ -213,6 +221,12 @@ XML 요소·속성과 변경하지 않은 파트의 비압축 바이트를 보�
 | 작업 | 지정 속성 |
 |---|---|
 | `set-page` | `sectionIndex`, `orientation?`, 쌍인 `paperWidthMm/paperHeightMm?`, `margins?` |
+| `set-columns` | `sectionIndex`, `count`(1~16), `gapMm`, 선택 `widthsMm`(모든 열) |
+| `set-page-border` | `sectionIndex`, `applyTo:"BOTH"/"EVEN"/"ODD"`, `style`, 선택 `offsetMm:{left?,right?,top?,bottom?}` |
+| `set-paragraph-content` | 문단 `address`, `expectedText`, 하나의 `paragraph:{text 또는 runs,textStyle?,paragraphStyle?}` |
+| `set-paragraph-breaks` | 문단 `address`, `pageBreak?`, `columnBreak?`(Boolean) |
+| `insert-paragraphs` | 기준 문단 `address`, `placement:"before"/"after"`, `paragraphs` 배열 |
+| `delete-paragraph` | 텍스트 전용 문단 `address`, `expectedText` |
 | `replace-run-text` | run의 `address`, `expectedText`, `text` |
 | `set-run-style` | 문단/run 주소와 검사한 기존 `charPrIDRef` |
 | `set-paragraph-style` | 문단 주소와 검사한 기존 `paraPrIDRef` |
@@ -224,18 +238,56 @@ XML 요소·속성과 변경하지 않은 파트의 비압축 바이트를 보�
 | `replace-image` | 그림(`pic`)의 `address`, 새 로컬 이미지 `path`, 원래 이미지 바이트의 `expectedSha256` |
 | `insert-table-row` | 표(`tbl`)의 `address`, 0부터 시작하는 삽입 `index`, `heightMm` |
 | `insert-table-column` | 표(`tbl`)의 `address`, 0부터 시작하는 삽입 `index`, `widthMm` |
+| `set-cell-content` | 셀(`tc`)의 `address`, 기존 셀의 LF 구분 `expectedText`, paragraph 블록 배열 `paragraphs` |
+| `set-cell-format` | 셀 주소와 `verticalAlignment?`, `textDirection?`, `lineWrap?`, `style?`, `textStyle?`, `paragraphStyle?` |
+| `set-table-format` | 표 주소와 `columnWidthsMm?`, `rowHeightsMm?`, `alignment?`, `repeatHeader?` 또는 `headerRows?`, `pageBreak?`, 공통 셀 서식 |
+| `delete-table-row`, `delete-table-column` | 표 주소, 삭제 `index`, 삭제 행/열의 순서대로 `expectedTexts` |
+| `insert-cell-image` | 셀 주소, `expectedText`, `placement:"append"/"prepend"`, `path`, 선택 치수와 `altText` |
+| `insert-cell-table` | 셀 주소, `expectedText`, `placement`, `table` 정의 |
+| `calculate-table` | 표 주소, `calculations[{row,column,expectedText,expression,format?,textStyle?,paragraphStyle?}]` |
+| `sort-table-rows` | 표 주소, `startRow/endRow/column`, `dataType:"TEXT"/"NUMBER"`, `direction:"ASC"/"DESC"` |
+| `move-paragraph` | 문단 `address`, 같은 부모의 `targetAddress`, `placement:"before"/"after"`, 정확한 `expectedText` |
+| `apply-named-style` | 문단 주소, 검사된 PARA `styleId`, 선택 원문 가드·복제 서식/이름 |
+| `set-cell-diagonal` | 셀 주소, `direction:"SLASH"/"BACK_SLASH"/"CROSS"/"NONE"`, 보이는 선의 `line` |
+
+새 표·셀 제어의 구체적인 요청 해석과 계획은 [표 통합 제어](tables.md)를 따른다.
+문단 이동·명명 스타일의 정확한 적용/복제 경계는 [추가 부분 편집](remaining-editing.md)을 따른다.
+표 전체 수정과 같은 표 내부 수정은 검사·수정 단계를 나누고 매번 출력에서 주소를 다시 얻는다.
+
+`set-paragraph-content`는 텍스트 전용 문단의 부분 서식·탭·문단 내 줄바꿈을 구성한다.
+책갈피·필드·그림·쪽 정의나 미지 메타데이터를 포함하면 전체 교체하지 않는다.
+`set-paragraph-breaks`는 기존 텍스트/컨트롤을 유지하며 나누기 플래그만 수정한다.
+`set-columns`의 명시 폭+간격은 본문 폭을 채워야 한다. 폭 생략은 균등 열이며 중간 단
+전환/비정규 열 정의는 추측하지 않는다. `set-page-border`는 선택한 종류의 쪽 정의만
+공유 리소스를 복제해 수정한다. 다단/쪽 테두리/나누기/정렬은 `-ApproveAdvanced`가 필요하다.
+같은 구역의 용지 변경과 다단 설정은 새 본문 폭을 다시 검사하도록 별도 단계로 실행한다.
+
+`insert-paragraphs`는 문단 앞/뒤에 새 문단을 넣고, 원래 쪽 정의·표·그림은 보존한다.
+독립 빈 줄은 `text:""`와 `textStyle.fontSizePt`로 넣는다. 문단 스타일과 직접 텍스트 run의
+글자 스타일을 상속하며, 직접 텍스트 run이 없는 기준 문단에서는 기존 charPr 0을 사용한다.
+`delete-paragraph`는 정확한 원문을 확인한 텍스트 전용 문단만 삭제하며, 컨트롤·미지
+메타데이터가 있거나 구역/텍스트 목록의 마지막 문단이면 차단한다. 삽입/삭제는 부모
+구조를 보존 복제하므로 같은 부모 내부의 다른 수정은 재검사 후 별도 단계로 처리한다.
+둘 다 `-ApproveAdvanced`가 필요하며 저장된 줄 좌표는 다시 계산하지 않고 무효화한다.
 
 표 병합/해제도 `sectionIndex/tableIndex` 대신 표의 `address`를 받을 수 있다.
 `set-table-cell`은 일반 문단/run 하나인 셀만 전체 교체한다. 서식이 섞인 셀은 내부 run
-주소로 부분 수정한다. 행·열 추가는 병합되지 않은 단순 본문 표만 지원하며 지정 위치에
-빈 셀을 삽입한다. 표가 넓어지므로 요청 치수와 본문 폭을 확인하고 `-ApproveAdvanced`로 실행한다.
+주소로 부분 수정한다. 병합된 직사각형 표와 주소로 고른 중첩 표도 행·열 추가/삭제를
+지원한다. 삽입 경계를 가로지르는 병합은 확장하고, 삭제 경계의 병합은 축소하며 기준
+셀의 내용은 남은 영역으로 보존한다. 새 빈 칸만 생성한다. 원래 행열 치수가 모호하면
+`columnWidthsMm/rowHeightsMm` 배열로 원래 치수를 명시해야 한다. 표가 넓어지므로
+요청 치수와 본문 폭을 확인하고 `-ApproveAdvanced`로 실행한다.
 이미지는 공유되지 않은 PNG/JPEG/GIF/BMP 리소스만 동일 형식으로 교체하며 원래 배치·크기·
 자르기 XML을 보존한다. 이미지 디코딩과 실제 조판 결과는 별도 미리보기로 확인한다.
 
 format 작업은 기존 공유 서식을 새 ID로 복제해 대상만 바꾼다. 기존 서식의 다른 사용자는
-변하지 않는다. `textStyle`은 크기·굵게·기울임·색·밑줄을, `paragraphStyle`은 정렬·비율 줄 간격·
-좌우/앞뒤 여백·들여쓰기·keepWithNext/keepLines/pageBreakBefore를 지원한다.
-이 부분 수정 경로에서 새 글꼴 생성·탭·목록·고정 줄 간격 변경은 지원하지 않는다.
+변하지 않는다. `textStyle`은 글꼴명·크기·굵게·기울임·색·밑줄·취소선·윗첨자/아랫첨자·
+자간·장평을 지원한다. 글꼴명은 언어별 리소스에 등록하며 글꼴 파일을 설치·포함하지 않는다.
+`paragraphStyle`은 정렬·비율 또는 명시적 고정/최소 줄 간격·좌우/앞뒤 여백·들여쓰기·
+keepWithNext/keepLines/widowOrphan/pageBreakBefore를 지원한다. 일반 작성의 기본 간격은
+여전히 160%·문단 위아래 0이며, 추가 공간은 편집 가능한 빈 문단으로 처리한다.
+기존 목록 정의 수정은 아직 지원하지 않는다. 탭 위치는 `set-paragraph-tabs`를 사용한다. 셀 내용을 새로 구성할
+때의 탭 문자·문단 내 줄바꿈과 독립 빈 문단은 지원한다.
 
 병합은 아직 병합되지 않은 직사각형 셀들의 문단을 행 우선 순서로 기준 셀에 모으며,
 기준 셀의 셀 서식을 유지한다. `expectedTexts`는 그 순서의 문자열 배열이다. 셀 문단 사이의
@@ -243,7 +295,10 @@ format 작업은 기존 공유 서식을 새 ID로 복제해 대상만 바꾼다
 만든다. 새로운 행/열 추가가 아니다. 이때 `-ApproveAdvanced`가 필요하다.
 
 한 계획에서 같은 표의 구조 변경은 한 번만 허용한다. 최대 4,096칸의 완전한 표,
-셀 간격 0, 알려진 텍스트 전용 셀만 처리한다. 중첩 표·보호 셀·모호한 기하 정보는 차단한다.
+셀 간격 0을 지원한다. 셀 전체 삭제로 그림·필드·미지 개체가 소실될 수 있으면 차단한다.
+행열 일부만 삭제되는 병합 셀은 포함 그림·중첩 표와 함께 보존한다. 보호 셀·알 수 없는
+행 구조와 해결되지 않은 기하 정보는 차단한다. 텍스트 병합/해제는 여전히 알려진 텍스트
+셀을 대상으로 한다.
 텍스트/글자 서식 대상이 여러 텍스트 요소나 컨트롤을 가로지르면 차단한다.
 검사 없이 문단/run 번호나 주소를 추정하지 않는다.
 

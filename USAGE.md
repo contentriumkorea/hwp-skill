@@ -5,7 +5,7 @@
 Windows·macOS·Linux에서 `.hwp`, `.hwt`, `.hwpx`를 다루기 위한 Agent Skills 표준 호환 스킬
 저장소입니다. Codex, Claude Code, Cursor, OpenCode, Gemini CLI, GitHub Copilot CLI 등
 Agent Skills를 지원하는 여러 AI 에이전트에서 같은 `hwp-skill`을 사용할 수 있습니다.
-현재 버전은 **2.1.1**이며 **Phase 1 무창 계약**과 한글 문서 작업의 단일 오케스트레이션 흐름을 제공하며,
+현재 소스는 **2.7.0**이며 무창 처리 계약과 한글 문서 작업의 단일 오케스트레이션 흐름을 제공하며,
 기본 실행 모드는 `silent`입니다. 공문,
 보고서, 계획서, 회의록, 제안서, 스토리보드처럼 원본 보존과 사용자
 포커스 유지가 중요한 한글 문서 파일 요청을 대상으로 합니다.
@@ -19,6 +19,15 @@ Agent Skills를 지원하는 여러 AI 에이전트에서 같은 `hwp-skill`을 
 2.1.0에서는 **정확한 수정 대상 주소, 셀·이미지·단순 표 확장 편집, 운영체제 독립 HWP
 읽기, 무창 근사 미리보기**를 추가했습니다. [변경 기록](CHANGELOG.md)에서 상세 범위를
 확인할 수 있습니다. 자동 테스트는 Windows/Linux/macOS에서 실행합니다.
+
+2.7.0은 이전 로컬 확장과 문단 이동·명명 스타일·셀 대각선을 함께 제공합니다.
+[추가 부분 편집](skills/hwp-skill/references/remaining-editing.md) 및
+[표 통합 제어](skills/hwp-skill/references/tables.md)에서 다문단·부분 글자·
+셀 서식·그림·중첩 표·검증된 합계 계산·병합 표 행열 추가/삭제의 실제 지원 범위를 확인하세요.
+
+표 정렬·여러 제목 행·셀 쓰기 방향과 기존 본문/구역 수정도 직접 HWPX로 처리합니다.
+정적 명령 인벤토리와 남은 기능은 [기능 대조 대장](skills/hwp-skill/references/feature-audit.md)에
+기록하며, 모든 기능의 의미·실행 전수 검증이 끝났다고 주장하지 않습니다.
 
 2.1.1에서는 설치된 한컴오피스 2024의 자동화 API·변환 후보를 실행하지 않고 조사한
 [정적 분석 기록](skills/hwp-skill/references/hancom-2024-runtime-audit.md)을 추가했습니다.

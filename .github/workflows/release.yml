@@ -21,6 +21,8 @@ jobs:
         run: |
           $version=(Get-Content skills/hwp-skill/version.json -Raw | ConvertFrom-Json).version
           if ($env:GITHUB_REF_NAME -cne "v$version") { throw 'Tag and packaged version differ.' }
+          python -X utf8 -m unittest discover -s tests -p test_model_catalog.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Set-PSRepository PSGallery -InstallationPolicy Trusted
           Install-Module Pester -RequiredVersion 4.10.1 -Force -Scope CurrentUser -SkipPublisherCheck
           Import-Module Pester -RequiredVersion 4.10.1 -Force

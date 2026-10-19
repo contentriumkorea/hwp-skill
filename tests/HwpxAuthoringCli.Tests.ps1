@@ -15,7 +15,7 @@ Describe 'Public authoring validation and scoped editing commands' {
         $cli=Join-Path $PSScriptRoot '../skills/hwp-skill/scripts/Invoke-HwpSkill.ps1'
         $source=Join-Path $TestDrive 'table-source.hwpx'
         Copy-Item (Join-Path $PSScriptRoot '../skills/hwp-skill/templates/default.hwpx') $source
-        foreach($type in @('merge-cells','split-cell')){
+        foreach($type in @('merge-cells','split-cell','delete-table-row','delete-table-column','set-table-format')){
             $plan=Join-Path $TestDrive ($type+'.json')
             [IO.File]::WriteAllText($plan,('{"version":"2.0","operations":[{"type":"'+$type+'","sectionIndex":0,"tableIndex":0,"row":0,"column":0}]}'))
             $out=Join-Path $TestDrive ($type+'.hwpx')

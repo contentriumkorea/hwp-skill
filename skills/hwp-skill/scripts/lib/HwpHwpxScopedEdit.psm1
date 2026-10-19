@@ -419,15 +419,18 @@ function Assert-ScopedCellAttributes {
 }
 
 function Get-ScopedCellContent {
-    param([Xml.XmlElement]$Cell, $CharacterIds, $ParagraphIds)
+    param([Xml.XmlElement]$Cell, $CharacterIds, $ParagraphIds, [switch]$PreserveCellMetadata)
     $ns = New-ScopedNamespaces $Cell.OwnerDocument
-    Assert-ScopedCellAttributes $Cell @('name','header','hasMargin','protect','editable','dirty','borderFillIDRef')
-    if ($Cell.GetAttribute('name') -cne '') { throw 'Named cells cannot be merged or split.' }
+    if (-not $PreserveCellMetadata) {
+        Assert-ScopedCellAttributes $Cell @('name','header','hasMargin','protect','editable','dirty','borderFillIDRef')
+        if ($Cell.GetAttribute('name') -cne '') { throw 'Named cells cannot be merged or split.' }
+    }
     foreach ($flag in @('protect','editable')) {
         if ($Cell.HasAttribute($flag) -and $Cell.GetAttribute($flag) -cnotin @('0','false')) { throw "Protected or special cell: $flag." }
     }
     $children = @('subList','cellAddr','cellSpan','cellSz','cellMargin')
     foreach ($child in $Cell.ChildNodes) {
+        if ($PreserveCellMetadata) { continue }
         if ($child.NodeType -in @('Whitespace','SignificantWhitespace')) { continue }
         if ($child.NodeType -ne 'Element' -or $child.NamespaceURI -cne $script:ScopedHp -or $children -cnotcontains $child.LocalName) {
             throw 'Unknown cell structure cannot be removed or duplicated.'
@@ -439,6 +442,7 @@ function Get-ScopedCellContent {
     }
     foreach ($name in $children) {
         $node = Get-ScopedOneChild $Cell "hp:$name"
+        if ($PreserveCellMetadata) { continue }
         Assert-ScopedCellAttributes $node $attributes[$name]
         if ($name -cne 'subList' -and $node.HasChildNodes) { throw "Unknown cell metadata children: $name." }
     }
@@ -446,7 +450,7 @@ function Get-ScopedCellContent {
     foreach ($name in @('id','linkListIDRef','linkListNextIDRef','textWidth','textHeight','hasTextRef','hasNumRef')) {
         if ($sub.HasAttribute($name) -and $sub.GetAttribute($name) -cnotin @('','0')) { throw "Linked or special cell subList: $name." }
     }
-    if ($sub.HasAttribute('textDirection') -and $sub.GetAttribute('textDirection') -cne 'HORIZONTAL') { throw 'Only horizontal text-only cells are supported.' }
+    if (-not $PreserveCellMetadata -and $sub.HasAttribute('textDirection') -and $sub.GetAttribute('textDirection') -cne 'HORIZONTAL') { throw 'Only horizontal text-only cells are supported.' }
     foreach ($child in $sub.ChildNodes) {
         if ($child.NodeType -in @('Whitespace','SignificantWhitespace')) { continue }
         if ($child.NodeType -ne 'Element' -or $child.NamespaceURI -cne $script:ScopedHp -or $child.LocalName -cne 'p') { throw 'Cell subList must contain only direct paragraphs.' }
@@ -465,8 +469,7 @@ function Get-ScopedCellContent {
         $line = [Text.StringBuilder]::new()
         foreach ($run in $runs) {
             if (-not $CharacterIds.Contains((Get-ScopedStyleId $run.GetAttribute('charPrIDRef') 'cell.charPrIDRef'))) { throw 'Cell character style resource is absent.' }
-            $t = Get-ScopedTextElement $run 'cell.run'
-            $null = $line.Append($t.InnerText)
+            $null = $line.Append((Get-ScopedInlineText $run))
         }
         $texts.Add($line.ToString())
     }
@@ -673,20 +676,26 @@ function New-ScopedFormatResource {
     param([xml]$Header, [Xml.XmlElement]$Target, [string]$Kind, [object]$Style, $Allocation)
     $fields = ConvertTo-ScopedMap $Style 'format'
     if ($Kind -ceq 'charPr') {
-        $allowed = @('fontSizePt','bold','italic','textColor','underline')
+        $allowed = @('fontFamily','fontSizePt','bold','italic','textColor','underline','strikeout','superscript','subscript','letterSpacingPercent','widthPercent')
         $collectionName = 'charProperties'
     } else {
-        $allowed = @('alignment','lineSpacingPercent','leftMarginMm','rightMarginMm','indentMm','marginBeforeMm','marginAfterMm','keepWithNext','keepLines','pageBreakBefore')
+        $allowed = @('alignment','lineSpacingPercent','lineSpacing','leftMarginMm','rightMarginMm','indentMm','marginBeforeMm','marginAfterMm','keepWithNext','keepLines','widowOrphan','pageBreakBefore')
         $collectionName = 'paraProperties'
     }
     Assert-ScopedKeys $fields @() 'format' $allowed
     if ($fields.Count -eq 0) { throw 'Formatting requires at least one explicit property.' }
+    if ($fields.ContainsKey('lineSpacing') -and $fields.ContainsKey('lineSpacingPercent')) { throw 'Choose lineSpacing or lineSpacingPercent, not both.' }
+    if ($fields.ContainsKey('superscript') -and $fields.ContainsKey('subscript') -and $fields['superscript'] -eq $true -and $fields['subscript'] -eq $true) { throw 'Superscript and subscript cannot both be enabled.' }
     if (-not $Allocation.ContainsKey($Kind)) { $Allocation[$Kind] = Get-ScopedStyleIds $Header $Kind }
     $ids = $Allocation[$Kind]
     $originalId = Get-ScopedStyleId $Target.GetAttribute($Kind+'IDRef') "target.$($Kind)IDRef"
+    if (-not $Allocation.ContainsKey('FormatCache')) { $Allocation.FormatCache = @{} }
+    $cacheKey = $Kind + '|' + $originalId + '|' + (ConvertTo-Json -InputObject $Style -Depth 15 -Compress)
+    if ($Allocation.FormatCache.ContainsKey($cacheKey)) { return $Allocation.FormatCache[$cacheKey] }
     $ns = New-ScopedNamespaces $Header
     $collection = $Header.SelectNodes("/hh:head/hh:refList/hh:$collectionName",$ns)[0]
     $sources = $collection.SelectNodes(('hh:{0}[@id="{1}"]' -f $Kind,$originalId),$ns)
+    if($sources.Count -eq 0 -and $Allocation.ContainsKey('Resources')){$sources=@($Allocation.Resources|Where-Object {$_.Kind -ceq $Kind -and $_.Id -ceq $originalId}|ForEach-Object {$_.Node})}
     if ($sources.Count -ne 1) { throw "Original $Kind resource is absent or ambiguous: $originalId." }
     [long]$next = 0
     foreach ($id in $ids) { $next = [Math]::Max($next,([long]$id+1)) }
@@ -700,24 +709,48 @@ function New-ScopedFormatResource {
         $value = $fields[$key]
         if ($Kind -ceq 'charPr') {
             switch -CaseSensitive ($key) {
+                'fontFamily' { Set-ScopedFontFamily $Header $copy $value $Allocation }
                 'fontSizePt' {
                     $pt = Get-ScopedNumber $value 1 1000 'textStyle.fontSizePt'
                     $copy.SetAttribute('height',[string][int][Math]::Round(($pt*100),0,[MidpointRounding]::AwayFromZero))
                 }
                 'textColor' {
-                    if ($value -isnot [string] -or $value -cnotmatch '^#[0-9A-Fa-f]{6}$') { throw 'textStyle.textColor must be #RRGGBB.' }
+                    if ($value -isnot [string] -or $value -cnotmatch '\A#[0-9A-Fa-f]{6}\z') { throw 'textStyle.textColor must be #RRGGBB.' }
                     $copy.SetAttribute('textColor',$value)
                 }
                 'underline' {
                     if ($value -isnot [string] -or @('NONE','BOTTOM','CENTER','TOP') -cnotcontains $value) { throw 'textStyle.underline must be NONE, BOTTOM, CENTER or TOP.' }
                     (Get-ScopedOneChild $copy 'hh:underline').SetAttribute('type',$value)
                 }
+                'strikeout' {
+                    if ($value -isnot [bool]) { throw 'strikeout must be Boolean.' }
+                    (Get-ScopedOneChild $copy 'hh:strikeout').SetAttribute('shape',$(if ($value) {'SOLID'} else {'NONE'}))
+                }
+                {$_ -cin @('letterSpacingPercent','widthPercent')} {
+                    $minimum=if ($key -ceq 'widthPercent') {50} else {-50}; $maximum=if ($key -ceq 'widthPercent') {200} else {50}
+                    if (-not (Test-ScopedInteger $value) -or $value -lt $minimum -or $value -gt $maximum) {throw "Invalid integer textStyle.$key."}
+                    $node=Get-ScopedOneChild $copy $(if ($key -ceq 'widthPercent') {'hh:ratio'} else {'hh:spacing'})
+                    foreach ($lang in @('hangul','latin','hanja','japanese','other','symbol','user')) {$node.SetAttribute($lang,[string]$value)}
+                }
+                {$_ -cin @('superscript','subscript')} {
+                    if ($value -isnot [bool]) {throw "$key must be Boolean."}
+                    $name=if ($key -ceq 'superscript') {'supscript'} else {'subscript'}
+                    $opposite=if ($key -ceq 'superscript') {'subscript'} else {'supscript'}
+                    foreach ($remove in @($(if (-not $value) {$name}),$(if ($value) {$opposite}))) {
+                        if ($null -eq $remove) {continue}
+                        foreach ($node in @($copy.SelectNodes(('hh:'+$remove),$ns))) {
+                            if ($node.Attributes.Count -gt 0 -or $node.HasChildNodes) {throw 'Unknown script metadata cannot be removed.'}
+                            $null=$copy.RemoveChild($node)
+                        }
+                    }
+                    if ($value -and $copy.SelectNodes(('hh:'+$name),$ns).Count -eq 0) {$null=$copy.AppendChild($Header.CreateElement('hh',$name,$script:ScopedHh))}
+                }
                 default { Set-ScopedCharacterToggle $copy $key $value }
             }
         } else {
             switch -CaseSensitive ($key) {
                 'alignment' {
-                    if ($value -isnot [string] -or @('LEFT','CENTER','RIGHT','JUSTIFY') -cnotcontains $value) { throw 'paragraphStyle.alignment must be LEFT, CENTER, RIGHT or JUSTIFY.' }
+                    if ($value -isnot [string] -or @('LEFT','CENTER','RIGHT','JUSTIFY','DISTRIBUTE','DISTRIBUTE_SPACE') -cnotcontains $value) { throw 'Unsupported paragraphStyle.alignment.' }
                     (Get-ScopedOneChild $copy 'hh:align').SetAttribute('horizontal',$value)
                 }
                 'lineSpacingPercent' {
@@ -728,7 +761,17 @@ function New-ScopedFormatResource {
                         $line.SetAttribute('unit','HWPUNIT')
                     }
                 }
-                {$_ -cin @('keepWithNext','keepLines','pageBreakBefore')} {
+                'lineSpacing' {
+                    $spacing=ConvertTo-ScopedMap $value 'paragraphStyle.lineSpacing'
+                    Assert-ScopedKeys $spacing @('type','valuePt') 'lineSpacing'
+                    if ($spacing['type'] -isnot [string] -or $spacing['type'] -cnotin @('FIXED','AT_LEAST')) {throw 'lineSpacing.type must be FIXED or AT_LEAST.'}
+                    $pt=Get-ScopedNumber $spacing['valuePt'] 1 1000 'lineSpacing.valuePt'
+                    foreach ($line in (Get-ScopedParagraphBranches $copy 'lineSpacing')) {
+                        $scale=if ($line.ParentNode.LocalName -ceq 'case') {1} else {2}
+                        $line.SetAttribute('type',$spacing['type']); $line.SetAttribute('value',[string][long][Math]::Round(($pt*100*$scale),0,[MidpointRounding]::AwayFromZero)); $line.SetAttribute('unit','HWPUNIT')
+                    }
+                }
+                {$_ -cin @('keepWithNext','keepLines','widowOrphan','pageBreakBefore')} {
                     if ($value -isnot [bool]) { throw "paragraphStyle.$key must be Boolean." }
                     (Get-ScopedOneChild $copy 'hh:breakSetting').SetAttribute($key,[string][int]$value)
                 }
@@ -747,7 +790,10 @@ function New-ScopedFormatResource {
         }
     }
     $null = $ids.Add([string]$next)
-    return @{Node=$copy;Collection=$collection;Kind=$Kind;Id=[string]$next}
+    $resource = @{Node=$copy;Collection=$collection;Kind=$Kind;Id=[string]$next;CountAttribute='itemCnt'}
+    Add-ScopedPreparedResource $Allocation $resource
+    $Allocation.FormatCache[$cacheKey]=$resource
+    return $resource
 }
 
 function Get-ScopedNextParagraphId {
@@ -933,7 +979,7 @@ function Assert-ScopedEditContext {
     $current = $Node
     while ($current.ParentNode -is [Xml.XmlElement]) {
         if ($current.NamespaceURI -cne $script:ScopedHp -or
-            $current.LocalName -cnotin @('t','p','run','tbl','tr','tc','subList','ctrl','header','footer','pic')) {
+            $current.LocalName -cnotin @('t','p','run','tbl','tr','tc','subList','ctrl','header','footer','pic','rect','ellipse','line')) {
             throw 'Address crosses an unsupported or unknown container.'
         }
         if ($current.LocalName -cin @('tc','tbl')) {
@@ -970,6 +1016,20 @@ function Resolve-ScopedAddress {
     return @{ Part=$address['part']; Node=$node }
 }
 
+. (Join-Path $PSScriptRoot 'HwpHwpxTableEdit.ps1')
+. (Join-Path $PSScriptRoot 'HwpHwpxAdvancedTable.ps1')
+. (Join-Path $PSScriptRoot 'HwpHwpxTableCalculate.ps1')
+. (Join-Path $PSScriptRoot 'HwpHwpxDocumentEdit.ps1')
+. (Join-Path $PSScriptRoot 'HwpHwpxTextRangeEdit.ps1')
+. (Join-Path $PSScriptRoot 'HwpHwpxObjectEdit.ps1')
+. (Join-Path $PSScriptRoot 'HwpHwpxSectionSettings.ps1')
+. (Join-Path $PSScriptRoot 'HwpHwpxParagraphTabs.ps1')
+. (Join-Path $PSScriptRoot 'HwpHwpxNoteSettings.ps1')
+. (Join-Path $PSScriptRoot 'HwpHwpxHeaderFooterEdit.ps1')
+. (Join-Path $PSScriptRoot 'HwpHwpxParagraphMove.ps1')
+. (Join-Path $PSScriptRoot 'HwpHwpxNamedStyle.ps1')
+. (Join-Path $PSScriptRoot 'HwpHwpxCellDiagonal.ps1')
+
 function Get-ScopedSteps {
     param([AllowNull()][object]$Plan, $Package)
     $map = ConvertTo-ScopedMap $Plan 'plan'
@@ -995,6 +1055,22 @@ function Get-ScopedSteps {
         $type = $op['type']
         $keys = switch -CaseSensitive ($type) {
             'set-page' { @('type','sectionIndex') }
+            'set-section-settings' { @('type','sectionIndex','settings') }
+            'set-paragraph-tabs' { @('type','address','tabs') }
+            'set-note-settings' { @('type','sectionIndex','kind','settings') }
+            'set-header-footer' { @('type','sectionIndex','kind','applyTo','expectedText','paragraphs') }
+            'replace-paragraph-text' { @('type','address','expectedText','find','replacement') }
+            'set-object-format' { @('type','address') }
+            'set-columns' { @('type','sectionIndex','count','gapMm') }
+            'set-page-border' { @('type','sectionIndex','applyTo','style') }
+            'set-paragraph-content' { @('type','address','expectedText','paragraph') }
+            'set-paragraph-breaks' { @('type','address') }
+            'insert-paragraphs' { @('type','address','placement','paragraphs') }
+            'delete-paragraph' { @('type','address','expectedText') }
+            'move-paragraph' { @('type','address','targetAddress','placement','expectedText') }
+            'apply-named-style' { @('type','address','styleId') }
+            'set-cell-diagonal' { @('type','address','direction') }
+            'sort-table-rows' { @('type','address','startRow','endRow','column','dataType','direction') }
             'replace-run-text' { @('type','sectionIndex','paragraphIndex','runIndex','text','expectedText') }
             'set-run-style' { @('type','sectionIndex','paragraphIndex','runIndex','charPrIDRef') }
             'set-paragraph-style' { @('type','sectionIndex','paragraphIndex','paraPrIDRef') }
@@ -1003,25 +1079,54 @@ function Get-ScopedSteps {
             'merge-cells' { @('type','sectionIndex','tableIndex','row','column','rowSpan','columnSpan','contentOrder','expectedTexts') }
             'split-cell' { @('type','sectionIndex','tableIndex','row','column','expectedText') }
             'set-table-cell' { @('type','sectionIndex','tableIndex','row','column','text','expectedText') }
+            'set-cell-content' { @('type','sectionIndex','tableIndex','row','column','paragraphs','expectedText') }
+            'set-cell-format' { @('type','sectionIndex','tableIndex','row','column') }
+            'set-table-format' { @('type','sectionIndex','tableIndex') }
+            'calculate-table' { @('type','sectionIndex','tableIndex','calculations') }
+            'insert-cell-image' { @('type','sectionIndex','tableIndex','row','column','path','expectedText','placement') }
+            'insert-cell-table' { @('type','sectionIndex','tableIndex','row','column','table','expectedText','placement') }
             'insert-table-row' { @('type','sectionIndex','tableIndex','index','heightMm') }
             'insert-table-column' { @('type','sectionIndex','tableIndex','index','widthMm') }
+            'delete-table-row' { @('type','sectionIndex','tableIndex','index','expectedTexts') }
+            'delete-table-column' { @('type','sectionIndex','tableIndex','index','expectedTexts') }
             'replace-image' { @('type','address','path','expectedSha256') }
             default { throw "Unsupported operation: $location.type=$type" }
         }
-        $optional = if ($type -ceq 'set-page') { @('orientation','margins','paperWidthMm','paperHeightMm','page') } else { @() }
+        $optional = switch -CaseSensitive ($type) {
+            'set-page' { @('orientation','margins','paperWidthMm','paperHeightMm','page') }
+            'replace-paragraph-text' { @('replaceAll') }
+            'set-paragraph-tabs' { @('autoTabLeft','autoTabRight') }
+            'apply-named-style' { @('expectedText','textStyle','paragraphStyle','name','englishName') }
+            'set-cell-diagonal' { @('line') }
+            'set-object-format' { @('placement','textWrap','altText','rotation','flipHorizontal','flipVertical','widthMm','heightMm','crop') }
+            'set-columns' { @('widthsMm') }
+            'set-page-border' { @('offsetMm') }
+            'set-paragraph-breaks' { @('pageBreak','columnBreak') }
+            'set-cell-format' { @('verticalAlignment','textDirection','lineWrap','style','textStyle','paragraphStyle') }
+            'set-table-format' { @('columnWidthsMm','rowHeightsMm','repeatHeader','headerRows','pageBreak','alignment','verticalAlignment','textDirection','lineWrap','style','textStyle','paragraphStyle') }
+            'insert-cell-image' { @('widthMm','heightMm','altText') }
+            {$_ -cin @('insert-table-row','insert-table-column','delete-table-row','delete-table-column')} { @('columnWidthsMm','rowHeightsMm') }
+            default { @() }
+        }
+        if ($type -cin @('set-cell-format','set-table-format') -and @($op.Keys|Where-Object {$_ -cin $optional}).Count -eq 0) {throw 'Format operation needs at least one explicit property.'}
         $addressed = $op.ContainsKey('address')
         if ($addressed) {
-            if ($type -ceq 'set-page') { throw 'set-page requires an explicit sectionIndex.' }
+            if ($type -cin @('set-page','set-columns','set-page-border','set-section-settings','set-note-settings','set-header-footer')) { throw "$type requires an explicit sectionIndex." }
             $keys = @($keys | Where-Object { $_ -cnotin @('sectionIndex','paragraphIndex','runIndex','tableIndex','address') }) + @('address')
-            if ($type -ceq 'set-table-cell') { $keys = @($keys | Where-Object { $_ -cnotin @('row','column') }) }
+            if ($type -cin @('set-table-cell','set-cell-content','set-cell-format','insert-cell-image','insert-cell-table')) { $keys = @($keys | Where-Object { $_ -cnotin @('row','column') }) }
         }
         Assert-ScopedKeys $op $keys $location $optional
         $addressTarget = $null
         if ($addressed) {
-            $kind = if ($type -cin @('merge-cells','split-cell','insert-table-row','insert-table-column')) {'tbl'}
+            $kind = if ($type -cin @('merge-cells','split-cell','insert-table-row','insert-table-column','delete-table-row','delete-table-column','set-table-format','calculate-table','sort-table-rows')) {'tbl'}
                 elseif ($type -ceq 'replace-image') {'pic'}
-                elseif ($type -ceq 'set-table-cell') {'tc'}
-                elseif ($type -cin @('set-paragraph-style','set-paragraph-format')) {'p'} else {'run'}
+                elseif ($type -ceq 'set-object-format') {
+                    $objectAddress=ConvertTo-ScopedMap $op['address'] 'address'
+                    if(-not $objectAddress.ContainsKey('kind') -or $objectAddress['kind'] -isnot [string] -or $objectAddress['kind'] -cnotin @('pic','rect','ellipse','line')){throw 'Object address must select pic, rect, ellipse or line.'}
+                    $objectAddress['kind']
+                }
+                elseif ($type -cin @('set-table-cell','set-cell-content','set-cell-format','insert-cell-image','insert-cell-table','set-cell-diagonal')) {'tc'}
+                elseif ($type -cin @('set-paragraph-style','set-paragraph-format','set-paragraph-content','set-paragraph-breaks','insert-paragraphs','delete-paragraph','move-paragraph','replace-paragraph-text','set-paragraph-tabs','apply-named-style')) {'p'} else {'run'}
             $resolved = Resolve-ScopedAddress $op['address'] $Package $kind
             $part = $resolved.Part; $addressTarget = $resolved.Node
         } else {
@@ -1036,7 +1141,54 @@ function Get-ScopedSteps {
         $replacement = $null
         $resource = $null
         $binary = $null
-        if ($type -ceq 'replace-image') {
+        if ($type -ceq 'set-cell-diagonal') {
+            $target=$addressTarget;$value=''
+            $replacement=New-ScopedCellDiagonal $target $op $Package $allocation
+        } elseif ($type -ceq 'apply-named-style') {
+            $target=$addressTarget;$paragraph=$target;$value=''
+            $replacement=New-ScopedNamedStyle $target $op $Package $allocation
+        } elseif ($type -ceq 'set-paragraph-tabs') {
+            $target=$addressTarget;$paragraph=$target;$attribute='paraPrIDRef'
+            $resource=New-ScopedParagraphTabs $target $op $Package $allocation;$value=$resource.Id
+        } elseif ($type -ceq 'set-note-settings') {
+            $nodes=$xml.SelectNodes('/hs:sec/hp:p/hp:run/hp:secPr',$ns)
+            if($nodes.Count -ne 1 -or $xml.SelectNodes('//hp:secPr',$ns).Count -ne 1){throw 'Note settings require one canonical section-property definition.'}
+            $target=$nodes[0];Assert-ScopedEditContext $target.ParentNode
+            $replacement=New-ScopedNoteSettings $target $op $Package $allocation;$value=''
+        } elseif ($type -cin @('set-section-settings','set-header-footer')) {
+            $nodes=$xml.SelectNodes('/hs:sec/hp:p/hp:run[hp:secPr]',$ns)
+            if($nodes.Count -ne 1 -or $xml.SelectNodes('//hp:secPr',$ns).Count -ne 1){throw 'Section settings require one canonical section-property run.'}
+            $target=$nodes[0];Assert-ScopedEditContext $target
+            $replacement=if($type -ceq 'set-header-footer'){New-ScopedHeaderFooter $target $op $Package $allocation}else{New-ScopedSectionSettings $target $op $Package $allocation};$value=''
+        } elseif ($type -ceq 'replace-paragraph-text') {
+            $target=$addressTarget;$paragraph=$target;$value=''
+            $replacement=New-ScopedTextRangeReplacement $target $op $Package $allocation
+        } elseif ($type -ceq 'set-object-format') {
+            $target=$addressTarget;$value=''
+            $replacement=New-ScopedObjectFormat $target $op $Package $allocation
+        } elseif ($type -ceq 'move-paragraph') {
+            $destination=Resolve-ScopedAddress $op['targetAddress'] $Package 'p'
+            if($destination.Part -cne $part){throw 'Paragraph move cannot cross section parts.'}
+            $target=$addressTarget.ParentNode;$replacement=New-ScopedParagraphMove $addressTarget $destination.Node $op $Package $allocation;$value=''
+        } elseif ($type -cin @('insert-paragraphs','delete-paragraph')) {
+            $target=$addressTarget.ParentNode;$replacement=New-ScopedParagraphStructure $addressTarget $op $Package $allocation;$value=''
+        } elseif ($type -cin @('set-paragraph-content','set-paragraph-breaks')) {
+            $target=$addressTarget;$paragraph=$target;$value=''
+            $replacement=if($type -ceq 'set-paragraph-content'){New-ScopedParagraphContent $target $op $Package $allocation}else{New-ScopedParagraphBreaks $target $op}
+        } elseif ($type -cin @('set-columns','set-page-border')) {
+            if($type -ceq 'set-columns') {
+                $nodes=$xml.SelectNodes('/hs:sec/hp:p/hp:run/hp:ctrl/hp:colPr',$ns)
+                $allColumns=$xml.SelectNodes('//hp:colPr',$ns).Count
+                if($allColumns -gt 1 -or $allColumns -ne $nodes.Count){throw 'Noncanonical or multiple section column transitions require separate targeted editing.'}
+                if($nodes.Count -eq 1){$target=$nodes[0]}else{$runs=$xml.SelectNodes('/hs:sec/hp:p/hp:run[hp:secPr]',$ns);if($runs.Count -ne 1){throw 'One canonical section-property run is required.'};$target=$runs[0]}
+                $replacement=New-ScopedColumns $target $op
+            } else {
+                $nodes=$xml.SelectNodes('/hs:sec/hp:p/hp:run/hp:secPr',$ns);if($nodes.Count -ne 1){throw 'One direct section-property definition is required.'};$target=$nodes[0]
+                $replacement=New-ScopedPageBorder $target $op $Package $allocation
+            }
+            # Section controls are explicitly selected above, never accepted as text addresses.
+            Assert-ScopedEditContext $target.ParentNode;$value=''
+        } elseif ($type -ceq 'replace-image') {
             $target = $addressTarget
             $binary = New-ScopedImageBytes $target $op $Package
             $replacementImageBytes += $binary.Bytes.Length
@@ -1050,7 +1202,7 @@ function Get-ScopedSteps {
             $target = $nodes[0]
             $replacement = New-ScopedPageReplacement $target $op $location
             $value = ''
-        } elseif ($type -cin @('merge-cells','split-cell','insert-table-row','insert-table-column')) {
+        } elseif ($type -cin @('merge-cells','split-cell','insert-table-row','insert-table-column','delete-table-row','delete-table-column','set-table-format','calculate-table','sort-table-rows')) {
             if ($addressed) { $target = $addressTarget }
             else {
                 $tableIndex = Get-ScopedIndex $op['tableIndex'] "$location.tableIndex"
@@ -1058,11 +1210,37 @@ function Get-ScopedSteps {
                 if ($tableIndex -ge $tables.Count) { throw "$location.tableIndex is absent (nested tables are not addressed)." }
                 $target = $tables[$tableIndex]
             }
+            Assert-ScopedEditContext $target
             if ($target.ParentNode.LocalName -ceq 'run') { $paragraph = $target.ParentNode.ParentNode }
             if ($type -ceq 'merge-cells') { $replacement = New-ScopedMergedTable $target $op $Package.Xml['Contents/header.xml'] }
             elseif ($type -ceq 'split-cell') { $replacement = New-ScopedSplitTable $target $op $Package $allocation }
+            elseif ($type -ceq 'set-table-format') { $replacement = New-ScopedFormattedTable $target $op $Package $allocation }
+            elseif ($type -ceq 'calculate-table') { $replacement = New-ScopedCalculatedTable $target $op $Package $allocation }
+            elseif ($type -ceq 'sort-table-rows') { $replacement = New-ScopedSortedTable $target $op $Package }
+            elseif (@((Get-ScopedTableGrid $target).Cells|Where-Object {$_.RowSpan -gt 1 -or $_.ColumnSpan -gt 1}).Count -gt 0 -or
+                $op.ContainsKey('columnWidthsMm') -or $op.ContainsKey('rowHeightsMm') -or $null -ne $target.SelectSingleNode('ancestor::hp:tc',$ns)) {
+                $replacement=New-ScopedMergedTrackTable $target $op $Package $allocation
+            }
+            elseif ($type -cin @('delete-table-row','delete-table-column')) { $replacement = New-ScopedDeletedTable $target $op $Package }
             else { $replacement = New-ScopedInsertedTable $target $op $Package $allocation }
             $value = ''
+        } elseif ($type -cin @('set-cell-content','set-cell-format','insert-cell-image','insert-cell-table')) {
+            if ($addressed) { $target=$addressTarget }
+            else {
+                $tables=$xml.SelectNodes('/hs:sec/hp:tbl | /hs:sec/hp:p/hp:run/hp:tbl',$ns)
+                $tableIndex=Get-ScopedIndex $op['tableIndex'] "$location.tableIndex"
+                if ($tableIndex -ge $tables.Count) {throw 'Table is absent.'}
+                $grid=Get-ScopedTableGrid $tables[$tableIndex]
+                $row=Get-ScopedIndex $op['row'] "$location.row"; $column=Get-ScopedIndex $op['column'] "$location.column"
+                $cell=$grid.Occupancy["$row,$column"]
+                if ($null -eq $cell -or $cell.Row -ne $row -or $cell.Column -ne $column) {throw 'Select a real cell anchor.'}
+                $target=$cell.Node
+            }
+            Assert-ScopedEditContext $target
+            if ($type -ceq 'set-cell-content') { $replacement=New-ScopedCellContentReplacement $target $op $Package $allocation }
+            elseif ($type -cin @('insert-cell-image','insert-cell-table')) { $replacement=Add-ScopedCellObject $target $op $Package $allocation }
+            else { $replacement=$target.CloneNode($true); Set-ScopedCellFormat $replacement $op $Package $allocation }
+            $value=''
         } else {
             if ($type -ceq 'set-table-cell') {
                 if ($addressed) { $cell = $addressTarget }
@@ -1100,8 +1278,10 @@ function Get-ScopedSteps {
                 }
             }
             Assert-ScopedEditContext $target
-            if ($type -cnotin @('set-paragraph-style','set-paragraph-format')) {
+            if ($type -cin @('replace-run-text','set-table-cell')) {
                 $textElement = Get-ScopedTextElement $target $location
+            } elseif ($type -cin @('set-run-style','set-run-format')) {
+                $null = Get-ScopedInlineText $target
             }
             if ($type -cin @('replace-run-text','set-table-cell')) {
                 foreach ($key in @('text','expectedText')) {
@@ -1138,6 +1318,14 @@ function Get-ScopedSteps {
         }
         $steps.Add([pscustomobject]@{Part=$part; XPath=$xpath; Target=$target; Paragraph=$paragraph; Attribute=$attribute; Value=$value; Type=$type; Replacement=$replacement; Resource=$resource; Binary=$binary})
     }
+    foreach($part in $Package.Sections) {
+        if(@($steps|Where-Object {$_.Part -ceq $part -and $_.Type -ceq 'set-page'}).Count -gt 0 -and
+            @($steps|Where-Object {$_.Part -ceq $part -and $_.Type -ceq 'set-columns'}).Count -gt 0){throw 'Change page dimensions and column layout in separate inspect/edit passes.'}
+    }
+    $Package.PreparedResources=@();$Package.NewParts=@();$Package.CalculationResults=@()
+    if($allocation.ContainsKey('Resources')){$Package.PreparedResources=@($allocation.Resources.ToArray())}
+    if($allocation.ContainsKey('NewParts')){$Package.NewParts=@($allocation.NewParts.ToArray())}
+    if($allocation.ContainsKey('Calculations')){$Package.CalculationResults=@($allocation.Calculations.ToArray())}
     return ,$steps
 }
 
@@ -1183,13 +1371,16 @@ function Invoke-HwpxScopedEdit {
     replace-run-text requires exact expectedText. set-run-style and
     set-paragraph-style reference existing header IDs. set-run-format/textStyle
     and set-paragraph-format/paragraphStyle clone the original resource to a new,
-    unique ID without modifying other consumers. No font-family creation.
+    unique ID without modifying other consumers. Font names are registered per
+    language without embedding fonts or launching a font installer.
 
-    textStyle: fontSizePt (1..1000), bold/italic (Boolean), textColor (#RRGGBB),
-    underline (NONE/BOTTOM/CENTER/TOP). paragraphStyle: alignment
-    (LEFT/CENTER/RIGHT/JUSTIFY), lineSpacingPercent (integer 1..1000),
+    textStyle additionally supports fontFamily, strikeout, superscript/subscript,
+    letterSpacingPercent (-50..50), widthPercent (50..200), fontSizePt (1..1000),
+    bold/italic, textColor and underline. paragraphStyle: alignment including
+    DISTRIBUTE/DISTRIBUTE_SPACE, lineSpacingPercent (integer 1..1000) or
+    lineSpacing {type:FIXED/AT_LEAST,valuePt:1..1000},
     leftMarginMm/rightMarginMm/marginBeforeMm/marginAfterMm (0..2000),
-    indentMm (-2000..2000), keepWithNext/keepLines/pageBreakBefore (Boolean).
+    indentMm (-2000..2000), keepWithNext/keepLines/widowOrphan/pageBreakBefore.
     Paragraph spacing accepts direct resources or one canonical HwpUnitChar
     case/default switch; both branches are updated. Unknown resource XML stays.
 
@@ -1225,13 +1416,32 @@ function Invoke-HwpxScopedEdit {
 
     insert-table-row and insert-table-column take a tbl address (or sectionIndex/
     tableIndex), index (0..count, count appends) and heightMm or widthMm respectively.
-    Each inserts one blank track into an unmerged rectangular body table with
+    The legacy path inserts a blank track into an unmerged rectangular body table with
     absolute size equal to its cell grid. New cells inherit margins/border and
     first paragraph/run style from the preceding track (first track at index 0),
     have unique paragraph IDs and header=0. Stored extent grows by the explicit
     dimension; this does not guarantee page fit. Nested/header/footer tables,
-    unknown geometry/cell metadata, controls, links and protected cells block.
+    unknown geometry/cell metadata, controls, links and protected cells block in
+    that legacy path. The merged/nested path expands or contracts crossing spans
+    and relocates surviving anchors with their objects. Original track dimensions
+    must be known, or explicitly supplied as columnWidthsMm/rowHeightsMm.
     A table replacement cannot overlap another edit within its subtree.
+
+    set-cell-content replaces text-only cell paragraphs with structured text/runs
+    and optional textStyle/paragraphStyle, guarded by LF-separated expectedText.
+    set-cell-format changes cell verticalAlignment, style (borders/fill/margins),
+    and optionally every contained text/paragraph style. Both take a tc address
+    or zero-based section/table/row/column selectors. Named cell metadata remains.
+    set-table-format takes a tbl address or section/table selectors and explicit
+    columnWidthsMm/rowHeightsMm, alignment, repeatHeader (first row), pageBreak,
+    and common cell format fields. Resizing supports complete merged grids.
+    delete-table-row/column require index and exact expectedTexts and support
+    rectangular grids, with per-position guards repeated for covered merge slots.
+    insert-cell-image/table append or prepend real objects without removing the
+    existing content. calculate-table evaluates decimal references/arithmetic and
+    SUM/AVERAGE/MIN/MAX/COUNT/ROUND into verified text, not native live fields.
+    All new operations preserve other parts,
+    clone shared resources, invalidate affected caches, and reopen the output.
 
     replace-image requires a pic address, local path and expectedSha256 of the
     original BinData payload. The unshared manifest resource must match the new
@@ -1244,7 +1454,8 @@ function Invoke-HwpxScopedEdit {
     One set-page operation per section per plan. No unsupported key is ignored.
     All operations, clones and table occupancy are preflighted before any output.
     Page changes
-    invalidate all paragraph line caches in that section; other XML edits clear
+    invalidate all paragraph line caches in that section; set-object-format and
+    set-section-settings do so as well. Other XML edits clear
     target and ancestor paragraph caches. Insertions also clear table paragraph
     caches; image-only replacement preserves line caches. Preview/ entries are
     removed on success.
@@ -1290,18 +1501,28 @@ function Invoke-HwpxScopedEdit {
         # Preflight above uses only the original tree; no filesystem writes yet.
         $changed = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
         $binaryPayloads = @{}
+        foreach($part in $package.NewParts){
+            if($package.Parts.Count -ge 4096){throw 'Edited package exceeds 4096 entries.'}
+            Assert-ScopedEntryName $part.Name
+            $package.Parts.Add($part.Name,[pscustomobject]@{Bytes=$part.Bytes;LastWriteTime=[DateTimeOffset]::UtcNow;Attributes=0})
+            $package.Order.Add($part.Name);$binaryPayloads[$part.Name]=$part.Bytes;$null=$changed.Add($part.Name)
+            $hpf=$package.Xml['Contents/content.hpf'];$item=$hpf.CreateElement('opf','item','http://www.idpf.org/2007/opf/')
+            $item.SetAttribute('id',$part.Id);$item.SetAttribute('href',$part.Name);$item.SetAttribute('media-type',$part.MediaType);$item.SetAttribute('isEmbeded','1')
+            $null=$hpf.SelectSingleNode('/opf:package/opf:manifest',(New-ScopedNamespaces $hpf)).AppendChild($item)
+            $null=$changed.Add('Contents/content.hpf')
+        }
+        foreach ($resource in $package.PreparedResources) {
+            $collection=$resource.Collection
+            $null=$collection.AppendChild($resource.Node)
+            $collection.SetAttribute($resource.CountAttribute,[string]$collection.SelectNodes(('hh:'+$resource.Kind),(New-ScopedNamespaces $collection.OwnerDocument)).Count)
+            $resource.XPath=Get-ScopedNodeXPath $resource.Node
+            $null=$changed.Add('Contents/header.xml')
+        }
         foreach ($step in $steps) {
             if ($null -ne $step.Binary) {
                 $binaryPayloads[$step.Binary.Part] = $step.Binary.Bytes
                 $null = $changed.Add($step.Binary.Part)
                 continue
-            }
-            if ($null -ne $step.Resource) {
-                $collection = $step.Resource.Collection
-                $null = $collection.AppendChild($step.Resource.Node)
-                $nodes = $collection.SelectNodes(('hh:'+$step.Resource.Kind),(New-ScopedNamespaces $collection.OwnerDocument))
-                $collection.SetAttribute('itemCnt',[string]$nodes.Count)
-                $null = $changed.Add('Contents/header.xml')
             }
             if ($null -ne $step.Replacement) {
                 $null = $step.Target.ParentNode.ReplaceChild($step.Replacement,$step.Target)
@@ -1318,7 +1539,8 @@ function Invoke-HwpxScopedEdit {
             if ($null -ne $step.Binary) { continue }
             $xml = $package.Xml[$step.Part]
             $ns = New-ScopedNamespaces $xml
-            $caches = if ($step.Type -ceq 'set-page') { @($xml.SelectNodes('//hp:p/hp:linesegarray',$ns)) }
+            # Objects, tabs and section controls may change subsequent pagination.
+            $caches = if ($step.Type -cin @('set-page','set-columns','set-page-border','set-section-settings','set-note-settings','set-header-footer','set-object-format','set-paragraph-tabs','insert-paragraphs','delete-paragraph','move-paragraph','apply-named-style')) { @($xml.SelectNodes('//hp:p/hp:linesegarray',$ns)) }
                 else { @($step.Target.SelectNodes('ancestor-or-self::hp:p/hp:linesegarray',$ns)) }
             foreach ($cache in $caches) { $null = $cache.ParentNode.RemoveChild($cache) }
         }
@@ -1372,6 +1594,13 @@ function Invoke-HwpxScopedEdit {
                     throw "Reopened output payload mismatch: $name"
                 }
             }
+            foreach ($resource in $package.PreparedResources) {
+                $header=$verified.Xml['Contents/header.xml']
+                $resourceNode=$header.SelectSingleNode($resource.XPath)
+                if ($null -eq $resourceNode -or $resourceNode.OuterXml -cne $resource.Node.OuterXml) {throw 'Reopened prepared style/font/border resource differs.'}
+                $siblings=$resourceNode.ParentNode.SelectNodes(('hh:'+$resource.Kind),(New-ScopedNamespaces $header))
+                if ((Get-ScopedXmlInteger $resourceNode.ParentNode $resource.CountAttribute) -ne $siblings.Count) {throw 'Reopened resource count differs.'}
+            }
             foreach ($step in $steps) {
                 if ($null -ne $step.Binary) { continue } # All payload bytes were compared above.
                 $xml = $verified.Xml[$step.Part]
@@ -1402,6 +1631,7 @@ function Invoke-HwpxScopedEdit {
         $result = New-HwpResult -Status PASS_WITH_WARNINGS -Command 'hwpx-scoped-edit' -Data ([ordered]@{
             SourcePath=$source; OutputPath=$output; SourceSha256=$sourceHash; OutputSha256=$outputHash
             ChangedParts=$changedParts; RemovedParts=$removed; NativeLayoutVerified=$false
+            CalculationResults=@($package.CalculationResults)
         }) -Warnings @('Native rendering/layout and page cache are not verified. Affected paragraph line caches and Preview/ entries were removed; repagination requires a renderer.')
     } catch {
         $result = New-HwpResult -Status BLOCKED -Command 'hwpx-scoped-edit' -Errors @($_.Exception.Message)

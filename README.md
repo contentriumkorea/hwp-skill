@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>한글 문서 작업, 원본을 지키며 더 간편하게.</strong><br>
-  AI 에이전트와 함께 문서를 읽고, HWPX를 작성·수정하고, 결과를 확인하세요.
+  보호되지 않은 HWP/HWT는 한컴 없이 읽고, HWPX는 직접 작성·수정·검사합니다.
 </p>
 
 <p align="center">
@@ -45,7 +45,7 @@ npx skills@latest add contentriumkorea/hwp-skill --skill hwp-skill --global --ag
 | 01 · READ | 02 · WRITE | 03 · CHECK |
 | :--- | :--- | :--- |
 | **문서의 내용을 읽습니다** | **별도 결과로 작업합니다** | **결과와 한계를 확인합니다** |
-| 보호되지 않은 HWP 5.x·HWT와 HWPX의 본문·표 구조를 확인합니다. | HWPX 문서를 새로 작성하거나 기존 HWPX의 내용·표·이미지·서식을 수정합니다. | 구조 검사와 근사 미리보기를 제공하며, 실제 한컴 조판과 구분합니다. |
+| 보호되지 않은 HWP 5.x·HWT는 한컴 없이, HWPX는 직접 읽어 본문·표 구조를 확인합니다. | HWPX 문서를 새로 작성하거나 기존 HWPX의 내용·표·이미지·서식을 수정합니다. | 구조 검사와 근사 미리보기를 제공하며, 실제 한컴 조판과 구분합니다. |
 
 ## 사용 모습
 
@@ -81,6 +81,15 @@ npx skills@latest add contentriumkorea/hwp-skill --skill hwp-skill --global --ag
 
 [플러그인 설치·수동 설치·업데이트 절차 →](USAGE.md#설치)
 
+**2.7.0 무창 편집 확장 기능**은 [표 통합 제어 안내](skills/hwp-skill/references/tables.md)를
+참고하세요. 문단 이동·명명 스타일 적용/복제·셀 대각선은
+[추가 부분 편집 안내](skills/hwp-skill/references/remaining-editing.md)에 있습니다.
+
+탭·채움선, 머리말·꼬리말, 각주·미주 설정은 [참조·탭 편집 안내](skills/hwp-skill/references/reference-editing.md)에 있습니다.
+
+전체 기능의 지원·남은 범위는 [기능 대조 대장](skills/hwp-skill/references/feature-audit.md)에
+정리했습니다. 정적 명령 수집과 한글 전체 기능의 실행 검증은 구분합니다.
+
 ## 이렇게 사용하세요
 
 **Codex**
@@ -98,7 +107,7 @@ $hwp-skill 이 HWPX 보고서의 담당자와 날짜를 수정해줘.
 
 ## 적용 범위와 제한
 
-- **HWP/HWT:** 보호되지 않은 HWP 5.x 읽기를 지원합니다. 기존 HWP/HWT 양식의 자동 편집은 현재 제한되며, HWPX 양식을 준비해야 합니다.
+- **HWP/HWT:** 보호되지 않은 HWP 5.x 읽기를 한컴 없이 지원합니다. 기존 HWP/HWT 양식 편집은 현재 자동 경로에서 차단되며, HWPX 양식을 준비해야 합니다.
 - **HWPX:** 한컴 설치 없이 읽기·작성·수정·구조 검사가 가능합니다.
 - **HWP 최종 출력:** 별도 격리 변환기가 필요하며 기본 배포에는 없습니다. HWPX의 확장자만 바꿔 HWP로 제공하지 않습니다. 이미지 포함 HWP 출력에는 추가 제한이 있습니다.
 - **미리보기:** 근사 HTML을 제공합니다. 근사 PDF는 Windows의 지원 브라우저가 필요하며, 한컴 실제 조판과 동일함을 보장하지 않습니다.
@@ -110,11 +119,12 @@ $hwp-skill 이 HWPX 보고서의 담당자와 날짜를 수정해줘.
 <details>
 <summary><strong>상세 안내와 검증 범위</strong></summary>
 
-자동 시험은 Windows·Linux·macOS를 대상으로 구성되어 있습니다. 구조 검사 통과는 한컴 실제 렌더링 일치를 의미하지 않습니다. 이번 README 개편은 문서·이미지 변경이며 실행 기능의 새 검증 결과를 주장하지 않습니다.
+자동 시험은 Windows·Linux·macOS를 대상으로 구성되어 있습니다. 구조 검사는 한컴의 실제 글꼴·줄바꿈·쪽 배치와 같은 결과임을 보장하지 않습니다.
 
 - [전체 사용 안내·직접 실행 명령·시험 절차](USAGE.md)
 - [작성 규격](skills/hwp-skill/references/authoring.md)
 - [안전 및 복구 정책](skills/hwp-skill/references/safety.md)
+- [한컴오피스 2024 정적 분석 기록](skills/hwp-skill/references/hancom-2024-runtime-audit.md)
 - [변경 기록](CHANGELOG.md)
 
 </details>

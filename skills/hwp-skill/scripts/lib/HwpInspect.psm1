@@ -334,7 +334,7 @@ function Get-HwpxNodeAttribute {
     )
 
     foreach ($attribute in @($Node.Attributes)) {
-        if ([string]::Equals($attribute.LocalName, $LocalName, [StringComparison]::OrdinalIgnoreCase)) {
+        if ($attribute.NamespaceURI -ceq '' -and [string]::Equals($attribute.LocalName, $LocalName, [StringComparison]::OrdinalIgnoreCase)) {
             return [string]$attribute.Value
         }
     }
@@ -653,6 +653,20 @@ function Get-HwpxHeaderResources {
                 $item | Add-Member NoteProperty name (Get-HwpxNodeAttribute -Node $node -LocalName 'name')
                 $item | Add-Member NoteProperty type (Get-HwpxNodeAttribute -Node $node -LocalName 'type')
             }
+            if ($pair[0] -ceq 'tabProperties') {
+                $item | Add-Member NoteProperty autoTabLeft (Get-HwpxNodeBooleanAttribute $node 'autoTabLeft')
+                $item | Add-Member NoteProperty autoTabRight (Get-HwpxNodeBooleanAttribute $node 'autoTabRight')
+                $stops=@(foreach($stop in $node.SelectNodes('./*[local-name()="tabItem" and namespace-uri()="http://www.hancom.co.kr/hwpml/2011/head"]')) {
+                    $unit=Get-HwpxNodeAttribute $stop 'unit';$rawPosition=Get-HwpxNodeAttribute $stop 'pos';[long]$position=0
+                    $valid=[long]::TryParse($rawPosition,[Globalization.NumberStyles]::Integer,[Globalization.CultureInfo]::InvariantCulture,[ref]$position)
+                    [pscustomobject]@{
+                        positionRaw=$rawPosition;unit=$unit
+                        positionMm=if($valid -and $unit -ceq 'HWPUNIT'){(New-HwpxMeasurement $position).millimeter}else{$null}
+                        alignment=Get-HwpxNodeAttribute $stop 'type';leader=Get-HwpxNodeAttribute $stop 'leader'
+                    }
+                })
+                $item | Add-Member NoteProperty stops $stops
+            }
             $items.Add($item)
         }
         $authoringResources[$pair[0]] = @($items)
@@ -820,7 +834,8 @@ function Get-HwpxElementProperties {
     param([Xml.XmlNode]$Node,[int]$Depth=0,[switch]$PreserveXml)
     if ($null -eq $Node) {return $null}
     $attributes=[ordered]@{}
-    foreach ($a in $Node.Attributes) {$attributes[$a.LocalName]=$a.Value}
+    # Qualified extension attributes must not replace unqualified schema values.
+    foreach ($a in $Node.Attributes) {$attributes[$a.Name]=$a.Value}
     $text=[Text.StringBuilder]::new()
     $children=[Collections.Generic.List[object]]::new()
     foreach ($child in $Node.ChildNodes) {
@@ -1308,6 +1323,9 @@ function Get-HwpxPackageInspection {
                     pageDefinitions = @($layoutData.PageDefinitions)
                     columns = @($document.SelectNodes("//*[local-name()='colPr']") | ForEach-Object {Get-HwpxElementProperties $_})
                     pageBorders = @($document.SelectNodes("//*[local-name()='pageBorderFill']") | ForEach-Object {Get-HwpxElementProperties $_})
+                    noteDefinitions = @($document.SelectNodes("//*[local-name()='secPr' and namespace-uri()='http://www.hancom.co.kr/hwpml/2011/paragraph']/*[(local-name()='footNotePr' or local-name()='endNotePr') and namespace-uri()='http://www.hancom.co.kr/hwpml/2011/paragraph']") | ForEach-Object {
+                        [pscustomobject]@{kind=$(if($_.LocalName -ceq 'footNotePr'){'footnote'}else{'endnote'});properties=(Get-HwpxElementProperties $_ -PreserveXml)}
+                    })
                     storedPageFirstLineCount = 0
                 })
                 $lineSegmentCount += [int]$layoutData.LineSegmentCount

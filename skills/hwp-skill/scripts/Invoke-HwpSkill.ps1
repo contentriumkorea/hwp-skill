@@ -1,7 +1,7 @@
 ﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory, Position = 0)]
-    [ValidateSet('capabilities','preflight','inspect','validate-plan','validate-generate-plan','edit-hwpx','preview','apply','generate','batch','compare','verify','export')]
+    [ValidateSet('capabilities','format-model','preflight','inspect','validate-plan','validate-generate-plan','edit-hwpx','preview','apply','generate','batch','compare','verify','export')]
     [string]$Command,
 
     [string]$LiteralPath,
@@ -9,6 +9,9 @@ param(
     [string]$OutputPath,
     [string]$OutputDirectory,
     [string]$TemplatePath,
+    [string]$ModelClass,
+    [string]$ElementName,
+    [string]$ModelEnum,
     [string]$BrowserPath,
     [switch]$NewDocument,
     [switch]$ApproveAdvanced,
@@ -76,6 +79,11 @@ try {
     $capabilities = Get-HwpCapabilitySnapshot -ExecutionContext $hwpExecutionContext
 
     $result = switch ($Command) {
+        'format-model' {
+            Import-Module (Join-Path $libraryRoot 'HwpHwpxModel.psm1') -ErrorAction Stop
+            New-HwpResult -Status PASS -Command format-model -Data (Get-HwpxFormatModel -ModelClass $ModelClass -ElementName $ElementName -ModelEnum $ModelEnum)
+            break
+        }
         'capabilities' {
             $route = Resolve-HwpBackend -Command capabilities -Capabilities $capabilities `
                 -ExecutionContext $hwpExecutionContext
@@ -127,7 +135,7 @@ try {
             Assert-HwpCliValue -Value $PlanPath -Name 'PlanPath'
             Assert-HwpCliValue -Value $OutputPath -Name 'OutputPath'
             $plan=Read-HwpCliJson -Path $PlanPath
-            if (@($plan.operations|Where-Object {$_.type -in @('set-page','merge-cells','split-cell','insert-table-row','insert-table-column')}).Count -gt 0 -and -not $ApproveAdvanced) {
+            if (@($plan.operations|Where-Object {$_.type -in @('set-page','set-columns','set-page-border','set-section-settings','set-note-settings','set-header-footer','set-object-format','set-paragraph-breaks','insert-paragraphs','delete-paragraph','move-paragraph','apply-named-style','set-cell-diagonal','sort-table-rows','merge-cells','split-cell','insert-table-row','insert-table-column','delete-table-row','delete-table-column','set-table-format','insert-cell-table')}).Count -gt 0 -and -not $ApproveAdvanced) {
                 New-HwpResult -Status BLOCKED -Command edit-hwpx -Errors @('기존 문서의 쪽 설정과 표 구조 변경은 대상과 변경값을 확인한 후 -ApproveAdvanced로 실행합니다.')
                 break
             }

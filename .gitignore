@@ -3,6 +3,7 @@
 tests/output/
 dist/
 tmp/
+__pycache__/
 *.partial.hwp
 *.partial.hwt
 *.partial.hwpx

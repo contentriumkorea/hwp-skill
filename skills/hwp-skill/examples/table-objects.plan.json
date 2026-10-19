@@ -1,0 +1,27 @@
+{
+  "version":"2.0",
+  "document":{
+    "page":{"paperSize":"A4","orientation":"PORTRAIT"},
+    "textStyle":{"fontFamily":"맑은 고딕","fontSizePt":11},
+    "paragraphStyle":{"lineSpacingPercent":160,"marginBeforeMm":0,"marginAfterMm":0},
+    "tableStyle":{"borderType":"SOLID","borderWidthMm":0.2,"borderColor":"#315B77","cellPaddingMm":1}
+  },
+  "content":[
+    {"type":"paragraph","text":"표 개체·합계 작성 예제","textStyle":{"fontSizePt":18,"bold":true}},
+    {"type":"paragraph","text":"","textStyle":{"fontSizePt":6}},
+    {"type":"table","rows":5,"columns":4,"widthMm":180,"columnWidthsMm":[55,25,45,55],"rowHeightsMm":[12,12,12,12,36],"repeatHeader":true,"cells":[
+      {"row":1,"column":1,"text":"항목","textStyle":{"bold":true},"style":{"fillColor":"#EDF3F8"}},
+      {"row":1,"column":2,"text":"수량","textStyle":{"bold":true},"style":{"fillColor":"#EDF3F8"}},
+      {"row":1,"column":3,"text":"단가(원)","textStyle":{"bold":true},"style":{"fillColor":"#EDF3F8"}},
+      {"row":1,"column":4,"text":"금액(원)","textStyle":{"bold":true},"style":{"fillColor":"#EDF3F8"}},
+      {"row":2,"column":1,"text":"촬영"}, {"row":2,"column":2,"text":"2"},
+      {"row":2,"column":3,"text":"350000"}, {"row":2,"column":4,"text":"0"},
+      {"row":3,"column":1,"text":"편집"}, {"row":3,"column":2,"text":"1"},
+      {"row":3,"column":3,"text":"500000"}, {"row":3,"column":4,"text":"0"},
+      {"row":4,"column":1,"colSpan":3,"text":"합계","textStyle":{"bold":true}},
+      {"row":4,"column":4,"text":"0","textStyle":{"bold":true}},
+      {"row":5,"column":1,"colSpan":2,"text":"참조 이미지","verticalAlignment":"TOP"},
+      {"row":5,"column":3,"colSpan":2,"text":"세부 내역","verticalAlignment":"TOP"}
+    ]}
+  ]
+}

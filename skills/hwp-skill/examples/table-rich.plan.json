@@ -1,0 +1,25 @@
+{
+  "version":"2.0",
+  "document":{
+    "page":{"paperSize":"A4","orientation":"PORTRAIT"},
+    "textStyle":{"fontFamily":"맑은 고딕","fontSizePt":11},
+    "paragraphStyle":{"lineSpacingPercent":160,"marginBeforeMm":0,"marginAfterMm":0},
+    "tableStyle":{"borderType":"SOLID","borderWidthMm":0.2,"borderColor":"#315B77","cellPaddingMm":1}
+  },
+  "content":[
+    {"type":"paragraph","text":"표·셀 통합 제어 예제","textStyle":{"fontSizePt":18,"bold":true}},
+    {"type":"paragraph","text":"","textStyle":{"fontSizePt":6}},
+    {"type":"table","rows":4,"columns":3,"widthMm":180,"columnWidthsMm":[30,90,60],"rowHeightsMm":[12,20,28,14],"repeatHeader":true,"alignment":"CENTER","cells":[
+      {"row":1,"column":1,"text":"구분","paragraphStyle":{"alignment":"CENTER"},"textStyle":{"bold":true},"style":{"fillColor":"#EDF3F8"}},
+      {"row":1,"column":2,"text":"내용","paragraphStyle":{"alignment":"CENTER"},"textStyle":{"bold":true},"style":{"fillColor":"#EDF3F8"}},
+      {"row":1,"column":3,"text":"비고","paragraphStyle":{"alignment":"CENTER"},"textStyle":{"bold":true},"style":{"fillColor":"#EDF3F8"}},
+      {"row":2,"column":1,"text":"담당","verticalAlignment":"CENTER"},
+      {"row":2,"column":2,"paragraphs":[{"type":"paragraph","runs":[{"text":"담당자: ","textStyle":{"bold":true}},{"text":"홍길동","textStyle":{"textColor":"#315B77"}}]},{"type":"paragraph","text":"문단 안에서도 글자별 서식을 유지합니다."}]},
+      {"row":2,"column":3,"text":"편집 가능한 글자","textStyle":{"fontSizePt":10}},
+      {"row":3,"column":1,"text":"설명","verticalAlignment":"TOP"},
+      {"row":3,"column":2,"paragraphs":[{"type":"paragraph","text":"첫 문단"},{"type":"paragraph","text":"","textStyle":{"fontSizePt":6}},{"type":"paragraph","text":"빈 문단 뒤의 설명"}]},
+      {"row":3,"column":3,"text":"위쪽 정렬","verticalAlignment":"TOP","style":{"cellMargins":{"leftMm":2,"rightMm":2,"topMm":1,"bottomMm":1}}},
+      {"row":4,"column":1,"colSpan":3,"text":"병합 셀도 실제 표 구조로 저장됩니다.","paragraphStyle":{"alignment":"CENTER"},"style":{"fillColor":"#F4F7FA"}}
+    ]}
+  ]
+}

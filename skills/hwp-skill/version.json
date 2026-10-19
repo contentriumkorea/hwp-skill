@@ -1,7 +1,7 @@
 {
   "name": "hwp-skill",
-  "version": "2.1.1",
-  "released": "2026-10-18",
+  "version": "2.7.0",
+  "released": "2026-10-19",
   "planVersions": ["1.0", "2.0"],
   "portableRuntime": "PowerShell 7.2+",
   "windowsRuntime": "Windows PowerShell 5.1 or PowerShell 7.2+"

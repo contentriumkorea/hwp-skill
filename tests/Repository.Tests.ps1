@@ -27,6 +27,7 @@
     It '공개 배포에 필요한 한국어 문서와 라이선스를 제공한다' {
         foreach ($relativePath in @(
             '../README.md',
+            '../USAGE.md',
             '../LICENSE',
             '../install.ps1',
             '../skills/hwp-skill/references/operations.md',
@@ -37,13 +38,19 @@
         }
 
         $readme = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../README.md') -Raw -Encoding UTF8
-        $readme | Should Match '한컴오피스'
-        $readme | Should Match '상업적 이용'
-        $readme | Should Match '보안 모듈'
+        $usage = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../USAGE.md') -Raw -Encoding UTF8
+        $publicDocs = $readme + "`n" + $usage
+        $readme | Should Match 'assets/readme-cover\.svg'
+        $readme | Should Match 'assets/document-workflow\.svg'
+        $readme | Should Match 'releases/latest/download/hwp-skill\.zip'
+        $readme | Should Match 'USAGE\.md'
+        $publicDocs | Should Match '한컴오피스'
+        $publicDocs | Should Match '상업적 이용'
+        $publicDocs | Should Match '보안 모듈'
         $readme | Should Match 'HWPX'
-        $readme | Should Match '원본.*덮어쓰'
-        $readme | Should Match '콘텐츠리움'
-        $readme | Should Match 'https://github.com/contentriumkorea/hwp-skill.git'
+        $publicDocs | Should Match '원본.*덮어쓰'
+        $publicDocs | Should Match '콘텐츠리움'
+        $publicDocs | Should Match 'https://github.com/contentriumkorea/hwp-skill\.git'
     }
 
     It '복사 가능한 편집 및 새 문서 계획 예제를 제공한다' {
@@ -84,7 +91,7 @@
 
         $content = Get-Content -LiteralPath $cliPath -Raw -Encoding UTF8
 
-        $content | Should Match '\[ValidateSet\(''capabilities'',''preflight'',''inspect'',''validate-plan'',''validate-generate-plan'',''edit-hwpx'',''preview'',''apply'',''generate'',''batch'',''compare'',''verify'',''export''\)\]'
+        $content | Should Match '\[ValidateSet\(''capabilities'',''format-model'',''preflight'',''inspect'',''validate-plan'',''validate-generate-plan'',''edit-hwpx'',''preview'',''apply'',''generate'',''batch'',''compare'',''verify'',''export''\)\]'
         $content | Should Match '\[ValidateSet\(''silent'',''isolated-native'',''interactive''\)\]\s*\[string\]\$ExecutionMode\s*=\s*''silent'''
         $content | Should Match '\[switch\]\$AllowInteractiveWindow'
         $content | Should Match "'capabilities'\s*\{"
@@ -142,60 +149,67 @@
         $skill | Should Match 'GUI로 자동 전환하지 않는다'
     }
 
-    It 'README가 HWP 휴대형 읽기와 네이티브 편집의 경계를 정확히 설명한다' {
+    It 'README와 상세 안내가 HWP 읽기와 네이티브 편집의 경계를 정확히 설명한다' {
         $readme = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../README.md') -Raw -Encoding UTF8
-        $readme | Should Match 'hwp-portable.*관리 코드'
-        $readme | Should Match 'HWP 5\.x.*한컴.*필요하지'
-        $readme | Should Match 'HWP/HWT 기존 양식 편집.*현재 차단'
-        $readme | Should Match '한글 문서 파일 형식 5\.0 공개 문서'
-        $readme | Should Match '현재 사용자 세션.*Hwp.exe.*실행하지'
+        $usage = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../USAGE.md') -Raw -Encoding UTF8
+        $readme | Should Match '보호되지 않은 HWP 5\.x.*한컴 없이'
+        $readme | Should Match '기존 HWP/HWT 양식 편집.*현재 자동 경로에서 차단'
+        $usage | Should Match 'hwp-portable.*관리 코드'
+        $usage | Should Match 'HWP 5\.x[\s\S]*?한컴오피스, 한컴 COM 등록, 보안 모듈을 사용하지 않습니다'
+        $usage | Should Match 'HWP/HWT 원본을 직접 열어 내용을 채우는 자동 경로는 현재 차단'
+        $usage | Should Match '한글 문서 파일 형식 5\.0 공개 문서'
+        $usage | Should Match '현재 사용자 세션.*Hwp\.exe.*실행하지'
     }
 
-    It 'README는 HWPX 작업과 HWP 마지막 변환을 기본 경로로 설명한다' {
+    It 'README와 상세 안내는 HWPX 작업과 HWP 마지막 변환을 기본 경로로 설명한다' {
         $readme = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../README.md') -Raw -Encoding UTF8
-        $readme | Should Match '작업은 HWPX로 끝낸 뒤 마지막에만 HWP로 변환'
-        $readme | Should Match '마지막 숨김 변환'
-        $readme | Should Match 'HWP/HWT[\s\S]*현재 자동 경로에서 차단'
-        $readme | Should Match 'interactive[\s\S]*한컴 창'
-        $readme | Should Match '\-ExecutionMode interactive'
-        $readme | Should Match '\-AllowInteractiveWindow'
-        $readme | Should Match '한컴을 열 수 있'
+        $usage = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../USAGE.md') -Raw -Encoding UTF8
+        $readme | Should Match 'HWPX의 확장자만 바꿔 HWP로 제공하지 않습니다'
+        $readme | Should Match '별도 격리 변환기.*기본 배포에는 없습니다'
+        $usage | Should Match 'HWPX 작업본을 완성하고 별도 격리 엔진이 있을 때만 마지막 숨김 변환'
+        $usage | Should Match 'HWP/HWT 원본을 직접 열어 내용을 채우는 자동 경로는 현재 차단'
+        $usage | Should Match 'interactive[\s\S]*한컴 창'
+        $usage | Should Match '\-ExecutionMode interactive'
+        $usage | Should Match '\-AllowInteractiveWindow'
+        $usage | Should Match '한컴을 열 수 있'
     }
 
-    It 'README 안전 설명은 현재 Phase 1 계약과 future interactive 설계를 구분한다' {
-        $readme = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../README.md') -Raw -Encoding UTF8
-        $readme | Should Match 'Phase 1 계약'
-        $readme | Should Match '미래 구현|향후 구현|future'
-        $readme | Should Match '명시적으로 승인된 interactive'
-        $readme | Should Match 'HWP/HWT.*네이티브 편집.*자동 실행하지 않는다'
-        $readme | Should Match 'HWPX.*숨김 변환'
+    It '상세 안내는 현재 Phase 1 계약과 향후 interactive 설계를 구분한다' {
+        $usage = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../USAGE.md') -Raw -Encoding UTF8
+        $usage | Should Match 'Phase 1 계약'
+        $usage | Should Match '미래 구현|향후 구현|future'
+        $usage | Should Match '명시적으로 승인된 interactive'
+        $usage | Should Match 'HWP/HWT.*네이티브 편집.*자동 실행하지 않는다'
+        $usage | Should Match 'HWPX.*숨김 변환'
     }
 
-    It 'README는 현재 시험 실행기 승인 계약과 공개 release 용어를 사용한다' {
-        $readme = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../README.md') -Raw -Encoding UTF8
+    It '상세 안내는 현재 시험 실행기 승인 계약과 공개 release 용어를 사용한다' {
+        $usage = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../USAGE.md') -Raw -Encoding UTF8
 
-        $readme | Should Not Match 'Task 8'
-        $readme | Should Not Match '\-Suite Integration'
-        $readme | Should Match 'run-tests\.ps1 -Suite Native -AllowInteractiveNative'
-        $readme | Should Match 'run-tests\.ps1 -Suite All -AllowInteractiveNative'
-        $readme | Should Match 'HWP_NATIVE_RUN_INTEGRATION'
-        $readme | Should Match '종료 코드 2'
+        $usage | Should Not Match 'Task 8'
+        $usage | Should Not Match '\-Suite Integration'
+        $usage | Should Match 'run-tests\.ps1 -Suite Native -AllowInteractiveNative'
+        $usage | Should Match 'run-tests\.ps1 -Suite All -AllowInteractiveNative'
+        $usage | Should Match 'HWP_NATIVE_RUN_INTEGRATION'
+        $usage | Should Match '종료 코드 2'
     }
 
-    It 'README는 Claude Codex 및 Agent Skills 호환 도구의 설치 경로를 제공한다' {
+    It 'README와 상세 안내는 Claude Codex 및 Agent Skills 도구의 설치 경로를 제공한다' {
         $readme = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../README.md') -Raw -Encoding UTF8
+        $usage = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../USAGE.md') -Raw -Encoding UTF8
 
         $readme | Should Match 'npx\s+skills@latest\s+add\s+contentriumkorea/hwp-skill'
         $readme | Should Match "--agent\s+'\*'"
-        $readme | Should Match 'claude\s+plugin\s+marketplace\s+add\s+https://github\.com/contentriumkorea/hwp-skill\.git'
-        $readme | Should Match 'claude\s+plugin\s+install\s+hwp-skill@contentrium'
-        $readme | Should Match '/hwp-skill:hwp-skill'
-        $readme | Should Match '\.\\install\.ps1\s+-Target\s+Claude'
-        $readme | Should Match '\.\\install\.ps1\s+-Target\s+Universal'
-        $readme | Should Match '\.\\install\.ps1\s+-Target\s+All'
-        $readme | Should Match '\.\\package\.ps1'
-        $readme | Should Match '외부 스킬 설치 기능.*없는.*웹 채팅'
-        $readme | Should Not Match '(?<!s)skill/hwp-skill'
-        $readme | Should Not Match '(?<!s)skill\\hwp-skill'
+        $readme | Should Match 'releases/latest/download/hwp-skill\.zip'
+        $usage | Should Match 'claude\s+plugin\s+marketplace\s+add\s+https://github\.com/contentriumkorea/hwp-skill\.git'
+        $usage | Should Match 'claude\s+plugin\s+install\s+hwp-skill@contentrium'
+        $usage | Should Match '/hwp-skill:hwp-skill'
+        $usage | Should Match '\.\\install\.ps1\s+-Target\s+Claude'
+        $usage | Should Match '\.\\install\.ps1\s+-Target\s+Universal'
+        $usage | Should Match '\.\\install\.ps1\s+-Target\s+All'
+        $usage | Should Match '\.\\package\.ps1'
+        $usage | Should Match '외부 스킬 설치 기능.*없는.*웹 채팅'
+        $usage | Should Not Match '(?<!s)skill/hwp-skill'
+        $usage | Should Not Match '(?<!s)skill\\hwp-skill'
     }
 }

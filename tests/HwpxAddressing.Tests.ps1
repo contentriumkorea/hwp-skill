@@ -233,7 +233,7 @@ Describe 'Bounded HWPX media and rectangular table edits' {
         Assert-AddressBlocked $source $output @($insert,$edit) 'Overlapping'
         Assert-AddressBlocked $source $output @($edit,$insert) 'Overlapping'
     }
-    It 'rejects insertion on merged cells or unknown cell metadata before output' {
+    It 'rejects unknown cell metadata but supports insertion beside a horizontal merge' {
         $xml=Read-AddressXml $source
         $xml.SelectSingleNode('//*[local-name()="tc"]').SetAttribute('vendor-data','preserve')
         Write-AddressPart $source 'Contents/section0.xml' $xml.OuterXml
@@ -245,7 +245,11 @@ Describe 'Bounded HWPX media and rectangular table edits' {
         $cells[0].SelectSingleNode('*[local-name()="cellSz"]').SetAttribute('width','6000')
         $null=$row.RemoveChild($cells[1])
         Write-AddressPart $source 'Contents/section0.xml' $xml.OuterXml
-        Assert-AddressBlocked $source $output @(@{type='insert-table-row';sectionIndex=0;tableIndex=0;index=1;heightMm=10}) 'unmerged'
+        $result=Invoke-AddressEdit $source $output @(@{type='insert-table-row';sectionIndex=0;tableIndex=0;index=1;heightMm=10})
+        ($result.Errors -join '; ') | Should Be ''
+        $table=(Get-AddressInspection $output).Tables[0]
+        $table.rowCount | Should Be 3
+        $table.cells[0].columnSpan | Should Be 2
     }
     It 'preflights invalid insertion indexes dimensions and inconsistent table extents' {
         foreach($case in @(@{index=3;heightMm=10},@{index=-1;heightMm=10},@{index=0.5;heightMm=10},@{index=1;heightMm=0},@{index=1;heightMm='10'},@{index=1;heightMm=[double]::NaN})) {

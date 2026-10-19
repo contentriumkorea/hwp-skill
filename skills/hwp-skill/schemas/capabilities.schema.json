@@ -33,6 +33,26 @@
         "previewCommand": {"const":"preview"},
         "previewFidelity": {"const":"approximate"},
         "editAddressVersion": {"const":"1.0"},
+        "formatModel": {
+          "type":"object","additionalProperties":false,
+          "required":["command","reference","sourceCommit","sourceFiles","classes","writeAttributes","childRegistrations","enums","inheritanceResolved","semanticAuditComplete"],
+          "properties": {
+            "command":{"const":"format-model"},"reference":{"type":"string"},"sourceCommit":{"type":"string","pattern":"^[0-9a-f]{40}$"},
+            "sourceFiles":{"type":"integer","minimum":1},"classes":{"type":"integer","minimum":1},"writeAttributes":{"type":"integer","minimum":0},"childRegistrations":{"type":"integer","minimum":0},"enums":{"type":"integer","minimum":0},
+            "inheritanceResolved":{"const":false},"semanticAuditComplete":{"const":false}
+          }
+        },
+        "scopedEditOperations": {"type":"array", "uniqueItems":true, "items":{"type":"string"}},
+        "coverageAudit": {
+          "type":"object", "additionalProperties":false,
+          "required":["reference","target","uiCommandIds","embeddedXmlResources","typeLibraryEntries","semanticAuditComplete","allHancomFeaturesSupported","targetExecuted"],
+          "properties": {
+            "reference":{"type":"string"},"target":{"type":"string"},
+            "uiCommandIds":{"type":"integer","minimum":0},"embeddedXmlResources":{"type":"integer","minimum":0},
+            "typeLibraryEntries":{"type":"array","items":{"type":"integer","minimum":0}},
+            "semanticAuditComplete":{"const":false},"allHancomFeaturesSupported":{"const":false},"targetExecuted":{"const":false}
+          }
+        },
         "features": {"type":"array", "items":{"$ref":"#/definitions/authoringFeature"}},
         "conditions": {"type":"object", "additionalProperties":{"type":"string"}}
       }
@@ -115,8 +135,8 @@
         },
         "operations": {
           "type": "array",
-          "minItems": 2,
-          "maxItems": 2,
+          "minItems": 4,
+          "maxItems": 4,
           "additionalItems": false,
           "items": [
             {
@@ -124,6 +144,12 @@
             },
             {
               "const": "generate"
+            },
+            {
+              "const": "edit-hwpx"
+            },
+            {
+              "const": "preview"
             }
           ]
         },

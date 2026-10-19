@@ -72,3 +72,51 @@ COM 자동화 표면이다. 함수 이름이 있다는 이유만으로 한컴 �
 이 분석은 한컴의 모든 편집 기능을 이 스킬이 직접 제어할 수 있게 만들었다는 주장이 아니다.
 AI 에이전트는 정적 API 인벤토리와 실제 검증된 스킬 기능을 구분하고, 미지원 기능을 GUI나
 COM으로 임의 우회하지 않는다.
+
+## 재수집 가능한 목록과 추가 대조
+
+2.4.0 개발 작업에서는 REA로 `Hwp.exe`, `Hwp.UxXml.dll`, `HwpEngineWrapper.dll`의
+정적 메타데이터와 `Hwp.Dlg.dll`의 PE 리소스 트리를 다시 수집하고 원본 Evidence 묶음을
+보존했다. `Hwp.UxXml.dll` SHA-256은
+`501770d35f59c147a61a9f04f90f854516d1ee9d045f312ef8c20911e0b1305b`이다.
+
+개발용 수집기가 같은 파일의 내장 XML 14개를 실행 없이 읽어 고유 명령/참조 ID 1,798개와
+각각의 출처를 추출했다. 두 타입 라이브러리의 모든 타입/함수 디스크립터도 등록 없이
+다시 읽었다. 이 목록에는 상속·중복·UI 전용 명령이 있어 사용자 기능 수로 환산하지 않는다.
+수집한 전체 명령은 아직 `inventory-only`이며, 메뉴 전체의 의미·실행 검증 완료를 뜻하지
+않는다. 구체적인 직접 지원과 남은 범위는 [기능 대조 대장](feature-audit.md)을 따른다.
+
+## 2026-10-19 추가 REA 코드 추적
+
+파일 이름이나 문자열만으로 기능을 판정하지 않고 Ghidra 12.1.4의 문자열→참조→
+함수 본문·호출 경로를 추적했다. 바이너리는 읽기 전용이며 대상 DLL/한컴은 실행하지 않았다.
+
+- `XMLDocGroup.DFT`, SHA-256
+  `9d6ceab46141c19ba3794642f5fb20df79b209a0bc9c1dbc8213f9882fc65635`:
+  Import `0x10004130`, ImportDirect `0x10004090`의 필터 위임과
+  `0x10024810`의 `/HWPML/BODY/SECTION`·P/DIV/SPAN/번호 처리 경로를 확인했다.
+  가상 호출 29개가 미해결인 함수도 있어 독립 HWPX 엔진으로 판정하지 않는다.
+- `HncHDKDll.dll`, SHA-256
+  `4d5ccf317e63c1ee240cdb0db84024f889e940ee025e971c738fae1c38e8e66f`:
+  `HdkIsHwp90File`→`0x1000fbe0`→`0x10010500`→`0x10013420`에서 ZIP의
+  mimetype을 `application/hwp+zip`과 비교하는 경로를 확인했다. `0x10014500`에도
+  동형 확인 경로가 있다. 이는 형식 인식이며 저장/변환 가능성의 증명이 아니다.
+- 같은 DLL의 `0x1003f5f0`에서 paragraph/section/core/head/history/master-page와
+  2016 paragraph/ooxmlchart 등 네임스페이스의 분기 등록을 확인했다.
+  `HdkHwp90LoadDocuments`→`0x1000fc40`→`0x100104c0`은 아직 가상 호출 두 개의
+  구체 대상·ABI가 미해결이다. 독립 로드/편집/저장 API로 노출하거나 DLL을 배포하지 않는다.
+- `HwpEngineWrapper.dll` SHA-256
+  `dd7af868faea8989b51629505a24b1d7d545df1935ebf23153092bdbdc846606`의 추가 관리 메타데이터:
+  타입 448개·메서드 1,369개·호출 관계 4,367개. 혼합 네이티브/CIL 분석의 부분 범위이며
+  전체 구현·모든 UI 기능의 실행 검증이 아니다.
+
+개발용 `tests/output/hancom-model-phase2/rea-evidence.json`에는 HDK 대상의 정적 증거
+22개와 남은 의문 한 개를 보존했다. 주요 근거는
+`ev_c7b63b7e00a448a350fa21fe809b11e1026dfa98bbf0e39d2039fb58dbb773e7`(MIME),
+`ev_2214e01f235f8191c46db81d0af93ddf051ccf7891f5a0fcc2d18073953410e6`(네임스페이스),
+`ev_14da8480bdeed933d27bbf54c30eaefa26b5811475673008ada3e5f672d4f6a6`(미해결 로딩 분기)다.
+원시 분석 자료·설치본 바이너리는 설치 패키지와 공개 배포 대상이 아니다.
+
+공식 공개 HWPX 모델의 288개 Class CPP도 고정 커밋으로 전부 수집·추출해
+[오프라인 형식 조회](format-model.md)에 연결했다. 단, 상속/조건/조판 의미를 포함한
+전체 기능 전수 지원은 여전히 미완료다. 지원 기능은 직접 HWPX 경로로만 확장했다.

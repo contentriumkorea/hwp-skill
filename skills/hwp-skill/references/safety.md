@@ -46,6 +46,14 @@ HWPX 양식으로 준비되지 않은 경우 시작하지 않는다.
 - 범위 삭제: `delete-range`
 - 표 행 추가: `add-table-row`
 - HWPX 표 행·열 추가: `insert-table-row`, `insert-table-column`
+- HWPX 셀 안 중첩 표 삽입: `insert-cell-table`
+- HWPX 표 행·열 삭제 및 전체 서식/기하 변경: `delete-table-row`, `delete-table-column`,
+  `set-table-format`. 삭제할 셀의 기존 텍스트를 전부 확인하며 원본을 덮어쓰지 않는다.
+
+`calculate-table`은 허용된 숫자·셀 참조·연산자·함수만 파싱하고 임의 코드나 외부 링크를
+실행하지 않는다. decimal 넘침·0 나누기·순환 참조·모호한 텍스트 숫자를 결과 생성 전에
+거부한다. 그림 삽입은 로컬 자산의 실제 형식·디코딩·치수와 누적 크기를 검사하고
+임베드하며 한컴 보안 모듈이나 외부 서버를 사용하지 않는다.
 - 구역 용지·여백 변경: `set-section`
 - 문서 병합: `merge-documents`
 

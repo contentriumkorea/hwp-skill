@@ -30,6 +30,8 @@ jobs:
           Import-Module Pester -RequiredVersion 4.10.1 -Force
       - name: Run tests without Hancom
         run: |
+          python -X utf8 -m unittest discover -s tests -p test_model_catalog.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Import-Module Pester -RequiredVersion 4.10.1 -Force
           ./tests/run-tests.ps1 -Suite $(if ($IsWindows) { 'Static' } else { 'Portable' })
       - name: Build the standalone skill package

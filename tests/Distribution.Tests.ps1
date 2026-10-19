@@ -61,6 +61,14 @@ Describe '독립 HWP Skill ZIP 패키지' {
             $entryNames = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\','/') })
             ($entryNames -contains 'hwp-skill/SKILL.md') | Should Be $true
             ($entryNames -contains 'hwp-skill/scripts/Invoke-HwpSkill.ps1') | Should Be $true
+            ($entryNames -contains 'hwp-skill/LICENSE') | Should Be $true
+            ($entryNames -contains 'hwp-skill/THIRD_PARTY_NOTICES.md') | Should Be $true
+            ($entryNames -contains 'hwp-skill/licenses/Apache-2.0.txt') | Should Be $true
+            ($entryNames -contains 'hwp-skill/licenses/Hancom-NOTICE.txt') | Should Be $true
+            $licenseEntry=@($archive.Entries|Where-Object {$_.FullName.Replace('\','/') -ceq 'hwp-skill/LICENSE'})[0]
+            $reader=[IO.StreamReader]::new($licenseEntry.Open())
+            try{$bundledLicense=$reader.ReadToEnd()}finally{$reader.Dispose()}
+            $bundledLicense.Replace("`r`n","`n") | Should BeExactly ([IO.File]::ReadAllText((Join-Path $repositoryRoot 'LICENSE')).Replace("`r`n","`n"))
             @($entryNames | Where-Object { $_ -match '^hwp-skill/' }).Count | Should BeGreaterThan 2
         }
         finally {
