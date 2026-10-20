@@ -124,6 +124,10 @@ HWP/HWT가 입력되면 [내장 입력 변환](references/hwp-input-conversion.m
 ## 내부 작업 순서
 
 다음 순서는 사용자에게 단계별 메시지로 보여주지 않고 하나의 작업으로 실행한다.
+일반 내용 검사와 새 문서 생성은 [간결한 응답](references/performance.md)의
+`-ResultDetail compact`를 사용한다. 본문·표·주소와 모든 내부 검증은 그대로 유지된다.
+글꼴·서식 리소스 정의 분석이나 전체 검사 JSON 비교가 필요하면 `-ResultDetail full`로
+검사한다. 생성 요약에는 편집 주소가 없으므로 결과를 `inspect`한 뒤 수정한다.
 
 1. 요청 형식·원본·출력 형식·참조 자산을 확인한다.
 2. 입력이 HWP/HWT면 내장 `convert-hwpx`를 실행하고 성공한 HWPX 작업본을 검사한다.

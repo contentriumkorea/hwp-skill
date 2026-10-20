@@ -9,6 +9,7 @@ $allTests = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.Tests.ps1' -Fi
 $nativeTests = @($allTests | Where-Object Name -Like '*.Integration.Tests.ps1')
 $staticTests = @($allTests | Where-Object Name -NotLike '*.Integration.Tests.ps1')
 $portableNames = @(
+    'CliPerformance.Tests.ps1',
     'PortableCompoundFile.Tests.ps1', 'TableStructure.Tests.ps1', 'HwpInputConversion.Tests.ps1', 'HwpInputConversionSafety.Tests.ps1', 'HwpInputFixture.Tests.ps1',
     'Inspect.Tests.ps1', 'AuthoringPlan.Tests.ps1', 'AuthoringPlanSafety.Tests.ps1',
     'HwpxGenerate.Tests.ps1', 'HwpxPortraitSpacingRegression.Tests.ps1',

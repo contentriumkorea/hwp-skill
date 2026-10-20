@@ -28,7 +28,7 @@
 
 여러 에이전트에 설치하려면 Node.js와 npm이 필요합니다. 문서 작업에는 Windows PowerShell 5.1 또는 PowerShell 7.2 이상이 필요합니다.
 내장 HWP→HWPX 입력 변환과 저장 배치 PDF 직접 출력에는 64비트 CPython 3.9 이상이 추가로 필요합니다.
-2.9.0은 [HWPX→PDF 변환](skills/hwp-skill/references/pdf-conversion.md)을 제공합니다. 새 문서의 근사 재배치는 Windows의 지원 브라우저를 창 없이 사용하며, 두 출력 경로 모두 한컴 동일 조판을 보증하지 않습니다.
+2.10.0은 [반복 문서 검사와 AI 응답 경량화](skills/hwp-skill/references/performance.md)를 개선했습니다. [HWPX→PDF 변환](skills/hwp-skill/references/pdf-conversion.md)도 포함하며, 새 문서의 근사 재배치는 Windows의 지원 브라우저를 창 없이 사용합니다. 한컴 동일 조판을 보증하지 않습니다.
 
 ```sh
 npx skills@latest add contentriumkorea/hwp-skill --skill hwp-skill --global --agent '*' --copy --yes

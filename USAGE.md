@@ -290,6 +290,10 @@ $hwp-skill로 이 폴더의 HWP들을 먼저 미리보기만 하고, 어떤 파�
 
 ## 직접 실행하기
 
+일반 AI 검사·생성에는 [간결한 응답](skills/hwp-skill/references/performance.md)의
+`-ResultDetail compact`를 사용합니다. 본문·표·검사 주소와 내부 안전 검사는 유지하고
+큰 서식 정의·중복 생성 응답을 줄입니다. 기존 연동의 기본 응답은 `full`로 유지합니다.
+
 모든 명령은 JSON 결과를 표준 출력으로 반환합니다. `PASS`와
 `PASS_WITH_WARNINGS`의 종료 코드는 `0`, `FAILED`는 `1`, `BLOCKED`는 `2`입니다.
 기본 `silent`는 현재 사용자 세션의 `Hwp.exe`를 실행하지 않고 포커스를 가져오지

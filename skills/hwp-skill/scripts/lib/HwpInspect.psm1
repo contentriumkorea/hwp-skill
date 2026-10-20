@@ -692,19 +692,46 @@ function Get-HwpxRunText {
     Get-HwpxInlineText -Root $Run -Paragraph $Paragraph
 }
 
+function New-HwpxNodeOrdinalIndex {
+    param([Parameter(Mandatory)][Xml.XmlDocument]$Document,
+        [ValidateRange(1, 100000)][int]$MaximumEntries = 100000)
+    # XmlNode uses reference equality. Keep this DOM-only index local to inspection.
+    $ordinals = [Collections.Generic.Dictionary[Xml.XmlNode, int]]::new()
+    # Stream parents so overflow does not first materialize a document-wide node list.
+    $parents = $Document.CreateNavigator().SelectDescendants([Xml.XPath.XPathNodeType]::Element, $false)
+    while ($parents.MoveNext()) {
+        $parent = $parents.Current.UnderlyingObject
+        $ordinal = 0
+        foreach ($child in $parent.ChildNodes) {
+            if ($child.NodeType -eq [Xml.XmlNodeType]::Element) {
+                if ($ordinals.Count -ge $MaximumEntries) {
+                    $ordinals.Clear()
+                    return $null
+                }
+                $ordinals.Add($child, $ordinal)
+                $ordinal++
+            }
+        }
+    }
+    return ,$ordinals
+}
+
 function New-HwpxNodeAddress {
-    param([Xml.XmlNode]$Node, [string]$Part, [string]$SourceSha256)
+    param([Xml.XmlNode]$Node, [string]$Part, [string]$SourceSha256,
+        [Collections.Generic.Dictionary[Xml.XmlNode, int]]$NodeOrdinals = $null)
     if ([string]::IsNullOrEmpty($SourceSha256)) { return $null }
     # Zero-based element-child positions, never global paragraph ordinals or IDs.
     # IDs need not be unique in real documents. Bind the path to these exact bytes.
     $path = [Collections.Generic.List[int]]::new()
     $current = $Node
     while ($current.ParentNode -is [Xml.XmlElement]) {
-        $index = 0
-        $sibling = $current.PreviousSibling
-        while ($null -ne $sibling) {
-            if ($sibling.NodeType -eq [Xml.XmlNodeType]::Element) { $index++ }
-            $sibling = $sibling.PreviousSibling
+        [int]$index = 0
+        if ($null -eq $NodeOrdinals -or -not $NodeOrdinals.TryGetValue($current, [ref]$index)) {
+            $sibling = $current.PreviousSibling
+            while ($null -ne $sibling) {
+                if ($sibling.NodeType -eq [Xml.XmlNodeType]::Element) { $index++ }
+                $sibling = $sibling.PreviousSibling
+            }
         }
         $path.Insert(0,$index)
         $current = $current.ParentNode
@@ -722,7 +749,8 @@ function Get-HwpxSectionLayoutData {
         [Parameter(Mandatory)][Xml.XmlDocument]$Document,
         [Parameter(Mandatory)][string]$SectionName,
         [Parameter(Mandatory)][int]$ParagraphStartIndex,
-        [string]$SourceSha256 = ''
+        [string]$SourceSha256 = '',
+        [Collections.Generic.Dictionary[Xml.XmlNode, int]]$NodeOrdinals = $null
     )
 
     $paragraphModels = [Collections.Generic.List[object]]::new()
@@ -734,7 +762,7 @@ function Get-HwpxSectionLayoutData {
             $charRuns.Add([pscustomobject][ordered]@{
                 index = $charRuns.Count
                 text = Get-HwpxRunText -Run $run -Paragraph $paragraph
-                address = New-HwpxNodeAddress $run $SectionName $SourceSha256
+                address = New-HwpxNodeAddress $run $SectionName $SourceSha256 -NodeOrdinals $NodeOrdinals
                 start = $runTextPosition
                 charShapeId = Get-HwpxNodeIntegerAttribute -Node $run -LocalName 'charPrIDRef'
             })
@@ -771,7 +799,7 @@ function Get-HwpxSectionLayoutData {
         }
         $paragraphModels.Add([pscustomobject][ordered]@{
             index = $ParagraphStartIndex + $paragraphModels.Count
-            address = New-HwpxNodeAddress $paragraph $SectionName $SourceSha256
+            address = New-HwpxNodeAddress $paragraph $SectionName $SourceSha256 -NodeOrdinals $NodeOrdinals
             section = $SectionName
             recordLevel = $null
             text = $text
@@ -870,7 +898,8 @@ function Get-HwpxTableStructures {
         [Parameter(Mandatory)][AllowEmptyCollection()][Collections.Generic.List[object]]$Tables,
         [Parameter(Mandatory)][AllowEmptyCollection()][Collections.Generic.List[string]]$StructureWarnings,
         [ValidateRange(1, 100000000)][long]$MaximumGridSlots = 5000000,
-        [string]$SourceSha256 = ''
+        [string]$SourceSha256 = '',
+        [Collections.Generic.Dictionary[Xml.XmlNode, int]]$NodeOrdinals = $null
     )
 
     foreach ($tableNode in @($Document.SelectNodes("//*[local-name()='tbl']"))) {
@@ -917,7 +946,7 @@ function Get-HwpxTableStructures {
                 $paragraphArray = @($paragraphs)
                 $cells.Add([pscustomobject][ordered]@{
                     index = $cells.Count
-                    address = New-HwpxNodeAddress $cellNode $SectionName $SourceSha256
+                    address = New-HwpxNodeAddress $cellNode $SectionName $SourceSha256 -NodeOrdinals $NodeOrdinals
                     id = ('table-{0}-cell-{1}' -f $tableIndex, $cells.Count)
                     name = Get-HwpxNodeAttribute -Node $cellNode -LocalName 'name'
                     rowAddress = $rowAddress
@@ -997,7 +1026,7 @@ function Get-HwpxTableStructures {
 
         $Tables.Add([pscustomobject][ordered]@{
             index = $tableIndex
-            address = New-HwpxNodeAddress $tableNode $SectionName $SourceSha256
+            address = New-HwpxNodeAddress $tableNode $SectionName $SourceSha256 -NodeOrdinals $NodeOrdinals
             section = $SectionName
             source = 'hwpx-package'
             recordLevel = $null
@@ -1060,7 +1089,8 @@ function Get-HwpxSectionData {
         [Parameter(Mandatory)]
         [AllowEmptyCollection()]
         [Collections.Generic.List[string]]$StructureWarnings,
-        [string]$SourceSha256 = ''
+        [string]$SourceSha256 = '',
+        [Collections.Generic.Dictionary[Xml.XmlNode, int]]$NodeOrdinals = $null
     )
 
     $paragraphs = [Collections.Generic.List[string]]::new()
@@ -1090,7 +1120,7 @@ function Get-HwpxSectionData {
     ))) {
         $controls.Add([pscustomobject]@{
             index = $Controls.Count
-            address = New-HwpxNodeAddress $node $SectionName $SourceSha256
+            address = New-HwpxNodeAddress $node $SectionName $SourceSha256 -NodeOrdinals $NodeOrdinals
             ctrlId = [string]$controlMap[$node.LocalName]
             userDesc = $node.LocalName
             instanceId = (Get-HwpxNodeAttribute -Node $node -LocalName 'id')
@@ -1150,7 +1180,7 @@ function Get-HwpxSectionData {
     }
 
     Get-HwpxTableStructures -Document $Document -SectionName $SectionName -Tables $Tables `
-        -StructureWarnings $StructureWarnings -SourceSha256 $SourceSha256
+        -StructureWarnings $StructureWarnings -SourceSha256 $SourceSha256 -NodeOrdinals $NodeOrdinals
 
     @($paragraphs)
 }
@@ -1317,12 +1347,13 @@ function Get-HwpxPackageInspection {
             $lineSegmentCount = 0
             foreach ($sectionEntry in $sectionEntries) {
                 $document = Read-HwpxXmlEntry -Entry $sectionEntry -MaximumCharacters $MaximumXmlCharacters
+                $nodeOrdinals = New-HwpxNodeOrdinalIndex -Document $document
                 foreach ($paragraph in @(Get-HwpxSectionData -Document $document -SectionName $sectionEntry.FullName `
-                    -Controls $controls -FieldMap $fields -Tables $tables -StructureWarnings $structureWarnings -SourceSha256 $sourceHash)) {
+                    -Controls $controls -FieldMap $fields -Tables $tables -StructureWarnings $structureWarnings -SourceSha256 $sourceHash -NodeOrdinals $nodeOrdinals)) {
                     $paragraphs.Add([string]$paragraph)
                 }
                 $layoutData = Get-HwpxSectionLayoutData -Document $document -SectionName $sectionEntry.FullName `
-                    -ParagraphStartIndex $layoutParagraphs.Count -SourceSha256 $sourceHash
+                    -ParagraphStartIndex $layoutParagraphs.Count -SourceSha256 $sourceHash -NodeOrdinals $nodeOrdinals
                 foreach ($layoutParagraph in @($layoutData.Paragraphs)) { $layoutParagraphs.Add($layoutParagraph) }
                 $sections.Add([pscustomobject][ordered]@{
                     index = $sections.Count

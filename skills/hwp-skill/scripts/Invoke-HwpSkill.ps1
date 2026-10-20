@@ -16,6 +16,7 @@ param(
     [ValidateSet('auto','stored-layout','reflow')][string]$PdfMode='auto',
     [string[]]$FontDirectories=@(),
     [string]$WorkDirectory,
+    [ValidateSet('full','compact')][string]$ResultDetail = 'full',
     [switch]$NewDocument,
     [switch]$ApproveAdvanced,
     [string[]]$InputPaths,
@@ -69,13 +70,24 @@ try {
     Import-Module (Join-Path $libraryRoot 'HwpCapabilities.psm1') -ErrorAction Stop
     Import-Module (Join-Path $libraryRoot 'HwpBackendRouter.psm1') -ErrorAction Stop
     Import-Module (Join-Path $libraryRoot 'HwpCommon.psm1') -ErrorAction Stop
-    Import-Module (Join-Path $libraryRoot 'HwpSession.psm1') -ErrorAction Stop
-    Import-Module (Join-Path $libraryRoot 'HwpInspect.psm1') -ErrorAction Stop
-    Import-Module (Join-Path $libraryRoot 'HwpPlan.psm1') -ErrorAction Stop
-    Import-Module (Join-Path $libraryRoot 'HwpEdit.psm1') -ErrorAction Stop
-    Import-Module (Join-Path $libraryRoot 'HwpGenerate.psm1') -ErrorAction Stop
-    Import-Module (Join-Path $libraryRoot 'HwpVerify.psm1') -ErrorAction Stop
-    Import-Module (Join-Path $libraryRoot 'HwpBatch.psm1') -ErrorAction Stop
+
+    # Dependencies import their own requirements. Read-only commands must not pay
+    # the generation/editing engine startup cost or acquire unrelated state.
+    $commandModules = switch ($Command) {
+        'preflight' { if ($ExecutionMode -eq 'interactive') { 'HwpSession' } }
+        'inspect' { 'HwpInspect' }
+        'validate-plan' { 'HwpPlan' }
+        'validate-generate-plan' { 'HwpGenerate' }
+        'apply' { 'HwpPlan'; 'HwpEdit' }
+        'generate' { 'HwpPlan'; 'HwpGenerate' }
+        'batch' { 'HwpPlan'; 'HwpBatch' }
+        'compare' { 'HwpVerify' }
+        'verify' { 'HwpVerify' }
+        'export' { 'HwpVerify' }
+    }
+    foreach ($module in $commandModules) {
+        Import-Module (Join-Path $libraryRoot ($module + '.psm1')) -ErrorAction Stop
+    }
 
     $hwpExecutionContext = New-HwpExecutionContext -Mode $ExecutionMode `
         -AllowInteractiveWindow:([bool]$AllowInteractiveWindow)
@@ -281,7 +293,13 @@ if ($null -eq $result) {
         errors = @('명령이 결과를 반환하지 않았습니다.')
     }
 }
-$result | ConvertTo-Json -Depth 100
+if ($ResultDetail -eq 'compact') {
+    Import-Module (Join-Path $libraryRoot 'HwpCliResponse.psm1') -ErrorAction Stop
+    ConvertTo-HwpCliResponse -Result $result -Command $Command | ConvertTo-Json -Depth 100 -Compress
+}
+else {
+    $result | ConvertTo-Json -Depth 100
+}
 $status = [string]$result.status
 if ($status -in 'PASS','PASS_WITH_WARNINGS') { exit 0 }
 if ($status -eq 'BLOCKED') { exit 2 }

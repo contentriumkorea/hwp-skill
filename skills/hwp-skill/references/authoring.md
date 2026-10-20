@@ -13,7 +13,7 @@
 ```powershell
 & "<스킬 경로>/scripts/Invoke-HwpSkill.ps1" validate-generate-plan -PlanPath "계획.json"
 & "<스킬 경로>/scripts/Invoke-HwpSkill.ps1" generate -NewDocument `
-  -PlanPath "계획.json" -OutputPath "별도 결과.hwpx"
+  -PlanPath "계획.json" -OutputPath "별도 결과.hwpx" -ResultDetail compact
 ```
 
 용지·줄 간격을 별도로 지정하지 않은 일반 서류는 다음 기본 계획에서 시작한다.
@@ -53,9 +53,11 @@
 [구역별 보고서 계획](../examples/authoring-v2.plan.json)은
 세로/가로 혼합, 다단 등 고급 기능 예제이며 일반 서류의 기본 서식이 아니다.
 작업 중 한컴·Word·Explorer를 열거나 결과 파일을 자동으로 표시하지 않는다.
-명령의 전체 JSON에는 상세 검사 정보가 포함된다. AI는 이를 내부 변수/로그에 보관하고
-`status/errors/StructuralVerification`만 먼저 확인한다. 전체 JSON이나 XML을 사용자 대화에
-붙이지 않는다. 세부 사항이 필요할 때만 해당 구역·표·문단을 선택해서 읽는다.
+일반 생성에는 [간결한 응답](performance.md)의 `-ResultDetail compact`를 사용하고
+`status/errors/StructuralVerification`부터 확인한다. 생성 요약의 `data.AfterSummary`는
+편집 주소를 포함하지 않으므로 결과를 `inspect`해 주소를 가져온다. 서식 리소스 정의나
+기존 전체 응답이 필요하면 `-ResultDetail full`로 내부 변수/로그에 보관한다. 전체 JSON이나
+XML을 사용자 대화에 붙이지 않는다.
 
 ## 쪽과 구역
 

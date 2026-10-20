@@ -170,6 +170,7 @@ function New-HwpxStyleRegistry {
         NextNumberId = [Math]::Max(1,(Get-HwpxMaximumResourceId -Document $document -LocalName 'numbering') + 1)
         NextBulletId = [Math]::Max(1,(Get-HwpxMaximumResourceId -Document $document -LocalName 'bullet') + 1)
         Tabs = [Collections.Generic.List[object]]::new()
+        ListStyleIds = [Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)
         Lists = [Collections.Generic.List[object]]::new()
         NextStyleId = (Get-HwpxMaximumResourceId -Document $document -LocalName 'style') + 1
         NamedStyles = [Collections.Generic.List[object]]::new()
@@ -211,9 +212,20 @@ function Register-HwpxParagraphStyle {
     $tabId=0;$listId=0
     if ($null -ne $Style.tabs) {$tabId=$Registry.NextTabId++;$Registry.Tabs.Add([pscustomobject]@{id=$tabId;items=$Style.tabs})}
     if ($null -ne $Style.list) {
-        if ($Style.list.type -eq 'BULLET') {$listId=$Registry.NextBulletId; $Registry.NextBulletId++}
-        else {$listId=$Registry.NextNumberId; $Registry.NextNumberId++}
-        $Registry.Lists.Add([pscustomobject]@{id=$listId;style=$Style.list})
+        # List identity must not change with the paragraph's layout properties.
+        $listKey = [pscustomobject][ordered]@{
+            type = [string]$Style.list.type
+            level = [int](Get-HwpxStyleValue $Style.list $null 'level' 1)
+            start = [int](Get-HwpxStyleValue $Style.list $null 'start' 1)
+            character = [string](Get-HwpxStyleValue $Style.list $null 'character' '•')
+        } | ConvertTo-Json -Depth 10 -Compress
+        if ($Registry.ListStyleIds.ContainsKey($listKey)) {$listId=$Registry.ListStyleIds[$listKey]}
+        else {
+            if ($Style.list.type -eq 'BULLET') {$listId=$Registry.NextBulletId; $Registry.NextBulletId++}
+            else {$listId=$Registry.NextNumberId; $Registry.NextNumberId++}
+            $Registry.ListStyleIds.Add($listKey,$listId)
+            $Registry.Lists.Add([pscustomobject]@{id=$listId;style=$Style.list})
+        }
     }
     $Registry.ParagraphStyles.Add([pscustomobject]@{ id = $id; style = $Style;tabId=$tabId;listId=$listId })
     $id
