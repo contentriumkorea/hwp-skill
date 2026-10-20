@@ -1,7 +1,7 @@
 ﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory, Position = 0)]
-    [ValidateSet('capabilities','format-model','preflight','inspect','validate-plan','validate-generate-plan','edit-hwpx','preview','apply','generate','batch','compare','verify','export')]
+    [ValidateSet('capabilities','format-model','preflight','inspect','convert-hwpx','convert-pdf','validate-plan','validate-generate-plan','edit-hwpx','preview','apply','generate','batch','compare','verify','export')]
     [string]$Command,
 
     [string]$LiteralPath,
@@ -13,6 +13,9 @@ param(
     [string]$ElementName,
     [string]$ModelEnum,
     [string]$BrowserPath,
+    [ValidateSet('auto','stored-layout','reflow')][string]$PdfMode='auto',
+    [string[]]$FontDirectories=@(),
+    [string]$WorkDirectory,
     [switch]$NewDocument,
     [switch]$ApproveAdvanced,
     [string[]]$InputPaths,
@@ -118,6 +121,13 @@ try {
                 -ExecutionContext $hwpExecutionContext -Capabilities $capabilities
             break
         }
+        'convert-hwpx' {
+            Assert-HwpCliValue -Value $LiteralPath -Name 'LiteralPath'
+            Assert-HwpCliValue -Value $OutputPath -Name 'OutputPath'
+            Import-Module (Join-Path $libraryRoot 'HwpInputConvert.psm1') -ErrorAction Stop
+            Invoke-HwpToHwpx -LiteralPath $LiteralPath -OutputPath $OutputPath
+            break
+        }
         'validate-plan' {
             Assert-HwpCliValue -Value $PlanPath -Name 'PlanPath'
             $imported = Import-HwpEditPlan -LiteralPath $PlanPath
@@ -141,6 +151,13 @@ try {
             }
             Import-Module (Join-Path $libraryRoot 'HwpHwpxScopedEdit.psm1') -ErrorAction Stop
             Invoke-HwpxScopedEdit -LiteralPath $LiteralPath -OutputPath $OutputPath -Plan $plan
+            break
+        }
+        'convert-pdf' {
+            Assert-HwpCliValue -Value $LiteralPath -Name 'LiteralPath'
+            Assert-HwpCliValue -Value $OutputPath -Name 'OutputPath'
+            Import-Module (Join-Path $libraryRoot 'HwpPdfConvert.psm1') -ErrorAction Stop
+            Export-HwpxPdf -LiteralPath $LiteralPath -OutputPath $OutputPath -PdfMode $PdfMode -BrowserPath $BrowserPath -FontDirectories $FontDirectories -WorkDirectory $WorkDirectory
             break
         }
         'preview' {

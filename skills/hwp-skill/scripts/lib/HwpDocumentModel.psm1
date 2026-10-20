@@ -3,7 +3,7 @@
 $script:HwpLanguageNames = @('HANGUL', 'LATIN', 'HANJA', 'JAPANESE', 'OTHER', 'SYMBOL', 'USER')
 $script:HwpLanguagePropertyNames = @('Hangul', 'Latin', 'Hanja', 'Japanese', 'Other', 'Symbol', 'User')
 $script:HwpBorderTypes = @(
-    'SOLID', 'DASH', 'DOT', 'DASH_DOT', 'DASH_DOT_DOT', 'LONG_DASH', 'CIRCLE',
+    'NONE', 'SOLID', 'DOT', 'DASH', 'DASH_DOT', 'DASH_DOT_DOT', 'LONG_DASH', 'CIRCLE',
     'DOUBLE', 'THIN_THICK', 'THICK_THIN', 'THIN_THICK_THIN', 'WAVE', 'DOUBLE_WAVE',
     'THICK_3D', 'THICK_3D_REVERSE', 'SOLID_3D', 'SOLID_3D_REVERSE'
 )
@@ -191,9 +191,10 @@ function ConvertFrom-HwpPortableBorderFillPayload {
     $names = @('Left', 'Right', 'Top', 'Bottom')
     $borders = [ordered]@{}
     for ($index = 0; $index -lt 4; $index++) {
-        $typeCode = [int]$Bytes[2 + $index]
-        $widthCode = [int]$Bytes[6 + $index]
-        $colorRaw = [BitConverter]::ToUInt32($Bytes, 10 + (4 * $index))
+        $lineOffset = 2 + 6 * $index
+        $typeCode = [int]$Bytes[$lineOffset]
+        $widthCode = [int]$Bytes[$lineOffset + 1]
+        $colorRaw = [BitConverter]::ToUInt32($Bytes, $lineOffset + 2)
         $borders[$names[$index]] = [pscustomobject][ordered]@{
             typeCode = $typeCode
             type = Get-HwpBorderTypeName -Code $typeCode
@@ -296,7 +297,7 @@ function ConvertFrom-HwpPortableBorderFillPayload {
         borders = [pscustomobject]$borders
         diagonal = [pscustomobject][ordered]@{
             typeCode = $diagonalTypeCode
-            type = switch ($diagonalTypeCode) { 0 { 'SLASH' } 1 { 'BACK_SLASH' } 2 { 'CROOKED_SLASH' } default { "UNKNOWN_$diagonalTypeCode" } }
+            type = Get-HwpBorderTypeName -Code $diagonalTypeCode
             widthCode = $diagonalWidthCode
             widthMm = Get-HwpBorderWidthMillimeter -Code $diagonalWidthCode
             colorRaw = [uint32]$diagonalColorRaw
@@ -718,7 +719,9 @@ function Complete-HwpPortableParagraphModel {
         breakTypeRaw = [int]$Context.Header.breakTypeRaw
         controlMask = [uint32]$Context.Header.controlMask
         instanceId = [uint32]$Context.Header.instanceId
-        charShapeRuns = @($Context.CharShapeRuns)
+        charShapeRuns = @(foreach($run in $Context.CharShapeRuns){
+            [pscustomobject]@{start=$run.start;charShapeId=$run.charShapeId;textStart=if($run.start -ge 0 -and $run.start -le $textDetail.rawCharacterCount){$textDetail.positionMap[[int]$run.start]}else{$null}}
+        })
         lineSegments = @($segments)
         storedLines = @($storedLines)
     }

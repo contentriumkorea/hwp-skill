@@ -85,9 +85,8 @@ function New-TestHwpCellPayload {
     )
 
     $bytes = [Collections.Generic.List[byte]]::new()
-    Add-TestUInt16 -Buffer $bytes -Value $ParagraphCount
-    Add-TestUInt32 -Buffer $bytes -Value $ListProperties
-    Add-TestUInt16 -Buffer $bytes -Value $CellFlags
+    Add-TestUInt32 -Buffer $bytes -Value $ParagraphCount
+    Add-TestUInt32 -Buffer $bytes -Value ($ListProperties -bor ([uint32]$CellFlags -shl 16))
     Add-TestUInt16 -Buffer $bytes -Value $ColumnAddress
     Add-TestUInt16 -Buffer $bytes -Value $RowAddress
     Add-TestUInt16 -Buffer $bytes -Value $ColumnSpan
@@ -124,10 +123,11 @@ function New-TestHwpFaceNamePayload {
 function New-TestHwpBorderFillPayload {
     $bytes = [Collections.Generic.List[byte]]::new()
     Add-TestUInt16 -Buffer $bytes -Value 0
-    $bytes.AddRange([byte[]](0, 1, 2, 3))
-    $bytes.AddRange([byte[]](1, 2, 3, 4))
-    foreach ($color in @([uint32]0x000000FF, [uint32]0x0000FF00, [uint32]0x00FF0000, [uint32]0x00112233)) {
-        Add-TestUInt32 -Buffer $bytes -Value $color
+    $colors=@([uint32]0x000000FF, [uint32]0x0000FF00, [uint32]0x00FF0000, [uint32]0x00112233)
+    for($side=0;$side -lt 4;$side++){
+        $bytes.Add([byte]($side+1))
+        $bytes.Add([byte]($side+1))
+        Add-TestUInt32 -Buffer $bytes -Value $colors[$side]
     }
     $bytes.Add(0)
     $bytes.Add(1)
@@ -414,7 +414,7 @@ Describe 'HWP 표 구조 복원' {
         $table.RowSizes[0] | Should Be 1000
         $table.RowSizes[1] | Should Be 2000
         $table.Properties.PageBreakCode | Should Be 2
-        $table.Properties.PageBreak | Should Be 'NONE'
+        $table.Properties.PageBreak | Should Be 'CELL'
         $table.Properties.RepeatHeader | Should Be $true
         $table.ValidZones.Count | Should Be 1
         $table.ValidZones[0].EndColumnAddress | Should Be 2

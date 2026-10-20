@@ -91,7 +91,7 @@
 
         $content = Get-Content -LiteralPath $cliPath -Raw -Encoding UTF8
 
-        $content | Should Match '\[ValidateSet\(''capabilities'',''format-model'',''preflight'',''inspect'',''validate-plan'',''validate-generate-plan'',''edit-hwpx'',''preview'',''apply'',''generate'',''batch'',''compare'',''verify'',''export''\)\]'
+        $content | Should Match '\[ValidateSet\(''capabilities'',''format-model'',''preflight'',''inspect'',''convert-hwpx'',''convert-pdf'',''validate-plan'',''validate-generate-plan'',''edit-hwpx'',''preview'',''apply'',''generate'',''batch'',''compare'',''verify'',''export''\)\]'
         $content | Should Match '\[ValidateSet\(''silent'',''isolated-native'',''interactive''\)\]\s*\[string\]\$ExecutionMode\s*=\s*''silent'''
         $content | Should Match '\[switch\]\$AllowInteractiveWindow'
         $content | Should Match "'capabilities'\s*\{"
@@ -153,10 +153,11 @@
         $readme = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../README.md') -Raw -Encoding UTF8
         $usage = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../USAGE.md') -Raw -Encoding UTF8
         $readme | Should Match '보호되지 않은 HWP 5\.x.*한컴 없이'
-        $readme | Should Match '기존 HWP/HWT 양식 편집.*현재 자동 경로에서 차단'
+        $readme | Should Match 'HWP/HWT.*입력 변환.*한컴 없이'
         $usage | Should Match 'hwp-portable.*관리 코드'
         $usage | Should Match 'HWP 5\.x[\s\S]*?한컴오피스, 한컴 COM 등록, 보안 모듈을 사용하지 않습니다'
-        $usage | Should Match 'HWP/HWT 원본을 직접 열어 내용을 채우는 자동 경로는 현재 차단'
+        $usage | Should Match '원본 HWP/HWT는 직접 수정하지 않습니다'
+        $usage | Should Match 'convert-hwpx.*별도 작업본'
         $usage | Should Match '한글 문서 파일 형식 5\.0 공개 문서'
         $usage | Should Match '현재 사용자 세션.*Hwp\.exe.*실행하지'
     }
@@ -167,7 +168,7 @@
         $readme | Should Match 'HWPX의 확장자만 바꿔 HWP로 제공하지 않습니다'
         $readme | Should Match '별도 격리 변환기.*기본 배포에는 없습니다'
         $usage | Should Match 'HWPX 작업본을 완성하고 별도 격리 엔진이 있을 때만 마지막 숨김 변환'
-        $usage | Should Match 'HWP/HWT 원본을 직접 열어 내용을 채우는 자동 경로는 현재 차단'
+        $usage | Should Match '원본 HWP/HWT는 직접 수정하지 않습니다'
         $usage | Should Match 'interactive[\s\S]*한컴 창'
         $usage | Should Match '\-ExecutionMode interactive'
         $usage | Should Match '\-AllowInteractiveWindow'

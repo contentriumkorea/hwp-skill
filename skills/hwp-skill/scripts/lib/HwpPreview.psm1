@@ -314,6 +314,8 @@ function Initialize-PreviewProcessJob {
     # assign a private kill-on-close job before any child can escape our timeout.
     Add-Type -TypeDefinition @'
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -360,9 +362,18 @@ public sealed class HwpxPreviewProcessJob : IDisposable {
     [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
     IntPtr job;
     public uint ProcessId { get; private set; }
-    public HwpxPreviewProcessJob(string application,string arguments) {
+    public HwpxPreviewProcessJob(string application,string arguments,string temporaryDirectory) {
         PROCESS_INFORMATION process = new PROCESS_INFORMATION();
+        IntPtr environment = IntPtr.Zero;
         try {
+            if(!System.IO.Directory.Exists(temporaryDirectory)) throw new ArgumentException("Temporary directory does not exist.");
+            SortedDictionary<string,string> variables = new SortedDictionary<string,string>(StringComparer.OrdinalIgnoreCase);
+            foreach(DictionaryEntry item in Environment.GetEnvironmentVariables()) variables[(string)item.Key]=(string)item.Value;
+            variables["TEMP"]=temporaryDirectory; variables["TMP"]=temporaryDirectory;
+            StringBuilder block = new StringBuilder();
+            foreach(KeyValuePair<string,string> item in variables) block.Append(item.Key).Append('=').Append(item.Value).Append('\0');
+            block.Append('\0');
+            environment=Marshal.StringToHGlobalUni(block.ToString());
             job = CreateJobObject(IntPtr.Zero,null);
             if(job==IntPtr.Zero) throw new Win32Exception();
             EXTENDED_LIMIT limit = new EXTENDED_LIMIT();
@@ -371,7 +382,7 @@ public sealed class HwpxPreviewProcessJob : IDisposable {
             STARTUPINFO startup = new STARTUPINFO();
             startup.cb=Marshal.SizeOf(startup); startup.flags=1; startup.show=0; // SW_HIDE
             if(!CreateProcess(application,new StringBuilder("\""+application+"\" "+arguments),IntPtr.Zero,IntPtr.Zero,
-                false,0x08000004,IntPtr.Zero,null,ref startup,out process)) throw new Win32Exception();
+                false,0x08000404,environment,null,ref startup,out process)) throw new Win32Exception();
             ProcessId=process.processId;
             if(!AssignProcessToJobObject(job,process.process)) throw new Win32Exception();
             if(ResumeThread(process.thread)==UInt32.MaxValue) throw new Win32Exception();
@@ -379,6 +390,7 @@ public sealed class HwpxPreviewProcessJob : IDisposable {
             if(process.process!=IntPtr.Zero) TerminateProcess(process.process,1);
             Dispose(); throw;
         } finally {
+            if(environment!=IntPtr.Zero) Marshal.FreeHGlobal(environment);
             if(process.thread!=IntPtr.Zero) CloseHandle(process.thread);
             if(process.process!=IntPtr.Zero) CloseHandle(process.process);
         }
@@ -438,7 +450,7 @@ function Invoke-PreviewBrowser([string]$Browser, [string]$HtmlPath, [string]$Wor
     # Windows argv quoting (including trailing backslashes), without a shell.
     $arguments = (@($args | ForEach-Object { '"' + (($_ -replace '(\\*)"', '$1$1\"') -replace '(\\+)$', '$1$1') + '"' }) -join ' ')
     Initialize-PreviewProcessJob
-    $job = [HwpxPreviewProcessJob]::new($Browser, $arguments)
+    $job = [HwpxPreviewProcessJob]::new($Browser, $arguments, $WorkDirectory)
     $timer = [Diagnostics.Stopwatch]::StartNew()
     try {
         while ($timer.ElapsedMilliseconds -lt 30000) {

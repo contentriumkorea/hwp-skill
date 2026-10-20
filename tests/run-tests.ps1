@@ -9,11 +9,12 @@ $allTests = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.Tests.ps1' -Fi
 $nativeTests = @($allTests | Where-Object Name -Like '*.Integration.Tests.ps1')
 $staticTests = @($allTests | Where-Object Name -NotLike '*.Integration.Tests.ps1')
 $portableNames = @(
-    'PortableCompoundFile.Tests.ps1', 'TableStructure.Tests.ps1',
+    'PortableCompoundFile.Tests.ps1', 'TableStructure.Tests.ps1', 'HwpInputConversion.Tests.ps1', 'HwpInputConversionSafety.Tests.ps1', 'HwpInputFixture.Tests.ps1',
     'Inspect.Tests.ps1', 'AuthoringPlan.Tests.ps1', 'AuthoringPlanSafety.Tests.ps1',
     'HwpxGenerate.Tests.ps1', 'HwpxPortraitSpacingRegression.Tests.ps1',
     'HwpxEditableSpacing.Tests.ps1', 'HwpxAddressing.Tests.ps1',
     'HwpxScopedEdit.Tests.ps1', 'HwpxPreview.Tests.ps1', 'HwpxSpine.Tests.ps1',
+    'HwpxPdfConvert.Tests.ps1',
     'HwpxPromotionGate.Tests.ps1', 'HwpxAuthoringVerify.Tests.ps1',
     'FinalConversionSafety.Tests.ps1', 'FinalImageCorrespondence.Tests.ps1', 'UpgradeCli.Tests.ps1', 'Distribution.Tests.ps1'
 )

@@ -94,6 +94,7 @@
         "text": { "type": "string" },
         "address": { "$ref": "#/$defs/editAddress" },
         "start": { "type": "integer", "minimum": 0 },
+        "textStart": { "type": ["integer", "null"], "minimum": 0 },
         "charShapeId": { "type": "integer", "minimum": 0 }
       },
       "additionalProperties": true

@@ -1,5 +1,24 @@
 # 한컴오피스 2024 정적 분석 기록
 
+## 2026-10-20 PDF 변환 후보 추가 추적
+
+설치된 `HpdfHwpConverter.exe`(x86 PE, SHA-256
+`6d0e81218bdac7217c2940aec133e9d8d25a710a5932b2686fba0be510993260`)를
+REA/Ghidra 12.1.4로 실행하지 않고 추적했다. 문자열 `HwpFrame.HwpObject.2`의 참조
+`0x40157f`에서 `0x401510`으로 들어가면 `CDialog::OnInitDialog`, `OleInitialize`,
+`COleDispatchDriver::CreateDispatch`와 후속 COM 호출이 보인다. 명령줄 인수 처리 뒤
+`0x4019f0`의 출력 경로에서도 `COleDispatchDriver::InvokeHelper`를 사용한다.
+
+따라서 이 후보를 독립 무창 PDF 엔진으로 사용하거나 배포하지 않는다. 이 결론은 정적
+호출 관찰이며 실제 창이 뜨는 실행을 관찰했다는 뜻이 아니다. 주요 Evidence:
+`ev_bbadb161fdf3ecbf303d751f01dbd9cd22aa23d839ba06b91a508474e68f928c`(문자열),
+`ev_af2453dd89eba0931da08ba4484d464b04a44783d60f218845c9acc4907ef9a9`(참조),
+`ev_2b661a226f6373b074e7f18df3231b414c49cb35aa3e794fea6a692a45637132`(초기화),
+`ev_8906a30a54f7797d6f1895ea3985396c03f5270dc2327eb62f220ab459e49095`(후속 호출).
+
+2.9.0의 [PDF 변환](pdf-conversion.md)은 재배포 가능한 동봉 HwpForge와 기존 headless
+재배치 경로로 구현하며 한컴 DLL이나 이 실행 파일을 호출하지 않는다.
+
 ## 목적과 적용 범위
 
 이 문서는 설치된 한컴오피스 2024의 파일·자동화 인터페이스를 정적으로 살펴본 결과다.

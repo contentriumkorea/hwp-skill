@@ -5,7 +5,7 @@
 Windows·macOS·Linux에서 `.hwp`, `.hwt`, `.hwpx`를 다루기 위한 Agent Skills 표준 호환 스킬
 저장소입니다. Codex, Claude Code, Cursor, OpenCode, Gemini CLI, GitHub Copilot CLI 등
 Agent Skills를 지원하는 여러 AI 에이전트에서 같은 `hwp-skill`을 사용할 수 있습니다.
-현재 소스는 **2.7.0**이며 무창 처리 계약과 한글 문서 작업의 단일 오케스트레이션 흐름을 제공하며,
+현재 소스는 **2.9.0**이며 무창 처리 계약과 한글 문서 작업의 단일 오케스트레이션 흐름을 제공하며,
 기본 실행 모드는 `silent`입니다. 공문,
 보고서, 계획서, 회의록, 제안서, 스토리보드처럼 원본 보존과 사용자
 포커스 유지가 중요한 한글 문서 파일 요청을 대상으로 합니다.
@@ -45,13 +45,16 @@ pwsh -NoProfile -File ./skills/hwp-skill/scripts/Invoke-HwpSkill.ps1 preview `
 
 ## Contentrium에서 만든 이유
 
+HWPX의 PDF 납품에는 [내장 PDF 변환](skills/hwp-skill/references/pdf-conversion.md)의
+`convert-pdf`를 사용합니다. 저장 배치 직접 출력과 근사 재배치를 구분하며 한컴 창을 열지 않습니다.
+
 HWP Skill은 콘텐츠리움(Contentrium)이 공공기관·교육기관 콘텐츠를 제작하며 반복해서
 마주친 한글 문서 작업을 더 안전하고 재현 가능하게 만들기 위해 시작한 오픈소스
 프로젝트입니다. 기존 HWP 5.x는 한컴 없이 읽고 글꼴·문단 모양·테두리·저장된 줄 배치·
 용지 설정과 표의 행·열·병합·셀 문단까지 구조로 복원합니다. 새 본문·표·이미지와 문서
 서식은 HWPX 직접 엔진으로 만들고 검사하며, HWP
 납품이 필요한 경우에만 별도 격리 변환기를 연결하는 업무 흐름을 담았습니다.
-기본 배포에는 변환기가 없으며 HWPX 작업본을 보존합니다.
+HWP→HWPX 입력 변환기는 동봉하며, 최종 HWP 출력 변환기는 없어 HWPX 작업본을 보존합니다.
 
 Contentrium은 영상·디자인·웹·AI 기술을 연결해 공공 콘텐츠의 기획과 제작 과정을
 개선합니다. 이 저장소도 현장에서 얻은 경험을 누구나 검토하고 확장할 수 있는 도구로
@@ -83,8 +86,8 @@ Contentrium은 영상·디자인·웹·AI 기술을 연결해 공공 콘텐츠�
 5. HWPX 직접 작성은 한컴 설치 없이도 동작합니다. HWP 최종 변환은 HWP 호환
    변환 엔진이 필요하며, 사용할 수 없으면 HWPX를 가짜 HWP로 이름만 바꾸지 않고
    안전하게 중단합니다.
-6. HWP/HWT 기존 양식 편집은 직접 HWPX 가져오기·편집기가 준비될 때까지 자동
-   한컴 실행을 막고 HWPX 양식을 요구합니다.
+6. HWP/HWT 입력은 내장 `convert-hwpx`로 별도 HWPX 작업본을 준비하고 새 주소를 검사해
+   수정합니다. CPython 3.9+가 필요하며 [입력 변환 제한](skills/hwp-skill/references/hwp-input-conversion.md)을 적용합니다.
 7. 준비되지 않은 기능을 만나도 GUI로 자동 전환하지 않습니다.
 
 ## 현재 지원 상태
@@ -117,7 +120,7 @@ HWPX에 직접 기록합니다. 기존 V1 계획과 HWP 5.x 읽기는 유지합�
 | `silent` HWPX 읽기·검사 | 지원 | ZIP/XML 직접 엔진 기반 |
 | `silent` 새 문서 HWPX 작성 | 지원 | 문단·표·필드·이미지·글꼴·문단/표 서식·용지 설정 직접 패키징 |
 | `silent` 새 문서 HWP 작성 | 기본 배포에서 차단 | 별도 격리 변환기 필요, 정상 HWPX 작업본 보존 |
-| HWP/HWT 기존 양식 편집 | 현재 차단 | 한컴을 작업 중 실행하지 않도록 HWPX 양식 요구 |
+| HWP/HWT 기존 양식 편집 | 검증된 HWPX 변환 후 지원 | CPython 3.9+ 내장 입력 변환, 복잡 개체/손실은 차단 |
 | 이미지 삽입 | 지원 | HWPX BinData 직접 삽입, 보안모듈 불필요 |
 | `interactive` 네이티브 실행 | 예외 | 사용자가 창 표시를 명시한 경우만 |
 | 근사 HTML/PDF 미리보기 | 지원/조건부 | HTML은 여러 OS, PDF는 Windows headless Chromium; 한컴 조판과 구분 |
@@ -367,9 +370,10 @@ HWP/HWT는 보호되지 않은 HWP 5.x 본문과 글꼴·글자 모양·문단 �
 
 ### 6. HWP/HWT 기존 양식 편집
 
-HWP/HWT 원본을 직접 열어 내용을 채우는 자동 경로는 현재 차단합니다. 한컴 창을
-보이게 열어 작업하라는 명시적 요청이 있거나, 먼저 HWPX 양식으로 변환해 준비된 경우에
-한해 별도 경로를 검토합니다.
+AI가 `convert-hwpx`로 별도 작업본을 만들고 `inspect`의 새 주소로 `edit-hwpx`를 실행합니다.
+원본 HWP/HWT는 직접 수정하지 않습니다. 내장 변환 엔진은 오프라인이며 CPython 3.9+가
+필요합니다. 보존 검증을 통과하지 못하면 이미지를 빼거나 일반 텍스트로 재작성하지 않고
+원본을 보존합니다. [입력 변환 안내](skills/hwp-skill/references/hwp-input-conversion.md)를 따릅니다.
 
 ### 7. 명시적 interactive 예외
 

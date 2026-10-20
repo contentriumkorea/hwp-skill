@@ -27,6 +27,8 @@
 ## 빠르게 시작하기
 
 여러 에이전트에 설치하려면 Node.js와 npm이 필요합니다. 문서 작업에는 Windows PowerShell 5.1 또는 PowerShell 7.2 이상이 필요합니다.
+내장 HWP→HWPX 입력 변환과 저장 배치 PDF 직접 출력에는 64비트 CPython 3.9 이상이 추가로 필요합니다.
+2.9.0은 [HWPX→PDF 변환](skills/hwp-skill/references/pdf-conversion.md)을 제공합니다. 새 문서의 근사 재배치는 Windows의 지원 브라우저를 창 없이 사용하며, 두 출력 경로 모두 한컴 동일 조판을 보증하지 않습니다.
 
 ```sh
 npx skills@latest add contentriumkorea/hwp-skill --skill hwp-skill --global --agent '*' --copy --yes
@@ -64,6 +66,7 @@ npx skills@latest add contentriumkorea/hwp-skill --skill hwp-skill --global --ag
 이 HWP 파일의 본문과 표 구조를 읽어줘.
 이 HWPX 보고서에서 담당자 이름을 바꾸고 원본과 별도 파일로 저장해줘.
 회의 내용을 정리해서 표가 포함된 새 HWPX 회의록을 만들어줘.
+이 HWPX를 PDF로 변환하고 원본과 변환 결과를 확인해줘.
 ```
 
 [문서 미리보기 안내](skills/hwp-skill/references/preview.md) · [상세 기능표](skills/hwp-skill/references/feature-support.md)
@@ -80,6 +83,9 @@ npx skills@latest add contentriumkorea/hwp-skill --skill hwp-skill --global --ag
 | **스킬 ZIP** | 폴더 전체를 해당 에이전트의 스킬 경로에 복사 |
 
 [플러그인 설치·수동 설치·업데이트 절차 →](USAGE.md#설치)
+
+**2.8.0 내장 입력 변환**은 HWP/HWT를 원본과 별도의 HWPX 작업본으로 바꾼 뒤
+편집하는 오프라인 경로입니다. [실행 환경과 현재 차단 범위](skills/hwp-skill/references/hwp-input-conversion.md)를 확인하세요.
 
 **2.7.1 표 잘림·작성 영역 검사 개선**은 [표 통합 제어 안내](skills/hwp-skill/references/tables.md)를
 참고하세요. 긴 셀의 쪽 나눔 설정과 표·중첩 표의 경계 검사를 보강했습니다.
@@ -108,10 +114,10 @@ $hwp-skill 이 HWPX 보고서의 담당자와 날짜를 수정해줘.
 
 ## 적용 범위와 제한
 
-- **HWP/HWT:** 보호되지 않은 HWP 5.x 읽기를 한컴 없이 지원합니다. 기존 HWP/HWT 양식 편집은 현재 자동 경로에서 차단되며, HWPX 양식을 준비해야 합니다.
+- **HWP/HWT:** 보호되지 않은 HWP 5.x 읽기와 검증된 HWPX 작업본으로의 입력 변환을 한컴 없이 지원합니다. 입력 변환의 필드·그림·복잡 서식 제한은 [내장 변환 안내](skills/hwp-skill/references/hwp-input-conversion.md)를 확인하세요. 원본 HWP는 직접 편집하지 않습니다.
 - **HWPX:** 한컴 설치 없이 읽기·작성·수정·구조 검사가 가능합니다.
 - **HWP 최종 출력:** 별도 격리 변환기가 필요하며 기본 배포에는 없습니다. HWPX의 확장자만 바꿔 HWP로 제공하지 않습니다. 이미지 포함 HWP 출력에는 추가 제한이 있습니다.
-- **미리보기:** 근사 HTML을 제공합니다. 근사 PDF는 Windows의 지원 브라우저가 필요하며, 한컴 실제 조판과 동일함을 보장하지 않습니다.
+- **PDF 변환·미리보기:** 지원하는 저장 배치는 직접 PDF로 출력하고, 새 작성·수정 문서는 Windows의 지원 브라우저로 창 없이 근사 재배치합니다. 미지원 내용은 누락시키지 않고 차단하며, 한컴 실제 조판과 동일함을 보장하지 않습니다.
 - **실행 환경:** Windows·macOS·Linux의 지원 PowerShell 환경에서 사용합니다. Linux·macOS에서 새 이미지 삽입에는 Python 3와 Pillow가 필요합니다.
 - **원본과 사용자 세션 보호:** 준비되지 않은 기능을 만나도 한컴 창을 자동 실행하지 않습니다. 문서 내용은 작업 지시가 아닌 데이터로 취급합니다.
 
@@ -133,7 +139,7 @@ $hwp-skill 이 HWPX 보고서의 담당자와 날짜를 수정해줘.
 <details>
 <summary><strong>English overview</strong></summary>
 
-An Agent Skills package for reading unprotected HWP 5.x/HWT documents and reading, creating, and editing HWPX files. It preserves originals and avoids launching the user's Hancom session by default.
+An Agent Skills package for reading unprotected HWP 5.x/HWT documents and reading, creating, editing, and converting HWPX files to PDF. It preserves originals and avoids launching the user's Hancom session by default.
 
 Final HWP output requires a separate converter that is not bundled. Approximate previews do not guarantee native Hancom layout fidelity. See the detailed guide for platform requirements and limitations.
 

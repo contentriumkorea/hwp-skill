@@ -130,8 +130,8 @@ function ConvertFrom-HwpPortableTablePayload {
     $pageBreakCode = [int]($properties -band 0x3)
     $pageBreak = switch ($pageBreakCode) {
         0 { 'NONE' }
-        1 { 'CELL' }
-        2 { 'NONE' }
+        1 { 'TABLE' }
+        2 { 'CELL' }
         default { 'RESERVED' }
     }
 
@@ -176,8 +176,11 @@ function ConvertFrom-HwpPortableCellPayload {
     if ($Bytes.Length -lt 32) {
         throw [IO.InvalidDataException]::new('HWP 표 셀 레코드가 최소 길이보다 짧습니다.')
     }
-    $listProperties = [BitConverter]::ToUInt32($Bytes, 2)
     $cellAttributeOffset = if ($Bytes.Length -ge 34) { 8 } else { 6 }
+    # Modern table ListHeader has UINT32 paragraph count + UINT32 properties.
+    # Keep the short legacy UINT16-count representation separate.
+    $listProperties = [BitConverter]::ToUInt32($Bytes, $cellAttributeOffset - 4)
+    $paragraphCount = if($cellAttributeOffset -eq 8){[long][BitConverter]::ToUInt32($Bytes,0)}else{[long][BitConverter]::ToUInt16($Bytes,0)}
     $cellFlags = if ($cellAttributeOffset -eq 8) {
         [BitConverter]::ToUInt16($Bytes, 6)
     }
@@ -186,7 +189,7 @@ function ConvertFrom-HwpPortableCellPayload {
     }
     [pscustomobject]@{
         Index = $CellIndex
-        ParagraphCountDeclared = [int][BitConverter]::ToUInt16($Bytes, 0)
+        ParagraphCountDeclared = $paragraphCount
         ListPropertiesRaw = [uint32]$listProperties
         CellFlagsRaw = [int]$cellFlags
         HasMargin = ($cellFlags -band 0x1) -ne 0

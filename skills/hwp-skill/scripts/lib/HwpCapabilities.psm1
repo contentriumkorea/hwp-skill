@@ -85,6 +85,21 @@ function Get-HwpCapabilitySnapshot {
     [pscustomobject][ordered]@{
         schemaVersion = '1.0'
         skillVersion = (Get-Content -LiteralPath (Join-Path $PSScriptRoot '../../version.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
+        inputConversion = [pscustomobject]@{
+            command = 'convert-hwpx'
+            engine = 'HwpForge 0.16.11'
+            bundled = (Test-Path -LiteralPath (Join-Path $PSScriptRoot '../../vendor/hwpforge/manifest.json') -PathType Leaf)
+            requiresCPython = '3.9+'
+            runtimeCheckedOnConversion = $true
+            requiresHancom = $false
+            reference = 'references/hwp-input-conversion.md'
+        }
+        pdfConversion = [pscustomobject]@{
+            command='convert-pdf';modes=@('auto','stored-layout','reflow')
+            directEngine='HwpForge 0.16.11';storedLayoutRequiresCPython='3.9+'
+            reflowRuntime='Windows Edge/Chrome/Chromium';requiresHancom=$false
+            nativeLayoutVerified=$false;reference='references/pdf-conversion.md'
+        }
         finalConversion = [pscustomobject]@{
             available = $false
             reason = 'No isolated HWP converter is bundled; HWPX is preserved and local Hancom is never started.'

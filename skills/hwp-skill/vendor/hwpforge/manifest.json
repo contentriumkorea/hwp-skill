@@ -1,0 +1,16 @@
+{
+  "name": "hwpforge",
+  "version": "0.16.11",
+  "license": "MIT",
+  "source": "https://github.com/ai-screams/HwpForge",
+  "sourceCommit": "65889e8d835d229b38e2922a7fc35081fdcee49c",
+  "distribution": "https://pypi.org/project/hwpforge/0.16.11/",
+  "python": "CPython >=3.9, 64-bit, standard GIL build",
+  "wheels": [
+    {"platform":"win_amd64","file":"hwpforge-0.16.11-cp39-abi3-win_amd64.whl","sha256":"3dc66d167f0c836a8e0ee5e939c88136fb38f394a25b93f3a1782252a1972b3c"},
+    {"platform":"manylinux_2_28_x86_64","file":"hwpforge-0.16.11-cp39-abi3-manylinux_2_28_x86_64.whl","sha256":"1914c0decd28a8fb823633e0c54773cb1c8d00b89e80ceea6b6bbe9b205de200"},
+    {"platform":"manylinux_2_28_aarch64","file":"hwpforge-0.16.11-cp39-abi3-manylinux_2_28_aarch64.whl","sha256":"24a25c38b2573194e68eb7c94741f62f68ccb384be7124b3475521e85ee7e5c3"},
+    {"platform":"macosx_10_12_x86_64","file":"hwpforge-0.16.11-cp39-abi3-macosx_10_12_x86_64.whl","sha256":"66efa14b224256cca972935e45a73a0f6b8f8596ae8f66b5a9065b28f6ef0b40"},
+    {"platform":"macosx_11_0_arm64","file":"hwpforge-0.16.11-cp39-abi3-macosx_11_0_arm64.whl","sha256":"00b96e137f39f66fd9f37cb61ddc0fef12aed2ecfb3b9a9b226cf44168a86197"}
+  ]
+}

@@ -11,6 +11,24 @@
   ],
   "properties": {
     "skillVersion": {"type":"string", "pattern":"^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "inputConversion": {
+      "type":"object", "additionalProperties":false,
+      "required":["command","engine","bundled","requiresCPython","runtimeCheckedOnConversion","requiresHancom","reference"],
+      "properties": {
+        "command":{"const":"convert-hwpx"},"engine":{"type":"string"},"bundled":{"type":"boolean"},
+        "requiresCPython":{"type":"string"},"runtimeCheckedOnConversion":{"const":true},
+        "requiresHancom":{"const":false},"reference":{"type":"string"}
+      }
+    },
+    "pdfConversion": {
+      "type":"object", "additionalProperties":false,
+      "required":["command","modes","directEngine","storedLayoutRequiresCPython","reflowRuntime","requiresHancom","nativeLayoutVerified","reference"],
+      "properties":{
+        "command":{"const":"convert-pdf"},"modes":{"type":"array","items":{"enum":["auto","stored-layout","reflow"]},"uniqueItems":true},
+        "directEngine":{"type":"string"},"storedLayoutRequiresCPython":{"type":"string"},"reflowRuntime":{"type":"string"},
+        "requiresHancom":{"const":false},"nativeLayoutVerified":{"const":false},"reference":{"type":"string"}
+      }
+    },
     "finalConversion": {
       "type":"object", "additionalProperties":false,
       "required":["available","reason"],
