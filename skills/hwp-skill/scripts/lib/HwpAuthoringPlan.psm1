@@ -219,6 +219,13 @@ function Test-HwpAuthoringPlan {
                 $columnUnits[$block.columns-1]+=$tableUnits-($columnUnits|Measure-Object -Sum).Sum
                 $rowUnits=@(if($null -ne $rowHeights){foreach($value in $rowHeights){ConvertTo-HwpPlanUnit $value}}else{1..$block.rows|ForEach-Object {1800}})
                 if(@($columnUnits+$rowUnits|Where-Object {$_ -le 0}).Count){throw '반올림 후 표의 열 너비 또는 행 높이가 0 이하입니다.'}
+                $tableBreak=Get-HwpPlanValue $block 'pageBreak' 'CELL'
+                $tableStyle=Merge-HwpPlanObject (Get-HwpPlanValue $doc 'tableStyle') (Get-HwpPlanValue $block 'style')
+                if($null -eq $rowHeights){
+                    $padding=Get-HwpPlanValue $tableStyle 'cellPaddingMm' 1.8;$margins=Get-HwpPlanValue $tableStyle 'cellMargins'
+                    $minimum=(ConvertTo-HwpPlanUnit (Get-HwpPlanValue $margins 'topMm' $padding))+(ConvertTo-HwpPlanUnit (Get-HwpPlanValue $margins 'bottomMm' $padding))+1000
+                    for($rr=0;$rr -lt $rowUnits.Count;$rr++){$rowUnits[$rr]=[Math]::Max($rowUnits[$rr],$minimum)}
+                }
                 $seen = [Collections.Generic.HashSet[string]]::new()
                 $anchors=@{}
                 foreach ($cell in $block.cells) {
@@ -229,7 +236,6 @@ function Test-HwpAuthoringPlan {
                         if (-not $seen.Add("${r}:${c}")) { throw '$.content.cells : 중복 또는 겹치는 셀 주소입니다.' }
                     } }
                 }
-                $tableStyle=Merge-HwpPlanObject (Get-HwpPlanValue $doc 'tableStyle') (Get-HwpPlanValue $block 'style')
                 for($r=1;$r -le $block.rows;$r++){for($c=1;$c -le $block.columns;$c++){
                     $key="${r}:${c}";if($seen.Contains($key) -and -not $anchors.ContainsKey($key)){continue}
                     $cell=$anchors[$key];$rs=Get-HwpPlanValue $cell 'rowSpan' 1;$cs=Get-HwpPlanValue $cell 'colSpan' 1
@@ -238,8 +244,18 @@ function Test-HwpAuthoringPlan {
                     $cellHeight=($rowUnits[($r-1)..($r+$rs-2)]|Measure-Object -Sum).Sum
                     $horizontal=(ConvertTo-HwpPlanUnit (Get-HwpPlanValue $margins 'leftMm' $padding))+(ConvertTo-HwpPlanUnit (Get-HwpPlanValue $margins 'rightMm' $padding))
                     $vertical=(ConvertTo-HwpPlanUnit (Get-HwpPlanValue $margins 'topMm' $padding))+(ConvertTo-HwpPlanUnit (Get-HwpPlanValue $margins 'bottomMm' $padding))
+                    if($null -eq $rowHeights){
+                        $minimum=[long][Math]::Ceiling(($vertical+1000)/$rs)
+                        for($rr=$r-1;$rr -lt $r+$rs-1;$rr++){$rowUnits[$rr]=[Math]::Max($rowUnits[$rr],$minimum)}
+                    }
                     if($cellWidth -le $horizontal -or ($null -ne $rowHeights -and $cellHeight -le $vertical)){throw "표 셀 ${r}:${c}의 안쪽 여백이 유효 크기를 모두 차지합니다."}
                 }}
+                if($tableBreak -eq 'NONE' -and ($rowUnits|Measure-Object -Sum).Sum+566 -gt $bodyHeightUnits){throw '나누지 않는 표의 높이가 본문 영역을 초과합니다. 긴 표는 pageBreak CELL을 사용하세요.'}
+                if($tableBreak -eq 'TABLE'){
+                    [long]$largest=($rowUnits|Measure-Object -Maximum).Maximum
+                    foreach($cell in $block.cells){$rs=Get-HwpPlanValue $cell 'rowSpan' 1;$largest=[Math]::Max($largest,($rowUnits[($cell.row-1)..($cell.row+$rs-2)]|Measure-Object -Sum).Sum)}
+                    if($largest+566 -gt $bodyHeightUnits){throw '셀 단위로만 나누는 표의 셀이 본문 높이를 초과합니다. pageBreak CELL을 사용하세요.'}
+                }
             }
             }
         }

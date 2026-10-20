@@ -1316,7 +1316,15 @@ function Get-ScopedSteps {
                 throw 'Overlapping subtree replacement and edit; use separate inspect/edit passes.'
             }
         }
-        $steps.Add([pscustomobject]@{Part=$part; XPath=$xpath; Target=$target; Paragraph=$paragraph; Attribute=$attribute; Value=$value; Type=$type; Replacement=$replacement; Resource=$resource; Binary=$binary})
+        $boundsChanged=$true
+        if($type -cin @('set-cell-format','set-table-format')){
+            $boundsChanged=@(@('columnWidthsMm','rowHeightsMm','alignment','pageBreak','textDirection','repeatHeader','headerRows')|Where-Object {$op.ContainsKey($_)}).Count -gt 0
+            if($op.ContainsKey('style')){
+                $tableStyle=ConvertTo-ScopedMap $op['style'] 'style'
+                $boundsChanged=$boundsChanged -or $tableStyle.ContainsKey('cellPaddingMm') -or $tableStyle.ContainsKey('cellMargins')
+            }
+        }
+        $steps.Add([pscustomobject]@{Part=$part; XPath=$xpath; Target=$target; Paragraph=$paragraph; Attribute=$attribute; Value=$value; Type=$type; Replacement=$replacement; Resource=$resource; Binary=$binary; BoundsChanged=$boundsChanged})
     }
     foreach($part in $Package.Sections) {
         if(@($steps|Where-Object {$_.Part -ceq $part -and $_.Type -ceq 'set-page'}).Count -gt 0 -and
@@ -1532,6 +1540,19 @@ function Invoke-HwpxScopedEdit {
             else { $step.Target.SetAttribute($step.Attribute,$step.Value) }
             $null = $changed.Add($step.Part)
         }
+        # Validate the final tree, including a page resize paired with a table repair.
+        $boundTables=[Collections.Generic.HashSet[Xml.XmlElement]]::new()
+        foreach($step in $steps){
+            if(-not $step.BoundsChanged){continue}
+            $ns=New-ScopedNamespaces $package.Xml[$step.Part]
+            $tables=@()
+            if($step.Type -cin @('set-page','set-columns')){$tables=@($package.Xml[$step.Part].SelectNodes('//hp:tbl',$ns))}
+            elseif($step.Type -cin @('set-table-format','insert-table-row','insert-table-column','delete-table-row','delete-table-column')){$tables=@($step.Target.SelectNodes('ancestor::hp:tbl | descendant-or-self::hp:tbl',$ns))}
+            elseif($step.Type -cin @('set-cell-format','insert-cell-table')){$tables=@($step.Target.SelectNodes('ancestor::hp:tbl | .//hp:tbl',$ns))}
+            elseif($step.Type -cin @('set-paragraph-format','set-paragraph-style','apply-named-style')){$tables=@($step.Target.SelectNodes('.//hp:tbl',$ns))}
+            foreach($table in $tables){$null=$boundTables.Add($table)}
+        }
+        foreach($table in $boundTables){Assert-ScopedTableBounds $table $package}
         # Invalidate caches after all prepared subtrees are installed: a later
         # table replacement must not restore caches cleared by an earlier page edit.
         foreach ($step in $steps) {

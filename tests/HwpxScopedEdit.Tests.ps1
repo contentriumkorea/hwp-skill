@@ -68,7 +68,7 @@ function New-ScopedTestPlan {
 function Add-ScopedTestTable {
     param([string]$Path)
     $builder = [Text.StringBuilder]::new()
-    $null = $builder.Append('<hp:p id="90" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:tbl id="91" rowCnt="3" colCnt="3" cellSpacing="0" borderFillIDRef="2"><hp:sz width="12000" height="6000" widthRelTo="ABSOLUTE" heightRelTo="ABSOLUTE"/><hp:inMargin left="0" right="0" top="0" bottom="0"/>')
+    $null = $builder.Append('<hp:p id="90" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:tbl id="91" rowCnt="3" colCnt="3" cellSpacing="0" borderFillIDRef="2"><hp:sz width="12000" height="6000" widthRelTo="ABSOLUTE" heightRelTo="ABSOLUTE"/><hp:pos treatAsChar="1" flowWithText="1" horzRelTo="COLUMN" vertRelTo="PARA" horzAlign="LEFT" horzOffset="0"/><hp:outMargin left="0" right="0" top="0" bottom="0"/><hp:inMargin left="0" right="0" top="0" bottom="0"/>')
     for ($row=0; $row -lt 3; $row++) {
         $null = $builder.Append('<hp:tr>')
         for ($col=0; $col -lt 3; $col++) {
@@ -1007,9 +1007,8 @@ Describe 'Integrated HWPX table and cell authoring' {
     It 'sets table alignment while retaining position offsets and rejects protected dimensions' {
         $xml=Read-ScopedTestXml $source
         $table=$xml.SelectSingleNode('//*[local-name()="tbl"]')
-        $pos=$xml.CreateElement('hp','pos','http://www.hancom.co.kr/hwpml/2011/paragraph')
+        $pos=$table.SelectSingleNode('*[local-name()="pos"]')
         $pos.SetAttribute('horzAlign','LEFT'); $pos.SetAttribute('horzOffset','37')
-        $null=$table.InsertAfter($pos,$table.SelectSingleNode('*[local-name()="sz"]'))
         Set-ScopedTestPart $source 'Contents/section0.xml' ([Text.Encoding]::UTF8.GetBytes($xml.OuterXml))
         $result=Invoke-HwpxScopedEdit -LiteralPath $source -OutputPath $output -Plan (New-ScopedTestPlan @(@{type='set-table-format';sectionIndex=0;tableIndex=0;alignment='RIGHT'}))
         ($result.Errors -join '; ') | Should Be ''

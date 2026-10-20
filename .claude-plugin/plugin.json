@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "hwp-skill",
-  "version": "2.7.0",
+  "version": "2.7.1",
   "displayName": "HWP Skill",
   "description": "Windows, macOS, Linux에서 한컴 없이 HWP를 읽고 HWPX를 작성·편집하는 스킬",
   "author": {

@@ -81,8 +81,9 @@ npx skills@latest add contentriumkorea/hwp-skill --skill hwp-skill --global --ag
 
 [플러그인 설치·수동 설치·업데이트 절차 →](USAGE.md#설치)
 
-**2.7.0 무창 편집 확장 기능**은 [표 통합 제어 안내](skills/hwp-skill/references/tables.md)를
-참고하세요. 문단 이동·명명 스타일 적용/복제·셀 대각선은
+**2.7.1 표 잘림·작성 영역 검사 개선**은 [표 통합 제어 안내](skills/hwp-skill/references/tables.md)를
+참고하세요. 긴 셀의 쪽 나눔 설정과 표·중첩 표의 경계 검사를 보강했습니다.
+실제 한컴 조판·인쇄 검증과는 구분합니다. 문단 이동·명명 스타일 적용/복제·셀 대각선은
 [추가 부분 편집 안내](skills/hwp-skill/references/remaining-editing.md)에 있습니다.
 
 탭·채움선, 머리말·꼬리말, 각주·미주 설정은 [참조·탭 편집 안내](skills/hwp-skill/references/reference-editing.md)에 있습니다.

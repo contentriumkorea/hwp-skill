@@ -197,8 +197,9 @@ function New-HwpxTableXml {
     $repeat = [int][bool](Get-HwpPlanValue $Block 'repeatHeader' $false)
     $null = $builder.Append('<hp:tbl id="').Append($Id).Append('" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="').Append((Get-HwpPlanValue $Block 'pageBreak' 'CELL')).Append('" repeatHeader="').Append($repeat).Append('" rowCnt="').Append($rows).Append('" colCnt="').Append($columns).Append('" cellSpacing="0" borderFillIDRef="').Append($tableBorderFillId).Append('" noAdjust="0">')
     $null = $builder.Append('<hp:sz width="').Append($tableWidth).Append('" widthRelTo="ABSOLUTE" height="').Append($tableHeight).Append('" heightRelTo="ABSOLUTE" protect="0"/>')
-    $null = $builder.Append('<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="COLUMN" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>')
-    $null = $builder.Append('<hp:outMargin left="283" right="283" top="283" bottom="283"/><hp:inMargin left="').Append($cellPadding).Append('" right="').Append($cellPadding).Append('" top="').Append($cellPadding).Append('" bottom="').Append($cellPadding).Append('"/>')
+    # Inline tables cannot span pages even when pageBreak permits cell splitting.
+    $null = $builder.Append('<hp:pos treatAsChar="0" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="COLUMN" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>')
+    $null = $builder.Append('<hp:outMargin left="0" right="0" top="283" bottom="283"/><hp:inMargin left="').Append($cellPadding).Append('" right="').Append($cellPadding).Append('" top="').Append($cellPadding).Append('" bottom="').Append($cellPadding).Append('"/>')
     for ($row = 1; $row -le $rows; $row++) {
         $null = $builder.Append('<hp:tr>')
         for ($column = 1; $column -le $columns; $column++) {

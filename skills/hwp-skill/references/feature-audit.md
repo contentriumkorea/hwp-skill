@@ -95,6 +95,11 @@
 2.7.0의 추가 근거는 `HwpxParagraphMove.Tests.ps1`, `HwpxNamedStyle.Tests.ps1`,
 `HwpxCellDiagonal.Tests.ps1`이며 입력 계약은 [추가 부분 편집](remaining-editing.md)을 따른다.
 
+2.7.1의 표 영역·긴 셀 보완 근거는 `HwpxTableFlow.Tests.ps1`과
+[실제 설치 DLL의 추가 정적 분석](hancom-2024-runtime-audit.md)이다. 표의 비인라인 기본값,
+최종 본문/단/부모 셀/문단 영역과 저장 높이를 검사한다. 전체 기능 의미 검토 및 실제
+한컴 조판 검증의 미완료 상태는 바뀌지 않는다.
+
 ## 남은 구현·검증 순서
 
 1. 참조 포함/컨테이너 간 본문 이동, 기존 목록·명명 스타일 전역 갱신, 구역 추가/삭제·재배열, 복잡한 머리말/각주 구조.

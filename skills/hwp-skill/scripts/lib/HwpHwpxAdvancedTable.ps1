@@ -190,7 +190,7 @@ function New-ScopedNestedTable {
     $table.SetAttribute('dropcapstyle','None')
     $sz=$xml.CreateElement('hp','sz',$script:ScopedHp);$sz.SetAttribute('width',[string]$width);$sz.SetAttribute('height',[string](($heights|Measure-Object -Sum).Sum));$sz.SetAttribute('widthRelTo','ABSOLUTE');$sz.SetAttribute('heightRelTo','ABSOLUTE');$sz.SetAttribute('protect','0');$null=$table.AppendChild($sz)
     $pos=$xml.CreateElement('hp','pos',$script:ScopedHp)
-    foreach($pair in @(@('treatAsChar','1'),@('affectLSpacing','0'),@('flowWithText','1'),@('allowOverlap','0'),@('holdAnchorAndSO','0'),@('vertRelTo','PARA'),@('horzRelTo','COLUMN'),@('vertAlign','TOP'),@('horzAlign','LEFT'),@('vertOffset','0'),@('horzOffset','0'))) {$pos.SetAttribute($pair[0],$pair[1])}
+    foreach($pair in @(@('treatAsChar','0'),@('affectLSpacing','0'),@('flowWithText','1'),@('allowOverlap','0'),@('holdAnchorAndSO','0'),@('vertRelTo','PARA'),@('horzRelTo','COLUMN'),@('vertAlign','TOP'),@('horzAlign','LEFT'),@('vertOffset','0'),@('horzOffset','0'))) {$pos.SetAttribute($pair[0],$pair[1])}
     $null=$table.AppendChild($pos)
     foreach($name in @('outMargin','inMargin')) {$margin=$xml.CreateElement('hp',$name,$script:ScopedHp);foreach($side in @('left','right','top','bottom')){$margin.SetAttribute($side,'0')};$null=$table.AppendChild($margin)}
     $template=Get-ScopedCellTemplate $ParentCell

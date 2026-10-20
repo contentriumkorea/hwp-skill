@@ -311,6 +311,148 @@ function New-ScopedCellContentReplacement {
     return ,$copy
 }
 
+function Get-ScopedCellMinimumHeight {
+    param([Xml.XmlElement]$Cell,[int]$Depth=0)
+    $ns=New-ScopedNamespaces $Cell.OwnerDocument
+    $size=Get-ScopedOneChild $Cell 'hp:cellSz';$margin=Get-ScopedOneChild $Cell 'hp:cellMargin'
+    if($Cell.HasAttribute('hasMargin') -and $Cell.GetAttribute('hasMargin') -cin @('0','false')){
+        $parent=$Cell.SelectSingleNode('ancestor::hp:tbl[1]',$ns);$margin=Get-ScopedOneChild $parent 'hp:inMargin'
+    }
+    [long]$content=0
+    $sub=Get-ScopedOneChild $Cell 'hp:subList'
+    foreach($paragraph in $sub.SelectNodes('hp:p',$ns)){
+        [long]$line=0
+        foreach($child in $paragraph.SelectNodes('hp:run/hp:tbl',$ns)){
+            if($sub.GetAttribute('textDirection') -cne 'HORIZONTAL'){throw 'Nested minimum height requires horizontal cell text flow.'}
+            $outside=Get-ScopedOneChild $child 'hp:outMargin'
+            $extent=(Get-ScopedTableMinimumHeight $child ($Depth+1))+(Get-ScopedXmlInteger $outside 'top')+(Get-ScopedXmlInteger $outside 'bottom')
+            $line=[Math]::Max($line,$extent)
+        }
+        # A lower bound: text is unmeasured; same-paragraph objects are not summed.
+        $content+=$line
+    }
+    return [long][Math]::Max((Get-ScopedXmlInteger $size 'height' 1),$content+(Get-ScopedXmlInteger $margin 'top')+(Get-ScopedXmlInteger $margin 'bottom'))
+}
+
+function Get-ScopedTableMinimumHeight {
+    param([Xml.XmlElement]$Table,[int]$Depth=0)
+    if($Depth -gt 8){throw 'Nested minimum-height analysis exceeds eight levels.'}
+    $size=Get-ScopedOneChild $Table 'hp:sz'
+    if($size.GetAttribute('heightRelTo') -cne 'ABSOLUTE'){throw 'Minimum table height requires absolute stored geometry.'}
+    $grid=Get-ScopedTableGrid $Table;$prefix=[long[]]::new($grid.RowCount+1)
+    for($end=1;$end -le $grid.RowCount;$end++){
+        $prefix[$end]=$prefix[$end-1]
+        foreach($cell in $grid.Cells){
+            if($cell.Row+$cell.RowSpan -ne $end){continue}
+            $height=Get-ScopedCellMinimumHeight $cell.Node $Depth
+            $prefix[$end]=[Math]::Max($prefix[$end],$prefix[$cell.Row]+$height)
+        }
+    }
+    return [long][Math]::Max((Get-ScopedXmlInteger $size 'height' 1),$prefix[$grid.RowCount])
+}
+
+function Assert-ScopedTableBounds {
+    param([Xml.XmlElement]$Table,$Package)
+    $xml=$Table.OwnerDocument;$ns=New-ScopedNamespaces $xml
+    $pageNodes=$xml.SelectNodes('/hs:sec/hp:p/hp:run/hp:secPr/hp:pagePr',$ns)
+    if($pageNodes.Count -ne 1){throw 'Table bounds require one direct section page definition.'}
+    $page=$pageNodes[0];$m=Get-ScopedOneChild $page 'hp:margin'
+    $landscape=$page.GetAttribute('landscape')
+    if($landscape -cnotin @('WIDELY','NARROWLY')){throw 'Unknown table page orientation.'}
+    $width=Get-ScopedXmlInteger $page $(if($landscape -ceq 'NARROWLY'){'height'}else{'width'}) 1
+    $height=Get-ScopedXmlInteger $page $(if($landscape -ceq 'NARROWLY'){'width'}else{'height'}) 1
+    $width-=(Get-ScopedXmlInteger $m 'left')+(Get-ScopedXmlInteger $m 'right')
+    $height-=(Get-ScopedXmlInteger $m 'top')+(Get-ScopedXmlInteger $m 'bottom')+(Get-ScopedXmlInteger $m 'header')+(Get-ScopedXmlInteger $m 'footer')
+    $gutterType=$page.GetAttribute('gutterType')
+    if($gutterType -cin @('TOP_ONLY','TOP_BOTTOM')){$height-=Get-ScopedXmlInteger $m 'gutter'}
+    elseif($gutterType -cin @('LEFT_ONLY','LEFT_RIGHT')){$width-=Get-ScopedXmlInteger $m 'gutter'}
+    else{throw 'Unknown table page gutter type.'}
+    if($width -le 0 -or $height -le 0){throw 'Table has no positive page writing area.'}
+    $parentCell=$Table.SelectSingleNode('ancestor::hp:tc[1]',$ns)
+    if($null -ne $parentCell){$width=Get-ScopedCellInnerWidth $parentCell}
+    else {
+        $columns=$xml.SelectNodes('//hp:colPr',$ns)
+        if($columns.Count -gt 1){throw 'Table bounds cannot resolve multiple column transitions.'}
+        if($columns.Count -eq 1){
+            $col=$columns[0];$count=Get-ScopedXmlInteger $col 'colCount' 1 16
+            if($count -gt 1 -or $col.GetAttribute('sameSz') -cin @('0','false')){
+                if($col.GetAttribute('sameSz') -cin @('1','true')){
+                    $gap=Get-ScopedXmlInteger $col 'sameGap'
+                    $width=[long][Math]::Floor(($width-[long]$gap*($count-1))/$count)
+                }elseif($col.GetAttribute('sameSz') -cin @('0','false')){
+                    $sizes=$col.SelectNodes('hp:colSz',$ns)
+                    if($sizes.Count -ne $count){throw 'Table bounds require every column width.'}
+                    [long]$columnExtent=0
+                    for($n=0;$n -lt $count;$n++){
+                        $columnExtent+=Get-ScopedXmlInteger $sizes[$n] 'width' 1
+                        if($n -lt $count-1){$columnExtent+=Get-ScopedXmlInteger $sizes[$n] 'gap'}
+                    }
+                    if([Math]::Abs($columnExtent-$width) -gt $count+1){throw 'Stored column widths and gaps do not match the final page writing area.'}
+                    # Automatic pagination is unknown: only a width safe in every column is certified.
+                    $width=[long](($sizes|ForEach-Object {Get-ScopedXmlInteger $_ 'width' 1}|Measure-Object -Minimum).Minimum)
+                }else{throw 'Unknown column sizing mode.'}
+            }
+        }
+    }
+    $size=Get-ScopedOneChild $Table 'hp:sz';$pos=Get-ScopedOneChild $Table 'hp:pos'
+    if($size.GetAttribute('widthRelTo') -cne 'ABSOLUTE'){throw 'Table bounds require an absolute width.'}
+    $inline=$pos.GetAttribute('treatAsChar')
+    if($inline -cnotin @('0','1','false','true')){throw 'Unknown table inline treatment.'}
+    if($pos.GetAttribute('horzAlign') -cnotin @('LEFT','CENTER','RIGHT','INSIDE','OUTSIDE')){throw 'Unknown native table horizontal alignment.'}
+    if($inline -cin @('0','false') -and $pos.GetAttribute('horzAlign') -cin @('INSIDE','OUTSIDE')){throw 'Parity-dependent table alignment needs a verified page layout.'}
+    if($inline -cin @('0','false') -and $pos.GetAttribute('horzRelTo') -cnotin @('COLUMN','PARA')){throw 'Table bounds require a body-relative horizontal anchor.'}
+    if($inline -cin @('1','true') -or $pos.GetAttribute('horzRelTo') -ceq 'PARA'){
+        $paragraph=$Table.SelectSingleNode('ancestor::hp:p[1]',$ns)
+        if($null -eq $paragraph){throw 'Paragraph-relative table has no anchor paragraph.'}
+        $id=Get-ScopedXmlInteger $paragraph 'paraPrIDRef'
+        $header=$Package.Xml['Contents/header.xml'];$headerNs=New-ScopedNamespaces $header
+        $resources=$header.SelectNodes(('//hh:paraPr[@id="'+$id+'"]'),$headerNs)
+        if($resources.Count -ne 1){throw 'Table anchor paragraph style is ambiguous.'}
+        [long]$inset=0
+        foreach($branch in (Get-ScopedParagraphBranches $resources[0] 'margin')){
+            [long]$sum=0
+            [long]$left=0
+            foreach($side in @('left','right')){
+                $node=Get-ScopedOneChild $branch ('hc:'+$side)
+                if($node.GetAttribute('unit') -cne 'HWPUNIT'){throw 'Table paragraph inset unit cannot be resolved.'}
+                $value=Get-ScopedXmlInteger $node 'value';$sum+=$value
+                if($side -ceq 'left'){$left=$value}
+            }
+            $intent=Get-ScopedOneChild $branch 'hc:intent'
+            if($intent.GetAttribute('unit') -cne 'HWPUNIT' -or $intent.GetAttribute('value') -cnotmatch '^-?(0|[1-9][0-9]{0,9})$'){throw 'Table paragraph indentation cannot be resolved.'}
+            [long]$indent=$intent.GetAttribute('value')
+            if($left+$indent -lt 0){throw 'Table paragraph hanging indent extends outside the writing area.'}
+            $sum+=[Math]::Max([long]0,$indent)
+            $scale=if($branch.ParentNode.NamespaceURI -ceq $script:ScopedHp -and $branch.ParentNode.LocalName -ceq 'case'){1}else{2}
+            $inset=[Math]::Max($inset,[long][Math]::Ceiling($sum/$scale))
+        }
+        $width-=$inset
+    }
+    $outside=Get-ScopedOneChild $Table 'hp:outMargin'
+    [long]$occupied=(Get-ScopedXmlInteger $size 'width' 1)+(Get-ScopedXmlInteger $outside 'left')+(Get-ScopedXmlInteger $outside 'right')
+    [long]$offset=0
+    if($inline -cin @('0','false') -and $pos.HasAttribute('horzOffset')){
+        if($pos.GetAttribute('horzOffset') -cnotmatch '^-?(0|[1-9][0-9]{0,9})$'){throw 'Invalid table horizontal offset.'}
+        $signedOffset=[long]$pos.GetAttribute('horzOffset')
+        if(($pos.GetAttribute('horzAlign') -ceq 'LEFT' -and $signedOffset -lt 0) -or ($pos.GetAttribute('horzAlign') -ceq 'RIGHT' -and $signedOffset -gt 0)){throw 'Table horizontal offset points outside its writing area.'}
+        $offset=[Math]::Abs($signedOffset)
+    }
+    if($pos.GetAttribute('horzAlign') -ceq 'CENTER'){$offset*=2}
+    if($width -le 0 -or $occupied+$offset -gt $width){throw 'Table width including outside margins and offset exceeds its writing area.'}
+    $mode=$Table.GetAttribute('pageBreak')
+    $lists=@($Table.SelectNodes('hp:tr/hp:tc/hp:subList',$ns))
+    $allVertical=$lists.Count -gt 0 -and @($lists|Where-Object {$_.GetAttribute('textDirection') -cnotin @('VERTICAL','VERTICALALL')}).Count -eq 0
+    if($mode -ceq 'NONE' -or $inline -cin @('1','true') -or $allVertical){
+        if($size.GetAttribute('heightRelTo') -cne 'ABSOLUTE'){throw 'Indivisible table bounds require an absolute height.'}
+        [long]$extent=(Get-ScopedTableMinimumHeight $Table)+(Get-ScopedXmlInteger $outside 'top')+(Get-ScopedXmlInteger $outside 'bottom')
+        if($extent -gt $height){throw 'Indivisible table height exceeds the page writing area; enable pageBreak CELL.'}
+    }elseif($mode -ceq 'TABLE'){
+        foreach($cell in $Table.SelectNodes('hp:tr/hp:tc',$ns)){
+            if((Get-ScopedCellMinimumHeight $cell)+(Get-ScopedXmlInteger $outside 'top')+(Get-ScopedXmlInteger $outside 'bottom') -gt $height){throw 'Indivisible cell height exceeds the page writing area; enable pageBreak CELL.'}
+        }
+    }elseif($mode -cne 'CELL' -and $mode -cne ''){throw 'Unknown table page-break mode.'}
+}
+
 function New-ScopedFormattedTable {
     param([Xml.XmlElement]$Table, $Operation, $Package, $Allocation)
     $copy=$Table.CloneNode($true); $grid=Get-ScopedTableGrid $copy
@@ -345,6 +487,13 @@ function New-ScopedFormattedTable {
     if ($Operation.ContainsKey('pageBreak')) {
         if ($Operation['pageBreak'] -isnot [string] -or $Operation['pageBreak'] -cnotin @('CELL','TABLE','NONE')) {throw 'pageBreak must be CELL, TABLE or NONE.'}
         $copy.SetAttribute('pageBreak',$Operation['pageBreak'])
+        if($Operation['pageBreak'] -cne 'NONE'){
+            $pos=Get-ScopedOneChild $copy 'hp:pos'
+            $pos.SetAttribute('treatAsChar','0')
+            $pos.SetAttribute('flowWithText','1')
+            if(-not $pos.HasAttribute('horzRelTo')){$pos.SetAttribute('horzRelTo','COLUMN')}
+            if(-not $pos.HasAttribute('vertRelTo')){$pos.SetAttribute('vertRelTo','PARA')}
+        }
     }
     if ($Operation.ContainsKey('alignment')) {
         $value=$Operation['alignment']

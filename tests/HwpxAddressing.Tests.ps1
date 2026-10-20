@@ -32,7 +32,7 @@ function New-AddressParagraph {
 }
 function New-AddressTable {
     param([int]$Rows=1,[int]$Columns=1)
-    $s='<hp:tbl id="1" rowCnt="'+$Rows+'" colCnt="'+$Columns+'" cellSpacing="0" borderFillIDRef="1"><hp:sz width="'+($Columns*3000)+'" height="'+($Rows*2000)+'" widthRelTo="ABSOLUTE" heightRelTo="ABSOLUTE"/><hp:inMargin left="0" right="0" top="0" bottom="0"/>'
+    $s='<hp:tbl id="1" rowCnt="'+$Rows+'" colCnt="'+$Columns+'" cellSpacing="0" borderFillIDRef="1"><hp:sz width="'+($Columns*3000)+'" height="'+($Rows*2000)+'" widthRelTo="ABSOLUTE" heightRelTo="ABSOLUTE"/><hp:pos treatAsChar="1" flowWithText="1" horzRelTo="COLUMN" vertRelTo="PARA" horzAlign="LEFT" horzOffset="0"/><hp:outMargin left="0" right="0" top="0" bottom="0"/><hp:inMargin left="0" right="0" top="0" bottom="0"/>'
     for($r=0;$r -lt $Rows;$r++) {
         $s+='<hp:tr>'
         for($c=0;$c -lt $Columns;$c++) {

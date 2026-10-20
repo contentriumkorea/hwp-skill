@@ -976,6 +976,8 @@ function Get-HwpxTableStructures {
             }
         }
         $inMarginNode = $tableNode.SelectSingleNode("./*[local-name()='inMargin']")
+        $outMarginNode = $tableNode.SelectSingleNode("./*[local-name()='outMargin']")
+        $positionNode = $tableNode.SelectSingleNode("./*[local-name()='pos']")
         $validZones = [Collections.Generic.List[object]]::new()
         foreach ($zoneNode in @($tableNode.SelectNodes(
                     "./*[local-name()='cellzoneList']/*[local-name()='cellzone']"
@@ -1009,11 +1011,18 @@ function Get-HwpxTableStructures {
                 bottom = if ($null -eq $inMarginNode) { 0 } else { Get-HwpxNodeIntegerAttribute -Node $inMarginNode -LocalName 'bottom' }
             }
             rowSizes = @($rowSizes)
+            outerMargins = [pscustomobject][ordered]@{
+                left = if ($null -eq $outMarginNode) { 0 } else { Get-HwpxNodeIntegerAttribute -Node $outMarginNode -LocalName 'left' }
+                right = if ($null -eq $outMarginNode) { 0 } else { Get-HwpxNodeIntegerAttribute -Node $outMarginNode -LocalName 'right' }
+                top = if ($null -eq $outMarginNode) { 0 } else { Get-HwpxNodeIntegerAttribute -Node $outMarginNode -LocalName 'top' }
+                bottom = if ($null -eq $outMarginNode) { 0 } else { Get-HwpxNodeIntegerAttribute -Node $outMarginNode -LocalName 'bottom' }
+            }
             borderFillId = Get-HwpxNodeIntegerAttribute -Node $tableNode -LocalName 'borderFillIDRef'
             properties = [pscustomobject][ordered]@{
                 raw = $null
                 pageBreakCode = $null
                 pageBreak = Get-HwpxNodeAttribute -Node $tableNode -LocalName 'pageBreak'
+                treatAsChar = if ($null -eq $positionNode) { $null } else { Get-HwpxNodeBooleanAttribute -Node $positionNode -LocalName 'treatAsChar' }
                 repeatHeader = Get-HwpxNodeBooleanAttribute -Node $tableNode -LocalName 'repeatHeader'
                 noAdjust = Get-HwpxNodeBooleanAttribute -Node $tableNode -LocalName 'noAdjust'
             }
