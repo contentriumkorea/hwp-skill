@@ -110,13 +110,22 @@ Describe 'Headless HWPX PDF conversion' {
         ($r.Errors -join ';')|Should Match 'cache|layout'
         Test-Path -LiteralPath $output|Should Be $false
     }
-    It 'renders actual native-cached Korean text and table' -Skip:([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+    It 'renders cached Korean with available fonts or safely refuses a missing requested font' -Skip:([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
         $native=Join-Path $PSScriptRoot 'fixtures/source/pdf-stored-layout.hwpx'
         $r=Export-HwpxPdf -LiteralPath $native -OutputPath $output
-        ($r.Errors -join ';')|Should Be ''
         $r.Data.Mode|Should Be stored-layout
-        $r.Data.PageCount|Should Be 1
-        (Get-Item -LiteralPath $output).Length|Should BeGreaterThan 5000
+        $r.Data.SourcePreserved|Should Be $true
+        if($r.Status -ceq 'BLOCKED'){
+            # CI has no Hancom fonts; only the documented no-fallback refusal is valid.
+            ($r.Errors -join ';')|Should Match 'PDF_RENDER_FAILED: font face ".+" not resolved .+\(no fallback\)'
+            Test-Path -LiteralPath $output|Should Be $false
+            Write-Host ('Verified missing-font refusal: '+($r.Errors -join ';'))
+        }else{
+            ($r.Errors -join ';')|Should Be ''
+            $r.Status|Should Be PASS_WITH_WARNINGS
+            $r.Data.PageCount|Should Be 1
+            (Get-Item -LiteralPath $output).Length|Should BeGreaterThan 5000
+        }
     }
     It 'converts an authored document through real headless reflow with explicit fidelity' -Skip:(-not $RunHeadlessBrowser) {
         $new=Join-Path $case 'authored.hwpx';New-PdfTestSource $new
